@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Identity review - ARFSA{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Cross-dataset identity</p><h1>Farmer match review</h1><p class="lead">Compare complete AE and FH source profiles before assigning the same stable farmer ID.</p></div></div>
+<div class="notice info">Every populated source field is available inside each comparison. Conflicting phone numbers remain excluded from candidate generation.</div>
+<nav class="dataset-tabs" aria-label="Match status">{% for value, label in [('pending','Needs review'),('confirmed','Confirmed'),('rejected','Rejected'),('all','All')] %}<a class="{{ 'active' if match_status == value }}" href="{{ url_for('matches', status=value) }}">{{ label }}</a>{% endfor %}</nav>
+<p class="muted match-count">{{ total }} matches · Page {{ page }} of {{ pages }}</p>
+
+<section class="match-list">
+{% for match in matches %}
+  <article class="match-card status-border-{{ match.effective_status }}">
+    <div class="match-meta"><span class="status-pill status-{{ match.effective_status }}">{{ match.effective_status|title }}</span><strong>{{ match.confidence }}% confidence</strong><small>{{ match.reason_list|join(', ') }}</small></div>
+
+    <div class="match-person">
+      <p class="eyebrow">AE record</p><h2>{{ match.training_name }}</h2>
+      <p>{{ match.training_uid }} · {{ match.training_phone or 'No phone' }}</p>
+      <small>{{ match.training_group or 'No group recorded' }}</small>
+    </div>
+    <div class="match-link" aria-hidden="true">↔</div>
+    <div class="match-person">
+      <p class="eyebrow">FH record</p><h2>{{ match.care_name }}</h2>
+      <p>{{ match.care_uid }} · {{ match.care_phone or 'No phone' }}</p>
+      <small>{{ match.care_group or 'No group recorded' }}</small>
+    </div>
+
+    {% if match.effective_status == 'pending' %}
+    <div class="match-actions"><form method="post" action="{{ url_for('match_decision', match_id=match.id, decision='reject') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button button-ghost">Not the same</button></form><form method="post" action="{{ url_for('match_decision', match_id=match.id, decision='confirm') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button button-primary">Confirm match</button></form></div>
+    {% endif %}
+
+    <details class="match-details">
+      <summary><span>Compare all available information</span><small>{{ match.training_field_count }} AE fields · {{ match.care_field_count }} FH fields</small></summary>
+      <div class="profile-comparison">
+        <section class="comparison-profile">
+          <header><div><span class="profile-source">AE</span><h3>{{ match.training_name }}</h3><small>Source row {{ match.training_source_row or 'manual record' }}</small></div><a href="{{ url_for('record_detail', record_id=match.training_record_id) }}">Open full record</a></header>
+          {% for section, fields in match.training_sections.items() %}
+          <section class="comparison-section"><h4>{{ section }}</h4><dl>{% for field in fields %}<div><dt>{{ field.label }}</dt><dd>{{ field.value }}</dd></div>{% endfor %}</dl></section>
+          {% else %}<p class="muted">No populated AE source fields.</p>{% endfor %}
+        </section>
+
+        <section class="comparison-profile">
+          <header><div><span class="profile-source profile-source-fh">FH</span><h3>{{ match.care_name }}</h3><small>Source row {{ match.care_source_row or 'manual record' }}</small></div><a href="{{ url_for('record_detail', record_id=match.care_record_id) }}">Open full record</a></header>
+          {% for section, fields in match.care_sections.items() %}
+          <section class="comparison-section"><h4>{{ section }}</h4><dl>{% for field in fields %}<div><dt>{{ field.label }}</dt><dd>{{ field.value }}</dd></div>{% endfor %}</dl></section>
+          {% else %}<p class="muted">No populated FH source fields.</p>{% endfor %}
+        </section>
+      </div>
+    </details>
+  </article>
+{% else %}
+  <div class="empty-state"><h2>No match candidates</h2><p>No conservative cross-dataset identity candidates were found in this category.</p></div>
+{% endfor %}
+</section>
+
+{% if pages > 1 %}<nav class="pagination">{% if page > 1 %}<a href="{{ url_for('matches', status=match_status, page=page-1) }}">Previous</a>{% endif %}<span>Page {{ page }} / {{ pages }}</span>{% if page < pages %}<a href="{{ url_for('matches', status=match_status, page=page+1) }}">Next</a>{% endif %}</nav>{% endif %}
+{% endblock %}

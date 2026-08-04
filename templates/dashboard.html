@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - ARFSA{% endblock %}
+{% block content %}
+<section class="dashboard-hero">
+  <div class="hero-copy">
+    <p class="eyebrow hero-eyebrow">ARFSA monitoring workspace</p>
+    <h1>{{ dataset_labels[dataset] }} dashboard</h1>
+    <p>{% if dataset == 'combined' %}Only farmers with a confirmed AE/FH identity link, combining information from both records.{% else %}Participation, adoption and follow-up performance across the current dataset.{% endif %}</p>
+  </div>
+  <div class="hero-actions">
+    <div class="hero-meta"><span class="live-dot"></span><div><strong>Live database view</strong><small>All metrics respond to the filters below</small></div></div>
+    <a class="button button-secondary" href="{{ url_for('dashboard_pdf', dataset=dataset, **filters) }}">Download PDF</a>
+  </div>
+</section>
+
+<div class="dashboard-controls">
+  <nav class="dataset-tabs" aria-label="Dataset selection">
+    {% for key, label in dataset_labels.items() %}
+    <a class="{{ 'active' if dataset == key }}" href="{{ url_for('dashboard', dataset=key) }}">{{ label }}</a>
+    {% endfor %}
+  </nav>
+  <span class="scope-label">{% if dataset == 'combined' %}{{ summary.unique_farmers }} combined farmers · {{ summary.total_records }} linked records{% else %}Showing {{ summary.total_records }} source records{% endif %}</span>
+</div>
+
+<form class="filter-panel" method="get">
+  <input type="hidden" name="dataset" value="{{ dataset }}">
+  <label>Gender<select name="gender"><option value="">All</option>{% for item in options.genders %}<option {{ 'selected' if filters.gender == item }}>{{ item }}</option>{% endfor %}</select></label>
+  <label>Age group<select name="age"><option value="">All</option>{% for item in options.ages %}<option {{ 'selected' if filters.age == item }}>{{ item }}</option>{% endfor %}</select></label>
+  <label>CBF<select name="cbf"><option value="">All CBFs</option>{% for item in options.cbfs %}<option {{ 'selected' if filters.cbf == item }}>{{ item }}</option>{% endfor %}</select></label>
+  <label>From<input type="date" name="date_from" value="{{ filters.date_from }}"></label>
+  <label>To<input type="date" name="date_to" value="{{ filters.date_to }}"></label>
+  <label>Status<select name="status">
+    <option value="">All</option>
+    {% for value, label in [('trained','Received training'),('confirmed','Confirmed adoption'),('followup','Follow-up needed'),('training','Training needed'),('waiting','Waiting for follow-up'),('untrained','Untrained'),('active','Active'),('dropped','Dropped out')] %}
+    <option value="{{ value }}" {{ 'selected' if filters.status == value }}>{{ label }}</option>{% endfor %}
+  </select></label>
+  <div class="filter-actions"><button class="button button-primary" type="submit">Apply</button><a class="button button-ghost" href="{{ url_for('dashboard', dataset=dataset) }}">Reset</a></div>
+</form>
+
+{% if dataset == 'combined' and summary.total_records != summary.unique_farmers %}
+<div class="notice info">Source records remain separate. “Unique farmers” removes confirmed AE/FH overlaps using the shared farmer ID.</div>
+{% endif %}
+
+<section class="kpi-grid" aria-label="Key metrics">
+  {% for label, value, detail, tone, icon in [
+    ('Source records', summary.total_records, 'Records in the current scope', 'teal', 'DB'),
+    ('Unique farmers', summary.unique_farmers, 'Confirmed overlaps removed', 'blue', 'ID'),
+    ('Received training', summary.trained, 'At least one attended topic', 'green', 'TR'),
+    ('Confirmed adoption' if dataset == 'training' else 'Completed module' if dataset == 'care' else 'Verified completion', summary.confirmed, 'Verified against programme rules', 'green', 'OK'),
+    ('Follow-up needed', summary.followup, 'Currently due for action', 'orange', 'FU'),
+    ('Training needed', summary.retraining, 'New or refresher training', 'red', 'AE')
+  ] %}
+  <article class="kpi-card tone-{{ tone }}">
+    <div class="kpi-top"><span class="kpi-icon">{{ icon }}</span><span class="kpi-label">{{ label }}</span></div>
+    <strong>{{ value }}</strong><small>{{ detail }}</small>
+  </article>
+  {% endfor %}
+</section>
+
+<section class="analytics-grid">
+  <article class="panel panel-trend">
+    <div class="panel-heading"><div><p class="eyebrow">Training activity</p><h2>Participation over time</h2><p>Farmers with recorded activity during the last 12 active months.</p></div><span class="badge">Monthly</span></div>
+    <div class="trend-chart">
+      <div class="chart-gridlines"><i></i><i></i><i></i><i></i></div>
+      <div class="trend-bars">{% for item in trend %}<div class="trend-column"><span>{{ item.count }}</span><i style="height: {{ [item.width, 5]|max }}%"></i><small>{{ item.month }}</small></div>{% else %}<p class="muted">No dated activity is available for this selection.</p>{% endfor %}</div>
+    </div>
+  </article>
+
+  <article class="panel panel-status">
+    <div class="panel-heading"><div><p class="eyebrow">Operational status</p><h2>Farmer journey</h2></div><span class="badge">{{ summary.total_records }} total</span></div>
+    <div class="status-visual">
+      <div class="status-donut" style="background: conic-gradient(#77aa2a 0 {{ status_distribution[0].end }}%, #087880 {{ status_distribution[0].end }}% {{ status_distribution[1].end }}%, #EFB417 {{ status_distribution[1].end }}% {{ status_distribution[2].end }}%, #cbd4d6 {{ status_distribution[2].end }}% 100%)"><div><strong>{{ summary.confirmed }}</strong><small>verified</small></div></div>
+      <div class="distribution-legend">{% for item in status_distribution %}<div><i class="legend-{{ item.tone }}"></i><span>{{ item.label }}</span><strong>{{ item.count }}</strong><small>{{ item.percent }}%</small></div>{% endfor %}</div>
+    </div>
+    <p class="panel-note">Each record appears once; urgent actions take priority in this view.</p>
+  </article>
+
+  <article class="panel panel-attention">
+    <div class="panel-heading"><div><p class="eyebrow">Action centre</p><h2>Immediate priorities</h2></div><span class="badge badge-warm">{{ attention_total }} people</span></div>
+    <div class="attention-summary"><div><strong>{{ summary.followup }}</strong><span>Follow-ups due</span></div><div><strong>{{ summary.retraining }}</strong><span>Training needs</span></div><div><strong>{{ waiting_total }}</strong><span>In follow-up window</span></div></div>
+    <div class="focus-list">{% for item in action_topics %}<div><span>{{ item.topic }}</span><strong>{{ item.followup + item.retraining }}</strong><small>actions</small></div>{% else %}<p class="muted">No action topics match the current filters.</p>{% endfor %}</div>
+  </article>
+
+  <article class="panel panel-demographics" data-demographic-explorer>
+    <div class="demographic-heading">
+      <div><p class="eyebrow">Participant profile</p><h2>Age &amp; sex explorer</h2><p>Switch between individual distributions or compare both dimensions.</p></div>
+      <span class="demographic-total"><strong>{{ summary.total_records }}</strong><small>farmers shown</small></span>
+    </div>
+    <div class="demographic-toolbar" role="tablist" aria-label="Demographic chart view">
+      <button type="button" class="active" role="tab" aria-selected="true" data-demographic-view="overview">Both</button>
+      <button type="button" role="tab" aria-selected="false" data-demographic-view="gender">Sex</button>
+      <button type="button" role="tab" aria-selected="false" data-demographic-view="age">Age</button>
+      <button type="button" role="tab" aria-selected="false" data-demographic-view="age-gender">Age by sex</button>
+      <button type="button" role="tab" aria-selected="false" data-demographic-view="gender-age">Sex by age</button>
+    </div>
+
+    <div class="demographic-view" role="tabpanel" data-demographic-panel="overview">
+      <div class="demographic-columns">
+        <section><div class="chart-title"><span class="chart-icon">S</span><div><h3>Sex distribution</h3><small>Share of selected AE farmers</small></div></div><div class="bar-list">{% set gender_total = gender_counts.values()|sum or 1 %}{% for label, count in gender_counts.items() %}<div class="bar-row"><span>{{ label }}</span><div><i style="width: {{ (count / gender_total * 100)|round }}%"></i></div><strong>{{ count }}<small>{{ (count / gender_total * 100)|round|int }}%</small></strong></div>{% else %}<p class="muted">No data</p>{% endfor %}</div></section>
+        <section><div class="chart-title"><span class="chart-icon chart-icon-warm">A</span><div><h3>Age distribution</h3><small>Share of selected AE farmers</small></div></div><div class="bar-list bar-list-warm">{% set age_total = age_counts.values()|sum or 1 %}{% for label, count in age_counts.items() %}<div class="bar-row"><span>{{ label }}</span><div><i style="width: {{ (count / age_total * 100)|round }}%"></i></div><strong>{{ count }}<small>{{ (count / age_total * 100)|round|int }}%</small></strong></div>{% else %}<p class="muted">No data</p>{% endfor %}</div></section>
+      </div>
+    </div>
+
+    <div class="demographic-view" role="tabpanel" data-demographic-panel="gender" hidden>
+      <div class="demographic-focus"><div class="focus-copy"><span class="chart-icon">S</span><div><h3>Sex distribution</h3><p>How the selected AE population is divided by sex.</p></div></div><div class="bar-list bar-list-focus">{% set gender_total = gender_counts.values()|sum or 1 %}{% for label, count in gender_counts.items() %}<div class="bar-row"><span>{{ label }}</span><div><i style="width: {{ (count / gender_total * 100)|round }}%"></i></div><strong>{{ count }}<small>{{ (count / gender_total * 100)|round|int }}%</small></strong></div>{% else %}<p class="muted">No data</p>{% endfor %}</div></div>
+    </div>
+
+    <div class="demographic-view" role="tabpanel" data-demographic-panel="age" hidden>
+      <div class="demographic-focus"><div class="focus-copy"><span class="chart-icon chart-icon-warm">A</span><div><h3>Age distribution</h3><p>How the selected AE population is divided by age group.</p></div></div><div class="bar-list bar-list-focus bar-list-warm">{% set age_total = age_counts.values()|sum or 1 %}{% for label, count in age_counts.items() %}<div class="bar-row"><span>{{ label }}</span><div><i style="width: {{ (count / age_total * 100)|round }}%"></i></div><strong>{{ count }}<small>{{ (count / age_total * 100)|round|int }}%</small></strong></div>{% else %}<p class="muted">No data</p>{% endfor %}</div></div>
+    </div>
+
+    <div class="demographic-view" role="tabpanel" data-demographic-panel="age-gender" hidden>
+      <div class="breakdown-intro"><div><h3>Age distribution within each sex</h3><p>Each bar is the percentage of that sex in the age group.</p></div><span class="breakdown-key"><i></i>Within-group share</span></div>
+      <div class="demographic-breakdown-grid">{% for gender, ages in age_by_gender.items() %}{% set group_total = ages.values()|sum or 1 %}<section class="breakdown-card"><header><div><span>Sex</span><h4>{{ gender }}</h4></div><strong>{{ ages.values()|sum }}<small>farmers</small></strong></header><div class="bar-list">{% for label, count in ages.items() %}<div class="bar-row"><span>{{ label }}</span><div><i style="width: {{ (count / group_total * 100)|round }}%"></i></div><strong>{{ count }}<small>{{ (count / group_total * 100)|round|int }}%</small></strong></div>{% endfor %}</div></section>{% else %}<p class="muted">No data</p>{% endfor %}</div>
+    </div>
+
+    <div class="demographic-view" role="tabpanel" data-demographic-panel="gender-age" hidden>
+      <div class="breakdown-intro"><div><h3>Sex distribution within each age group</h3><p>Each bar is the percentage of that age group represented by the sex.</p></div><span class="breakdown-key breakdown-key-warm"><i></i>Within-group share</span></div>
+      <div class="demographic-breakdown-grid">{% for age, genders in gender_by_age.items() %}{% set group_total = genders.values()|sum or 1 %}<section class="breakdown-card breakdown-card-warm"><header><div><span>Age group</span><h4>{{ age }}</h4></div><strong>{{ genders.values()|sum }}<small>farmers</small></strong></header><div class="bar-list bar-list-warm">{% for label, count in genders.items() %}<div class="bar-row"><span>{{ label }}</span><div><i style="width: {{ (count / group_total * 100)|round }}%"></i></div><strong>{{ count }}<small>{{ (count / group_total * 100)|round|int }}%</small></strong></div>{% endfor %}</div></section>{% else %}<p class="muted">No data</p>{% endfor %}</div>
+    </div>
+  </article>
+
+  <article class="panel panel-topics">
+    <div class="panel-heading"><div><p class="eyebrow">Coverage and action</p><h2>Progress by topic</h2><p>Detailed performance across every training topic in the selected scope.</p></div><span class="badge">{{ topics|length }} topics</span></div>
+    <div class="table-wrap"><table class="data-table topic-table">
+      <thead><tr><th>Topic</th><th>Received</th><th>Confirmed</th><th>Follow-up</th><th>Training need</th><th>Waiting</th><th>Coverage</th></tr></thead>
+      <tbody>{% for item in topics %}<tr>
+        <td><strong>{{ item.topic }}</strong><small>{{ item.participants }} participants</small></td>
+        <td>{{ item.trained }}</td><td>{{ item.confirmed }}</td><td><span class="status-pill {{ 'warning' if item.followup else '' }}">{{ item.followup }}</span></td>
+        <td><span class="status-pill {{ 'danger' if item.retraining else '' }}">{{ item.retraining }}</span></td><td>{{ item.waiting }}</td>
+        <td><div class="coverage-cell"><div class="progress"><span style="width: {{ item.rate }}%"></span></div><small>{{ item.rate }}%</small></div></td>
+      </tr>{% else %}<tr><td colspan="7" class="empty-cell">No records match the current filters.</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </article>
+</section>
+{% endblock %}

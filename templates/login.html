@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Sign in - ARFSA{% endblock %}
+{% block content %}
+<section class="login-card">
+  <div class="login-brand">
+    <span class="brand-mark brand-mark-large">AE</span>
+    <div><p class="eyebrow">Internal monitoring system</p><h1>ARFSA Training Database</h1></div>
+  </div>
+  <p class="lead">Sign in to manage farmer records, training progress, follow-ups and CBF reports.</p>
+  {% if default_credentials %}
+  <div class="notice warning"><strong>Development login:</strong> admin / change-me-now. Configure environment credentials before deployment.</div>
+  {% endif %}
+  <form method="post" class="form-stack">
+    <label>Username<input name="username" autocomplete="username" required autofocus></label>
+    <label>Password<input type="password" name="password" autocomplete="current-password" required></label>
+    <button class="button button-primary button-block" type="submit">Sign in</button>
+  </form>
+</section>
+{% endblock %}
+

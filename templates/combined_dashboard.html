@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Combined analysis - ARFSA{% endblock %}
+{% block content %}
+<section class="dashboard-hero interaction-hero">
+  <div class="hero-copy"><p class="eyebrow hero-eyebrow">Cross-project evidence</p><h1>AE × FH interaction</h1><p>Explore whether AE training exposure and adoption move together with FH participation and module completion.</p></div>
+  <div class="hero-actions"><div class="hero-meta"><span class="live-dot"></span><div><strong>Manual matches only</strong><small>No suggested identities are included</small></div></div><a class="button button-secondary" href="{{ url_for('matches', status='pending') }}">Review identities</a></div>
+</section>
+
+<div class="dashboard-controls">
+  <nav class="dataset-tabs" aria-label="Dataset selection">{% for key, label in dataset_labels.items() %}<a class="{{ 'active' if dataset == key }}" href="{{ url_for('dashboard', dataset=key) }}">{{ label }}</a>{% endfor %}</nav>
+  <span class="scope-label">{{ pair_count }} manually confirmed cross-project farmers</span>
+</div>
+
+<form class="filter-panel interaction-filters" method="get">
+  <input type="hidden" name="dataset" value="combined">
+  <label>Gender<select name="gender"><option value="">All</option>{% for item in options.genders %}<option {{ 'selected' if filters.gender == item }}>{{ item }}</option>{% endfor %}</select></label>
+  <label>Age group<select name="age"><option value="">All</option>{% for item in options.ages %}<option {{ 'selected' if filters.age == item }}>{{ item }}</option>{% endfor %}</select></label>
+  <label>CBF<select name="cbf"><option value="">All CBFs</option>{% for item in options.cbfs %}<option {{ 'selected' if filters.cbf == item }}>{{ item }}</option>{% endfor %}</select></label>
+  <div class="filter-actions"><button class="button button-primary" type="submit">Apply</button><a class="button button-ghost" href="{{ url_for('dashboard', dataset='combined') }}">Reset</a></div>
+</form>
+
+{% if not nutrition_score_available %}<div class="notice warning"><strong>Data availability:</strong> the current FH workbook contains session attendance and module completion, but no nutrition outcome score. The analysis below therefore uses FH participation as the outcome; nutrition-score correlation will appear when that field is added.</div>{% endif %}
+
+{% if not pairs %}
+<section class="empty-state interaction-empty"><span class="empty-icon">↔</span><h2>No manually confirmed cross-project farmers yet</h2><p>The earlier 127 pairs were automatic suggestions created during import. They are no longer treated as confirmed. Review the {{ reviewable_count }} candidate matches to begin building this analysis.</p><a class="button button-primary" href="{{ url_for('matches', status='pending') }}">Review candidate identities</a></section>
+{% else %}
+<section class="interaction-kpis">
+  {% for label, value, detail, tone in [
+    ('Matched farmers', pair_count, 'Manual AE/FH confirmations', 'teal'),
+    ('AE exposure', summary.ae_received, 'Average topics received (of 8)', 'blue'),
+    ('AE take-up', summary.ae_adopted, 'Average topics adopted (of 8)', 'green'),
+    ('FH attendance', summary.fh_rate ~ '%', 'Average recorded session attendance', 'orange'),
+    ('FH completion', summary.fh_modules, 'Average modules completed', 'green')
+  ] %}<article class="kpi-card tone-{{ tone }}"><div class="kpi-top"><span class="kpi-label">{{ label }}</span></div><strong>{{ value }}</strong><small>{{ detail }}</small></article>{% endfor %}
+</section>
+
+<section class="interaction-grid">
+  <article class="panel correlation-panel"><div class="panel-heading"><div><p class="eyebrow">Relationship strength</p><h2>Cross-project correlations</h2><p>Pearson correlation across manually matched farmers. Correlation indicates association, not causation.</p></div></div>
+    <div class="correlation-list">{% for item in correlations %}<div><span>{{ item.label }}</span><div class="correlation-track"><i style="left: {{ ((item.value or 0) + 1) / 2 * 100 }}%"></i></div><strong>{{ item.value if item.value is not none else '—' }}</strong><small>{{ item.strength }}</small></div>{% endfor %}</div>
+  </article>
+
+  <article class="panel exposure-panel"><div class="panel-heading"><div><p class="eyebrow">Dose pattern</p><h2>FH outcomes by AE exposure</h2><p>Compare FH participation across the number of AE topics received.</p></div></div>
+    <div class="table-wrap"><table class="data-table"><thead><tr><th>AE exposure</th><th>Farmers</th><th>FH attendance</th><th>FH modules</th><th>AE adopted</th></tr></thead><tbody>{% for row in exposure_buckets %}<tr><td><strong>{{ row.label }}</strong></td><td>{{ row.count }}</td><td>{{ row.fh_rate }}%</td><td>{{ row.fh_modules }}</td><td>{{ row.ae_adopted }}</td></tr>{% endfor %}</tbody></table></div>
+  </article>
+
+  <article class="panel interaction-topics"><div class="panel-heading"><div><p class="eyebrow">Topic-level comparison</p><h2>FH attendance with and without each AE training</h2><p>A positive difference means FH attendance is higher among farmers who received that AE topic.</p></div><span class="badge">Descriptive</span></div>
+    <div class="table-wrap"><table class="data-table"><thead><tr><th>AE topic</th><th>Received (n)</th><th>FH attendance</th><th>Not received (n)</th><th>FH attendance</th><th>Difference</th></tr></thead><tbody>{% for row in topic_relationships %}<tr><td><strong>{{ row.topic }}</strong></td><td>{{ row.exposed_count }}</td><td>{{ row.exposed_rate }}%</td><td>{{ row.unexposed_count }}</td><td>{{ row.unexposed_rate }}%</td><td><span class="difference-pill {{ 'positive' if row.difference > 0 else 'negative' if row.difference < 0 else '' }}">{{ '+' if row.difference > 0 }}{{ row.difference }} pp</span></td></tr>{% endfor %}</tbody></table></div>
+  </article>
+
+  <article class="panel interaction-farmers"><div class="panel-heading"><div><p class="eyebrow">Matched observations</p><h2>Farmer-level interaction data</h2><p>The records behind the summary analysis.</p></div><span class="badge">{{ pair_count }} farmers</span></div>
+    <div class="table-wrap"><table class="data-table"><thead><tr><th>Farmer</th><th>CBF / group</th><th>AE received</th><th>AE adopted</th><th>FH sessions</th><th>FH attendance</th><th>FH modules</th></tr></thead><tbody>{% for pair in pairs %}<tr><td><a href="{{ url_for('record_detail', record_id=pair.training_id) }}"><strong>{{ pair.name }}</strong></a><small><a href="{{ url_for('record_detail', record_id=pair.care_id) }}">Open FH record</a></small></td><td>{{ pair.cbf_name or '—' }}<small>{{ pair.group_name or pair.care_group or '—' }}</small></td><td>{{ pair.ae_received }} / 8</td><td>{{ pair.ae_adopted }} / 8</td><td>{{ pair.fh_attended }} / {{ pair.fh_expected }}</td><td>{{ pair.fh_rate }}%</td><td>{{ pair.fh_modules }}</td></tr>{% endfor %}</tbody></table></div>
+  </article>
+</section>
+{% endif %}
+{% endblock %}

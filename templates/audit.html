@@ -1,0 +1,4 @@
+{% extends "base.html" %}
+{% block title %}Audit log - ARFSA{% endblock %}
+{% block content %}<div class="page-heading"><div><p class="eyebrow">Accountability</p><h1>Audit log</h1><p class="lead">The latest 500 additions, edits, archives, restores and identity decisions.</p></div></div><div class="panel"><div class="table-wrap"><table class="data-table"><thead><tr><th>When</th><th>User</th><th>Action</th><th>Entity</th><th>Summary</th></tr></thead><tbody>{% for item in entries %}<tr><td>{{ item.occurred_at[:19].replace('T',' ') }}</td><td>{{ item.username }}</td><td><span class="status-pill">{{ item.action }}</span></td><td>{{ item.entity_type }} #{{ item.entity_id or '-' }}</td><td>{{ item.summary }}</td></tr>{% else %}<tr><td colspan="5" class="empty-cell">No changes have been made in the web application yet.</td></tr>{% endfor %}</tbody></table></div></div>{% endblock %}
+

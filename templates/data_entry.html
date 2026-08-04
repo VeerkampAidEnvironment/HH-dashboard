@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}CBF data entry - ARFSA{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Administration</p><h1>CBF data entry</h1><p class="lead">Record centralized trainings and farmer follow-ups directly in the AE database.</p></div></div>
+
+{% if selected_cbf %}<section class="entry-steps" aria-label="Data-entry steps">
+  <div class="entry-step active"><span>1</span><div><strong>Select CBF</strong><small>Identify who is entering data</small></div></div>
+  <div class="entry-step {{ 'active' if selected_cbf }}"><span>2</span><div><strong>Choose update</strong><small>Training or follow-up</small></div></div>
+  <div class="entry-step {{ 'active' if selected_cbf and mode }}"><span>3</span><div><strong>Enter details</strong><small>Only eligible farmers appear</small></div></div>
+</section>{% endif %}
+
+<form class="panel entry-selector {{ 'entry-selector-initial' if not selected_cbf }}" method="get" data-auto-submit="selection">
+  {% if not selected_cbf %}<div class="entry-selector-intro"><span>Step 1</span><h2>Who is entering data?</h2><p>Select your name to continue.</p></div>{% endif %}
+  {% if cbfs|length <= 10 %}<fieldset class="switch-field"><legend>Community Based Facilitator</legend><div class="switch-group">{% for cbf in cbfs %}<label class="switch-option"><input type="radio" name="cbf" value="{{ cbf }}" {{ 'checked' if selected_cbf == cbf }} required data-submit-on-change><span>{{ cbf }}</span></label>{% endfor %}</div></fieldset>
+  {% else %}<label>Community Based Facilitator<select name="cbf" required data-submit-on-change data-enhanced-select data-select-label="Community Based Facilitator" data-search-placeholder="Search CBF by name"><option value="">Select your CBF</option>{% for cbf in cbfs %}<option value="{{ cbf }}" {{ 'selected' if selected_cbf == cbf }}>{{ cbf }}</option>{% endfor %}</select></label>{% endif %}
+  {% if selected_cbf %}<fieldset class="switch-field"><legend>Update type</legend><div class="switch-group switch-group-prominent"><label class="switch-option"><input type="radio" name="mode" value="centralized" {{ 'checked' if mode == 'centralized' }} required data-submit-on-change><span>Centralized training</span></label><label class="switch-option"><input type="radio" name="mode" value="followup" {{ 'checked' if mode == 'followup' }} required data-submit-on-change><span>Farmer follow-up</span></label></div></fieldset>
+  <button class="button button-primary" type="submit">Continue</button>
+  <div class="entry-group-filter">
+    {% if groups|length <= 10 %}<fieldset class="switch-field"><legend>Farmer group</legend><div class="switch-group switch-group-wrap"><label class="switch-option"><input type="radio" name="group" value="" {{ 'checked' if not selected_group }} data-submit-on-change><span>All groups</span></label>{% for group in groups %}<label class="switch-option"><input type="radio" name="group" value="{{ group }}" {{ 'checked' if selected_group == group }} data-submit-on-change><span>{{ group }}</span></label>{% endfor %}</div></fieldset>
+    {% else %}<label>Farmer group<select name="group" data-submit-on-change data-enhanced-select data-select-label="Farmer group" data-search-placeholder="Search farmer groups"><option value="">All groups</option>{% for group in groups %}<option value="{{ group }}" {{ 'selected' if selected_group == group }}>{{ group }}</option>{% endfor %}</select></label>{% endif %}
+  </div>{% endif %}
+</form>
+
+{% if selected_cbf and mode == 'centralized' %}
+<section class="entry-workspace">
+  <div class="entry-workspace-heading"><div><p class="eyebrow">Centralized training</p><h2>{{ selected_cbf }}</h2><p>Select the attending farmers separately under each topic. Only farmers currently marked CT are shown{% if selected_group %} for {{ selected_group }}{% endif %}.</p></div><span class="status-pill status-ct">{{ selected_group or 'All groups' }}</span></div>
+  <form method="post" class="entry-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="cbf" value="{{ selected_cbf }}"><input type="hidden" name="mode" value="centralized"><input type="hidden" name="group" value="{{ selected_group }}"><input type="hidden" name="topic_count" value="{{ topics|length }}">
+    <div class="entry-event-fields">
+      <div class="date-priority"><div class="date-priority-heading"><div><span>Required</span><strong>Training date</strong></div><button class="button button-today" type="button" data-fill-date="{{ today }}">Today</button></div><input type="date" name="event_date" value="{{ selected_event_date }}" required aria-label="Training date"></div>
+      <div class="venue-selector" data-venue-selector>
+        <label>Meeting venue<select name="location_choice" required data-venue-select data-enhanced-select data-select-label="Meeting venue" data-search-placeholder="Search meeting venues"><option value="">Select a meeting venue</option>{% for venue in venues %}<option value="{{ venue }}" {{ 'selected' if selected_venue == venue }}>{{ venue }}</option>{% endfor %}<option value="__new__" {{ 'selected' if selected_venue == '__new__' }}>+ Add a new meeting venue</option></select></label>
+        <label class="venue-new" data-new-venue-field {{ 'hidden' if selected_venue != '__new__' }}>New meeting venue<input type="text" name="location_new" value="{{ new_venue }}" placeholder="Enter village, venue or training centre" autocomplete="organization" {{ 'required' if selected_venue == '__new__' }} {{ 'disabled' if selected_venue != '__new__' }}></label>
+        <small class="venue-help">Previously used venues are available for quick selection.</small>
+      </div>
+    </div>
+    <div class="topic-entry-list">
+      {% for topic in topics %}{% set eligible = central_eligibility[topic] %}
+      <details class="topic-entry-card"><summary><div><span class="topic-number">{{ loop.index }}</span><strong>{{ topic }}</strong></div><span class="badge">{{ eligible|length }} eligible</span></summary>
+        <input type="hidden" name="topic__{{ loop.index0 }}" value="{{ topic }}">
+        <div class="topic-attendance">
+          {% if eligible %}<div class="attendance-toolbar"><span>Select the farmers who attended this topic</span><button class="button button-ghost button-small" type="button" data-select-all="attendee__{{ loop.index0 }}">Select all</button></div>
+          <div class="participant-checklist">{% for farmer in eligible %}<label><input type="checkbox" name="attendee__{{ loop.index0 }}" value="{{ farmer.id }}"><span><strong>{{ farmer.name }}</strong><small>{{ farmer.uid }} · {{ farmer.group_name or 'No group' }}</small></span></label>{% endfor %}</div>
+          {% else %}<p class="muted topic-empty">No farmers belonging to this CBF currently need centralized training for this topic.</p>{% endif %}
+        </div>
+      </details>{% endfor %}
+    </div>
+    <div class="sticky-actions"><button class="button button-primary" type="submit">Save centralized training</button></div>
+  </form>
+</section>
+{% elif selected_cbf and mode == 'followup' %}
+<section class="entry-workspace">
+  <div class="entry-workspace-heading"><div><p class="eyebrow">Farmer follow-up</p><h2>{{ selected_cbf }}</h2><p>Choose a date and farmer. Only farmers with at least one follow-up currently due are available{% if selected_group %} for {{ selected_group }}{% endif %}.</p></div><span class="status-pill status-fu">{{ selected_group or 'All groups' }}</span></div>
+  <form class="panel followup-selector" method="get" data-auto-submit="selection">
+    <input type="hidden" name="cbf" value="{{ selected_cbf }}"><input type="hidden" name="mode" value="followup"><input type="hidden" name="group" value="{{ selected_group }}">
+    <div class="date-priority"><div class="date-priority-heading"><div><span>Required</span><strong>Follow-up date</strong></div><button class="button button-today" type="button" data-fill-date="{{ today }}">Today</button></div><input type="date" name="event_date" value="{{ selected_event_date }}" required aria-label="Follow-up date"></div>
+    {% if followup_farmers|length <= 10 %}<fieldset class="switch-field"><legend>Farmer</legend><div class="switch-group switch-group-wrap">{% for farmer in followup_farmers %}<label class="switch-option switch-option-farmer"><input type="radio" name="record_id" value="{{ farmer.id }}" {{ 'checked' if selected_record_id == farmer.id }} required data-submit-on-change><span>{{ farmer.name }} <small>{{ farmer.due_count }} due</small></span></label>{% else %}<span class="muted">No farmers currently need follow-up.</span>{% endfor %}</div></fieldset>
+    {% else %}<label>Farmer<select name="record_id" required data-submit-on-change data-enhanced-select data-select-label="Farmer" data-search-placeholder="Search by farmer or group"><option value="">Select farmer</option>{% for farmer in followup_farmers %}<option value="{{ farmer.id }}" {{ 'selected' if selected_record_id == farmer.id }}>{{ farmer.name }} — {{ farmer.group_name or 'No group' }} ({{ farmer.due_count }} due)</option>{% endfor %}</select></label>{% endif %}
+    <button class="button button-primary" type="submit">Show due topics</button>
+  </form>
+
+  {% if selected_record_id and followup_topics %}<form method="post" class="panel followup-score-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="cbf" value="{{ selected_cbf }}"><input type="hidden" name="mode" value="followup"><input type="hidden" name="group" value="{{ selected_group }}"><input type="hidden" name="event_date" value="{{ selected_event_date }}"><input type="hidden" name="record_id" value="{{ selected_record_id }}"><input type="hidden" name="topic_count" value="{{ followup_topics|length }}">
+    <div class="panel-heading"><div><p class="eyebrow">Scores</p><h2>Topics requiring follow-up</h2><p>Leave a score blank if that topic was not assessed during this visit.</p></div><span class="badge">0–100</span></div>
+    <div class="followup-score-list">{% for item in followup_topics %}<div><input type="hidden" name="topic__{{ loop.index0 }}" value="{{ item.topic }}"><div><strong>{{ item.topic }}</strong><small>Training activity: {{ item.last_activity_date|datefmt }}</small></div><label>Follow-up score<input type="number" name="score__{{ loop.index0 }}" min="0" max="100" step="0.1" placeholder="0–100"></label></div>{% endfor %}</div>
+    <div class="button-row followup-submit"><button class="button button-primary" type="submit">Save follow-up scores</button></div>
+  </form>{% elif selected_record_id %}<div class="notice success">This farmer no longer has any topics requiring follow-up.</div>{% endif %}
+</section>
+{% endif %}
+
+{% if selected_cbf %}<section class="entry-history"><div class="section-heading"><p class="eyebrow">Recent activity</p><h2>CBF submissions</h2></div><div class="panel"><div class="table-wrap"><table class="data-table"><thead><tr><th>Date</th><th>CBF</th><th>Type</th><th>Location</th><th>Farmers</th><th>Topic entries</th><th>Entered by</th></tr></thead><tbody>{% for event in history %}<tr><td>{{ event.event_date|datefmt }}</td><td><strong>{{ event.cbf_name }}</strong></td><td><span class="status-pill">{{ 'Centralized training' if event.event_type == 'centralized' else 'Follow-up' }}</span></td><td>{{ event.location or '—' }}</td><td>{{ event.farmer_count }}</td><td>{{ event.entry_count }}</td><td>{{ event.created_by }}</td></tr>{% else %}<tr><td colspan="7" class="empty-cell">No CBF submissions have been recorded yet.</td></tr>{% endfor %}</tbody></table></div></div></section>{% endif %}
+{% endblock %}

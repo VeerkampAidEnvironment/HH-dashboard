@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#087880">
+  <title>{% block title %}ARFSA Database{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body class="{% if not session.get('authenticated') %}auth-page{% endif %}">
+  {% if session.get('authenticated') %}
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('dashboard') }}" aria-label="ARFSA home">
+      <span class="brand-mark">AE</span>
+      <span><strong>ARFSA</strong><small>Training Database</small></span>
+    </a>
+    <button class="menu-toggle" type="button" data-menu-toggle aria-label="Open navigation">Menu</button>
+    <nav class="main-nav" data-main-nav aria-label="Primary navigation">
+      <span class="nav-section">Overview</span>
+      <a class="{{ 'active' if request.endpoint == 'dashboard' }}" href="{{ url_for('dashboard') }}"><span class="nav-symbol">D</span>Dashboard</a>
+      <span class="nav-section">Database</span>
+      <a class="{{ 'active' if request.endpoint in ['record_list', 'record_detail', 'record_new', 'record_edit'] }}" href="{{ url_for('record_list') }}"><span class="nav-symbol">F</span>Farmers</a>
+      <a class="{{ 'active' if request.endpoint in ['cbf_list', 'cbf_detail'] }}" href="{{ url_for('cbf_list') }}"><span class="nav-symbol">C</span>CBFs</a>
+      <a class="{{ 'active' if request.endpoint == 'matches' }}" href="{{ url_for('matches') }}"><span class="nav-symbol">ID</span>Identity review</a>
+      <span class="nav-section">Administration</span>
+      <a class="{{ 'active' if request.endpoint == 'data_entry' }}" href="{{ url_for('data_entry') }}"><span class="nav-symbol">+</span>Data entry</a>
+      <a class="{{ 'active' if request.endpoint == 'audit' }}" href="{{ url_for('audit') }}"><span class="nav-symbol">A</span>Audit log</a>
+      <a href="{{ url_for('bulk_upload') }}"><span class="nav-symbol">UP</span>Bulk upload</a>
+    </nav>
+    <form class="sidebar-signout" method="post" action="{{ url_for('logout') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="signed-in-user"><span>{{ (session.get('username') or 'A')[:1]|upper }}</span><div><strong>{{ session.get('username') or 'Admin' }}</strong><small>Full access</small></div></div>
+      <button class="button button-ghost button-small" type="submit">Sign out</button>
+    </form>
+  </header>
+  {% endif %}
+
+  <main class="{% if session.get('authenticated') %}page-shell{% else %}auth-shell{% endif %}">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-stack" aria-live="polite">
+          {% for category, message in messages %}
+            <div class="flash flash-{{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  {% if session.get('authenticated') %}
+  <footer class="footer">
+    <span>ARFSA internal monitoring system</span>
+    <span>Data changes are recorded in the audit log</span>
+  </footer>
+  {% endif %}
+  <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}FH dashboard - ARFSA{% endblock %}
+{% block content %}
+<section class="dashboard-hero fh-hero">
+  <div class="hero-copy">
+    <p class="eyebrow hero-eyebrow">Family health participation monitoring</p>
+    <h1>FH attendance dashboard</h1>
+    <p>Session attendance and delivery coverage, separated correctly between care groups and school clubs.</p>
+  </div>
+  <div class="hero-actions">
+    <div class="hero-meta"><span class="live-dot"></span><div><strong>Live attendance view</strong><small>A = attended, X = absent, blank = not recorded</small></div></div>
+    <a class="button button-secondary" href="{{ url_for('dashboard_pdf', dataset='care', **filters) }}">Download PDF</a>
+  </div>
+</section>
+
+<div class="dashboard-controls">
+  <nav class="dataset-tabs" aria-label="Dataset selection">{% for key, label in dataset_labels.items() %}<a class="{{ 'active' if dataset == key }}" href="{{ url_for('dashboard', dataset=key) }}">{{ label }}</a>{% endfor %}</nav>
+  <span class="scope-label">{{ summary.total_records }} FH participants · {{ summary.groups }} groups and schools</span>
+</div>
+
+<form class="filter-panel fh-filter-panel" method="get">
+  <input type="hidden" name="dataset" value="care">
+  <label>Programme category<select name="category"><option value="">All categories</option>{% for item in options.categories %}<option {{ 'selected' if filters.category == item }}>{{ item }}</option>{% endfor %}</select></label>
+  <label>Group or school<select name="group" data-enhanced-select data-select-label="Group or school" data-search-placeholder="Search groups and schools"><option value="">All groups and schools</option>{% for item in options.groups %}<option {{ 'selected' if filters.group == item }}>{{ item }}</option>{% endfor %}</select></label>
+  <label>Gender<select name="gender"><option value="">All</option>{% for item in options.genders %}<option {{ 'selected' if filters.gender == item }}>{{ item }}</option>{% endfor %}</select></label>
+  <label>Age group<select name="age"><option value="">All</option>{% for item in options.ages %}<option {{ 'selected' if filters.age == item }}>{{ item }}</option>{% endfor %}</select></label>
+  <label>Participation status<select name="status"><option value="">All statuses</option>{% for value, label in [('active','Active'),('dropped','Dropped'),('reached','Attended at least once'),('module_completed','Completed a module'),('in_progress','Module in progress'),('not_started','No attendance recorded')] %}<option value="{{ value }}" {{ 'selected' if filters.status == value }}>{{ label }}</option>{% endfor %}</select></label>
+  <div class="filter-actions"><button class="button button-primary" type="submit">Apply</button><a class="button button-ghost" href="{{ url_for('dashboard', dataset='care') }}">Reset</a></div>
+</form>
+
+<section class="kpi-grid fh-kpi-grid" aria-label="FH key metrics">
+  {% for label, value, detail, tone, icon in [
+    ('Participants', summary.total_records, summary.active ~ ' active · ' ~ summary.dropped ~ ' dropped', 'teal', 'FH'),
+    ('Reached', summary.reached, 'Attended at least one applicable session', 'green', 'A'),
+    ('Attendance rate', summary.attendance_rate ~ '%', 'Attended among recorded A/X entries', 'blue', '%'),
+    ('Absences', summary.absent, 'Recorded X marks across applicable sessions', 'orange', 'X'),
+    ('Groups and schools', summary.groups, summary.care_participants ~ ' care · ' ~ summary.school_participants ~ ' school', 'teal', 'GR'),
+    ('Completed modules', summary.completed_modules, summary.in_progress_modules ~ ' participant-modules in progress', 'green', 'OK')
+  ] %}
+  <article class="kpi-card tone-{{ tone }}"><div class="kpi-top"><span class="kpi-icon">{{ icon }}</span><span class="kpi-label">{{ label }}</span></div><strong>{{ value }}</strong><small>{{ detail }}</small></article>
+  {% endfor %}
+</section>
+
+<section class="fh-track-grid" aria-label="Programme tracks">
+  {% for track in track_stats %}<article class="panel fh-track-card track-{{ track.track }}">
+    <div class="fh-track-heading"><div><p class="eyebrow">{{ track.label }}</p><h2>{{ track.participants }} participants</h2><span>{{ track.groups }} groups · {{ track.reached }} reached</span></div><strong>{{ track.attendance_rate }}%</strong></div>
+    <div class="fh-track-progress"><span style="width: {{ track.attendance_rate }}%"></span></div>
+    <div class="fh-track-meta"><span><b>{{ track.attended }}</b> attended entries</span><span><b>{{ track.absent }}</b> absences</span></div>
+  </article>{% endfor %}
+</section>
+
+<section class="analytics-grid fh-analytics-grid">
+  <article class="panel fh-profile-panel">
+    <div class="panel-heading"><div><p class="eyebrow">Participant structure</p><h2>Who FH is reaching</h2></div></div>
+    <div class="fh-profile-columns"><section><h3>Category</h3><div class="bar-list">{% set category_max = category_counts.values()|max if category_counts else 1 %}{% for label, count in category_counts.items() %}<div class="bar-row"><span>{{ label }}</span><div><i style="width: {{ (count / category_max * 100)|round }}%"></i></div><strong>{{ count }}</strong></div>{% endfor %}</div></section><section><h3>Engagement</h3><div class="bar-list">{% set engagement_max = engagement_counts.values()|max if engagement_counts else 1 %}{% for label, count in engagement_counts.items() %}<div class="bar-row"><span>{{ label }}</span><div><i style="width: {{ (count / engagement_max * 100)|round }}%"></i></div><strong>{{ count }}</strong></div>{% endfor %}</div></section></div>
+  </article>
+
+  <article class="panel panel-topics fh-module-panel">
+    <div class="panel-heading"><div><p class="eyebrow">Module delivery</p><h2>Coverage by FH module</h2><p>Completion and attendance use only the participants eligible for that module.</p></div><span class="badge">{{ modules|length }} modules</span></div>
+    <div class="table-wrap"><table class="data-table fh-module-table"><thead><tr><th>Track / module</th><th>Sessions</th><th>Eligible</th><th>Reached</th><th>Completed</th><th>Attendance</th></tr></thead><tbody>{% for item in modules %}<tr>
+      <td><span class="fh-track-tag {{ item.track }}">{{ item.track_label }}</span><strong>{{ item.label }}</strong></td><td>{{ item.sessions }}</td><td>{{ item.participants }}</td><td>{{ item.started }} <small>{{ item.reach_rate }}%</small></td><td>{{ item.completed }} <small>{{ item.completion_rate }}%</small></td><td><div class="coverage-cell"><div class="progress"><span style="width: {{ item.attendance_rate }}%"></span></div><small>{{ item.attendance_rate }}%</small></div></td>
+    </tr>{% endfor %}</tbody></table></div>
+  </article>
+
+  <article class="panel panel-topics fh-group-panel">
+    <div class="panel-heading"><div><p class="eyebrow">Delivery units</p><h2>Groups and schools</h2><p>Largest groups first. Apply a group filter above for a focused view.</p></div><span class="badge">{{ group_stats|length }} units</span></div>
+    <div class="table-wrap"><table class="data-table"><thead><tr><th>Group or school</th><th>Track</th><th>Participants</th><th>Reached</th><th>Attendance</th></tr></thead><tbody>{% for item in group_stats %}<tr><td><strong>{{ item.group_name }}</strong></td><td>{{ item.track }}</td><td>{{ item.participants }}</td><td>{{ item.reached }}</td><td>{{ item.attendance_rate }}%</td></tr>{% else %}<tr><td colspan="5" class="empty-cell">No FH groups match the current filters.</td></tr>{% endfor %}</tbody></table></div>
+  </article>
+</section>
+{% endblock %}

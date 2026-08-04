@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}{{ cbf_name }} - ARFSA{% endblock %}
+{% block content %}
+<div class="breadcrumbs"><a href="{{ url_for('cbf_list') }}">CBFs</a><span>/</span><span>{{ cbf_name }}</span></div>
+<div class="page-heading"><div><p class="eyebrow">CBF progress dashboard</p><h1>{{ cbf_name }}</h1><p class="lead">{{ groups|length }} farmer groups mapped to this facilitator.</p></div>
+  <div class="button-row cbf-report-actions"><a class="button button-ghost" href="{{ url_for('cbf_pdf', cbf_name=cbf_name, **filters) }}">Current view PDF</a><a class="button button-secondary" href="{{ url_for('cbf_all_pdf', cbf_name=cbf_name) }}">Print all groups</a><a class="button button-primary" href="{{ url_for('cbf_all_zip', cbf_name=cbf_name) }}">Separate PDFs (.zip)</a></div></div>
+
+<form class="filter-panel compact" method="get">
+  <label>Farmer group<select name="group"><option value="">All groups</option>{% for item in groups %}<option {{ 'selected' if filters.group == item }}>{{ item }}</option>{% endfor %}</select></label>
+  <label>Gender<select name="gender"><option value="">All</option>{% for item in options.genders %}<option {{ 'selected' if filters.gender == item }}>{{ item }}</option>{% endfor %}</select></label>
+  <label>Age group<select name="age"><option value="">All</option>{% for item in options.ages %}<option {{ 'selected' if filters.age == item }}>{{ item }}</option>{% endfor %}</select></label>
+  <label>From<input type="date" name="date_from" value="{{ filters.date_from }}"></label><label>To<input type="date" name="date_to" value="{{ filters.date_to }}"></label>
+  <div class="filter-actions"><button class="button button-primary" type="submit">Apply</button><a class="button button-ghost" href="{{ url_for('cbf_detail', cbf_name=cbf_name) }}">Clear</a></div>
+</form>
+
+<section class="kpi-grid kpi-grid-five">
+  {% for label, value, tone in [('People in groups',summary.total_records,'teal'),('Received training',summary.trained,'green'),('Confirmed adoption',summary.confirmed,'green'),('Follow-up needed',summary.followup,'orange'),('Training needed',summary.retraining,'orange')] %}
+  <article class="kpi-card tone-{{ tone }}"><p>{{ label }}</p><strong>{{ value }}</strong></article>{% endfor %}
+</section>
+
+<section class="dashboard-grid">
+  <article class="panel panel-wide"><div class="panel-heading"><div><p class="eyebrow">Workbook dashboard, improved</p><h2>Topic progress</h2></div></div>
+    <div class="table-wrap"><table class="data-table"><thead><tr><th>Topic</th><th>Follow-up</th><th>Centralized / refresher</th><th>Received</th><th>Confirmed</th><th>Coverage</th></tr></thead>
+    <tbody>{% for item in topics %}<tr><td><strong>{{ item.topic }}</strong></td><td>{{ item.followup }}</td><td>{{ item.retraining }}</td><td>{{ item.trained }}</td><td>{{ item.confirmed }}</td><td>{{ item.rate }}%</td></tr>{% endfor %}</tbody></table></div>
+  </article>
+  <article class="panel"><div class="panel-heading"><div><p class="eyebrow">Mapped groups</p><h2>Farmer groups</h2></div></div><ul class="clean-list">{% for group in groups %}<li>{{ group }}</li>{% endfor %}</ul></article>
+  <article class="panel panel-wide"><div class="panel-heading"><div><p class="eyebrow">Action list</p><h2>Farmer priorities</h2></div><span class="badge">{{ priorities|length }} people</span></div>
+    <div class="table-wrap"><table class="data-table"><thead><tr><th>Farmer</th><th>Farmer ID</th><th>Group</th><th>Follow-ups</th><th>Training needs</th></tr></thead><tbody>
+      {% for item in priorities %}<tr><td><a href="{{ url_for('record_detail', record_id=item.id) }}"><strong>{{ item.name }}</strong></a></td><td>{{ item.uid }}</td><td>{{ item.group_name }}</td><td><span class="status-pill warning">{{ item.followup }}</span></td><td><span class="status-pill danger">{{ item.retraining }}</span></td></tr>
+      {% else %}<tr><td colspan="5" class="empty-cell">No current action needs.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </article>
+</section>
+{% endblock %}
