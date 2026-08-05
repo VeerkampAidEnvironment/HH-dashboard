@@ -13,9 +13,9 @@
       <label>Username<input name="username" minlength="3" maxlength="50" pattern="[A-Za-z0-9._-]+" required placeholder="e.g. nelly.chebet"></label>
       <label>Temporary password<input type="password" name="password" autocomplete="new-password" required></label>
       <fieldset class="account-access-options"><legend>Account access</legend>
-        <label class="checkbox-label"><input type="radio" name="access_scope" value="full" checked><span><strong>Full system access</strong><small>Dashboards, farmer data and data entry.</small></span></label>
+        <label class="checkbox-label"><input type="radio" name="access_scope" value="full" checked><span><strong>Full system access</strong><small>Dashboards, beneficiary data and data entry.</small></span></label>
         <label class="checkbox-label"><input type="radio" name="access_scope" value="ae_user"><span><strong>AE User</strong><small>Everything except data entry, bulk upload and user accounts.</small></span></label>
-        <label class="checkbox-label"><input type="radio" name="access_scope" value="fh_dashboard"><span><strong>FH dashboard only</strong><small>Can only view the FH dashboard and read-only FH farmer records.</small></span></label>
+        <label class="checkbox-label"><input type="radio" name="access_scope" value="fh_dashboard"><span><strong>FH dashboard only</strong><small>Can only view the FH dashboard and read-only FH beneficiary records.</small></span></label>
       </fieldset>
       <label class="checkbox-label"><input type="checkbox" name="is_admin" value="1"><span>Administrator — can create, reset and deactivate accounts</span></label>
       <button class="button button-primary" type="submit">Create account</button>

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Identity review - ARFSA{% endblock %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">Cross-dataset identity</p><h1>Farmer match review</h1><p class="lead">Compare complete AE and FH source profiles before assigning the same stable farmer ID.</p></div></div>
+<div class="page-heading"><div><p class="eyebrow">Cross-dataset identity</p><h1>Beneficiary match review</h1><p class="lead">Compare complete AE and FH source profiles before assigning the same stable beneficiary ID.</p></div></div>
 <div class="notice info">Every populated source field is available inside each comparison. Conflicting phone numbers remain excluded from candidate generation.</div>
 <nav class="dataset-tabs" aria-label="Match status">{% for value, label in [('pending','Needs review'),('confirmed','Confirmed'),('rejected','Rejected'),('all','All')] %}<a class="{{ 'active' if match_status == value }}" href="{{ url_for('matches', status=value) }}">{{ label }}</a>{% endfor %}</nav>
 <p class="muted match-count">{{ total }} matches · Page {{ page }} of {{ pages }}</p>
@@ -33,14 +33,14 @@
         <section class="comparison-profile">
           <header><div><span class="profile-source">AE</span><h3>{{ match.training_name }}</h3><small>Source row {{ match.training_source_row or 'manual record' }}</small></div><a href="{{ url_for('record_detail', record_id=match.training_record_id) }}">Open full record</a></header>
           {% for section, fields in match.training_sections.items() %}
-          <section class="comparison-section"><h4>{{ section }}</h4><dl>{% for field in fields %}<div><dt>{{ field.label }}</dt><dd>{{ field.value }}</dd></div>{% endfor %}</dl></section>
+          <section class="comparison-section"><h4>{{ section|beneficiaryterm }}</h4><dl>{% for field in fields %}<div><dt>{{ field.label|beneficiaryterm }}</dt><dd>{{ field.value }}</dd></div>{% endfor %}</dl></section>
           {% else %}<p class="muted">No populated AE source fields.</p>{% endfor %}
         </section>
 
         <section class="comparison-profile">
           <header><div><span class="profile-source profile-source-fh">FH</span><h3>{{ match.care_name }}</h3><small>Source row {{ match.care_source_row or 'manual record' }}</small></div><a href="{{ url_for('record_detail', record_id=match.care_record_id) }}">Open full record</a></header>
           {% for section, fields in match.care_sections.items() %}
-          <section class="comparison-section"><h4>{{ section }}</h4><dl>{% for field in fields %}<div><dt>{{ field.label }}</dt><dd>{{ field.value }}</dd></div>{% endfor %}</dl></section>
+          <section class="comparison-section"><h4>{{ section|beneficiaryterm }}</h4><dl>{% for field in fields %}<div><dt>{{ field.label|beneficiaryterm }}</dt><dd>{{ field.value }}</dd></div>{% endfor %}</dl></section>
           {% else %}<p class="muted">No populated FH source fields.</p>{% endfor %}
         </section>
       </div>

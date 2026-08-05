@@ -22,6 +22,7 @@ there is currently no corresponding AE farmer-training topic.
 from __future__ import annotations
 
 from copy import deepcopy
+import re
 
 
 QUESTIONNAIRE_VERSION = "2026-08-05"
@@ -61,6 +62,21 @@ NEXT_ACTION_OPTIONS = [
 
 
 def q(source_id, question_id, label, question_type="text", options=None, *, help_text=""):
+    def beneficiary_wording(value):
+        if not isinstance(value, str):
+            return value
+        value = re.sub(r"\bFarmers\b", "Beneficiaries", value)
+        value = re.sub(r"\bfarmers\b", "beneficiaries", value)
+        value = re.sub(r"\bFarmer\b", "Beneficiary", value)
+        return re.sub(r"\bfarmer\b", "beneficiary", value)
+
+    label = beneficiary_wording(label)
+    help_text = beneficiary_wording(help_text)
+    options = [
+        {key: beneficiary_wording(item) for key, item in option.items()} if isinstance(option, dict)
+        else beneficiary_wording(option)
+        for option in (options or [])
+    ]
     item = {
         "source_id": source_id,
         "id": question_id,

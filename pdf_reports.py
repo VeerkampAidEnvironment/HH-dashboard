@@ -111,7 +111,7 @@ def _header_footer(canvas, doc):
 def _kpi_table(summary, styles):
     cards = [
         ("Source records", summary.get("total_records", 0)),
-        ("Unique farmers", summary.get("unique_farmers", 0)),
+        ("Unique beneficiaries", summary.get("unique_farmers", 0)),
         ("Received training", summary.get("trained", 0)),
         ("Confirmed adoption", summary.get("confirmed", 0)),
         ("Follow-up needed", summary.get("followup", 0)),
@@ -187,12 +187,12 @@ def build_dashboard_pdf(title: str, summary: dict, topics: list[dict], filters: 
     ]
     if groups:
         story.extend([
-            Paragraph("Farmer groups", styles["section"]),
+            Paragraph("Beneficiary groups", styles["section"]),
             Paragraph(", ".join(groups), styles["body"]),
         ])
     if priorities:
-        story.extend([PageBreak(), Paragraph("Farmer follow-up priorities", styles["section"])])
-        rows = [["Farmer", "Farmer ID", "Follow-ups", "Training needs", "Group"]]
+        story.extend([PageBreak(), Paragraph("Beneficiary follow-up priorities", styles["section"])])
+        rows = [["Beneficiary", "Beneficiary ID", "Follow-ups", "Training needs", "Group"]]
         for item in priorities:
             rows.append([
                 Paragraph(str(item.get("name", "")), styles["small"]),
@@ -255,7 +255,7 @@ def _cbf_topic_summary(report, styles):
     by_topic = {item["topic"]: item for item in report["topics"]}
     rows = [[
         Paragraph("Topic", styles["matrix_header"]),
-        Paragraph("Active farmers", styles["matrix_header"]),
+        Paragraph("Active beneficiaries", styles["matrix_header"]),
         Paragraph("Follow-up (FU)", styles["matrix_header"]),
         Paragraph("Training (CT)", styles["matrix_header"]),
         Paragraph("Completed", styles["matrix_header"]),
@@ -287,8 +287,8 @@ def _cbf_topic_summary(report, styles):
 
 def _cbf_farmer_matrix(report, styles):
     header = [
-        Paragraph("Farmer", styles["matrix_header"]),
-        Paragraph("Farmer ID", styles["matrix_header"]),
+        Paragraph("Beneficiary", styles["matrix_header"]),
+        Paragraph("Beneficiary ID", styles["matrix_header"]),
         Paragraph("Actions", styles["matrix_header"]),
     ] + [Paragraph(short, styles["matrix_header"]) for short, _topic in TOPIC_COLUMNS]
     rows = [header]
@@ -364,7 +364,7 @@ def build_cbf_report_pdf(cbf_name: str, group_reports: list[dict]) -> bytes:
                 styles["subtitle"],
             ),
             _metric_cards([
-                ("Active farmers", report["active_count"], "Dropouts excluded from actions"),
+                ("Active beneficiaries", report["active_count"], "Dropouts excluded from actions"),
                 ("Need follow-up", report["fu_people"], "At least one FU topic"),
                 ("Need training", report["ct_people"], "Centralized or refresher"),
                 ("Action entries", report["action_entries"], "FU and CT topic assignments"),
@@ -372,7 +372,7 @@ def build_cbf_report_pdf(cbf_name: str, group_reports: list[dict]) -> bytes:
             ], styles),
             Paragraph("Action summary by topic", styles["section"]),
             _cbf_topic_summary(report, styles),
-            Paragraph("Farmer action matrix", styles["section"]),
+            Paragraph("Beneficiary action matrix", styles["section"]),
             Paragraph(
                 "<b>FU</b> = follow-up required &nbsp;&nbsp; <b>CT</b> = centralized or refresher training required &nbsp;&nbsp; "
                 "<b>OK</b> = confirmed &nbsp;&nbsp; <b>WAIT</b> = follow-up window not yet due &nbsp;&nbsp; <b>RV</b> = review data",

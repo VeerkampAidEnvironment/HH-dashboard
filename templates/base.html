@@ -20,11 +20,11 @@
       <a class="{{ 'active' if request.endpoint == 'dashboard' }}" href="{{ url_for('dashboard', dataset='care') if session.get('access_scope') == 'fh_dashboard' else url_for('dashboard') }}"><span class="nav-symbol">D</span>Dashboard</a>
       <span class="nav-section">Database</span>
       {% if session.get('access_scope') == 'fh_dashboard' %}
-      <a class="{{ 'active' if request.endpoint in ['record_list', 'record_detail'] }}" href="{{ url_for('record_list', dataset='care') }}"><span class="nav-symbol">F</span>Farmers</a>
+      <a class="{{ 'active' if request.endpoint in ['record_list', 'record_detail'] }}" href="{{ url_for('record_list', dataset='care') }}"><span class="nav-symbol">B</span>Beneficiaries</a>
       <span class="nav-disabled" aria-disabled="true"><span class="nav-symbol">C</span>CBFs</span>
       <span class="nav-disabled" aria-disabled="true"><span class="nav-symbol">ID</span>Identity review</span>
       {% else %}
-      <a class="{{ 'active' if request.endpoint in ['record_list', 'record_detail', 'record_new', 'record_edit'] }}" href="{{ url_for('record_list') }}"><span class="nav-symbol">F</span>Farmers</a>
+      <a class="{{ 'active' if request.endpoint in ['record_list', 'record_detail', 'record_new', 'record_edit'] }}" href="{{ url_for('record_list') }}"><span class="nav-symbol">B</span>Beneficiaries</a>
       <a class="{{ 'active' if request.endpoint in ['cbf_list', 'cbf_detail'] }}" href="{{ url_for('cbf_list') }}"><span class="nav-symbol">C</span>CBFs</a>
       <a class="{{ 'active' if request.endpoint == 'matches' }}" href="{{ url_for('matches') }}"><span class="nav-symbol">ID</span>Identity review</a>
       {% endif %}

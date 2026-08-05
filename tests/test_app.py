@@ -289,7 +289,7 @@ class ApplicationTest(unittest.TestCase):
             self.assertEqual(data["pair_count"], 0)
 
         response = self.client.get("/dashboard?dataset=combined")
-        self.assertIn(b"No manually confirmed cross-project farmers yet", response.data)
+        self.assertIn(b"No manually confirmed cross-project beneficiaries yet", response.data)
 
     def test_cbf_centralized_training_entry(self):
         with self.app.app_context():
@@ -360,7 +360,7 @@ class ApplicationTest(unittest.TestCase):
         response = self.client.get("/data-entry", query_string={"cbf": cbf})
         self.assertIn(b'type="radio" name="mode" value="centralized"', response.data)
         self.assertIn(b'data-auto-submit="selection"', response.data)
-        self.assertIn(b"Farmer group", response.data)
+        self.assertIn(b"Beneficiary group", response.data)
 
         response = self.client.get(
             "/data-entry", query_string={"cbf": cbf, "mode": "centralized"}
@@ -516,7 +516,7 @@ class ApplicationTest(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 302)
         dashboard = self.client.get("/dashboard?dataset=combined")
-        self.assertNotIn(b"No manually confirmed cross-project farmers yet", dashboard.data)
+        self.assertNotIn(b"No manually confirmed cross-project beneficiaries yet", dashboard.data)
         self.assertIn(b"Cross-project correlations", dashboard.data)
 
 

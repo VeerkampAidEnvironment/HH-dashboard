@@ -103,6 +103,14 @@ def create_app(test_config=None):
     def pct(value):
         return f"{float(value or 0):.0f}%"
 
+    @app.template_filter("beneficiaryterm")
+    def beneficiaryterm(value):
+        text = str(value or "")
+        text = re.sub(r"\bFarmers\b", "Beneficiaries", text)
+        text = re.sub(r"\bfarmers\b", "beneficiaries", text)
+        text = re.sub(r"\bFarmer\b", "Beneficiary", text)
+        return re.sub(r"\bfarmer\b", "beneficiary", text)
+
     @app.context_processor
     def inject_globals():
         return {
@@ -892,7 +900,7 @@ def save_centralized_training(connection, cbf_name: str, values, username: str):
             (record_id, cbf_name, topic),
         ).fetchone()
         if not record:
-            return False, "A selected farmer is no longer eligible for centralized training. Reload the page."
+            return False, "A selected beneficiary is no longer eligible for centralized training. Reload the page."
         if record_id not in records_to_update:
             records_to_update[record_id] = {"record": record, "raw": json.loads(record["raw_data"])}
         raw = records_to_update[record_id]["raw"]
@@ -927,12 +935,12 @@ def save_centralized_training(connection, cbf_name: str, values, username: str):
     selected_topics = sorted({topic for _, topic in requested_entries})
     log_audit(
         connection, username, "field_entry", "field_event", event_id,
-        f"Recorded centralized training for {len(records_to_update)} farmers",
+        f"Recorded centralized training for {len(records_to_update)} beneficiaries",
         {"cbf": cbf_name, "date": event_date, "location": location, "topics": selected_topics,
          "attendance_entries": len(requested_entries)},
     )
     connection.commit()
-    return True, f"Centralized training saved for {len(records_to_update)} farmers."
+    return True, f"Centralized training saved for {len(records_to_update)} beneficiaries."
 
 
 def save_followup(connection, cbf_name: str, values, username: str):
@@ -946,7 +954,7 @@ def save_followup(connection, cbf_name: str, values, username: str):
         (record_id, cbf_name),
     ).fetchone() if record_id else None
     if not record:
-        return False, "Select a farmer belonging to this CBF."
+        return False, "Select a beneficiary belonging to this CBF."
 
     raw = json.loads(record["raw_data"])
     response_entries = []

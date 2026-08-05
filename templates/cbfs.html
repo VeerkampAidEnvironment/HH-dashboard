@@ -1,12 +1,11 @@
 {% extends "base.html" %}
 {% block title %}CBFs - ARFSA{% endblock %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">Community-based facilitators</p><h1>CBF progress pages</h1><p class="lead">Open a facilitator page for group coverage, farmer priorities and a branded PDF report.</p></div></div>
+<div class="page-heading"><div><p class="eyebrow">Community-based facilitators</p><h1>CBF progress pages</h1><p class="lead">Open a facilitator page for group coverage, beneficiary priorities and a branded PDF report.</p></div></div>
 <section class="card-grid">
   {% for cbf in cbfs %}<a class="entity-card" href="{{ url_for('cbf_detail', cbf_name=cbf.cbf_name) }}">
     <span class="avatar">{{ cbf.cbf_name[:2] }}</span><div><h2>{{ cbf.cbf_name }}</h2><p>{{ cbf.group_count }} groups</p></div>
-    <div class="entity-stats"><span><strong>{{ cbf.participant_count }}</strong> records</span><span><strong>{{ cbf.farmer_count }}</strong> farmers</span></div><b aria-hidden="true">→</b>
+    <div class="entity-stats"><span><strong>{{ cbf.participant_count }}</strong> records</span><span><strong>{{ cbf.farmer_count }}</strong> beneficiaries</span></div><b aria-hidden="true">→</b>
   </a>{% else %}<div class="empty-state"><h2>No CBF mappings found</h2><p>CBF mappings are imported from the macro workbook.</p></div>{% endfor %}
 </section>
 {% endblock %}
-

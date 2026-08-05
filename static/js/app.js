@@ -179,7 +179,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (selectedCbfs.size) details.push(`${selectedCbfs.size} selected ${selectedCbfs.size === 1 ? "CBF" : "CBFs"}`);
       if (stackMode !== "total") details.push(`stacked by ${stackMode === "topic" ? "training type" : stackMode}`);
       if (description) description.textContent = `Showing ${details.join(" · ")} by month.`;
-      if (result) result.textContent = `${allFarmers.size} farmers`;
+      if (result) result.textContent = `${allFarmers.size} beneficiaries`;
       const colorFor = (index) => index < 8
         ? ["#087880", "#EFB417", "#77aa2a", "#3b82b8", "#8668b1", "#d66a4a", "#36a9a3", "#6d7d80"][index]
         : `hsl(${(174 + index * 47) % 360} 52% 46%)`;
