@@ -9,6 +9,7 @@ import math
 import os
 import re
 import secrets
+import sqlite3
 import zipfile
 from collections import Counter, defaultdict
 from datetime import date
@@ -28,6 +29,7 @@ from flask import (
     session,
     url_for,
 )
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from db import get_db, get_setting, init_db, log_audit, register_db, set_setting, utc_now
 from questionnaire import NEXT_ACTION_OPTIONS, QUESTIONNAIRE_VERSION, questionnaire_for_topic
@@ -47,6 +49,30 @@ DATASET_LABELS = {
 }
 
 
+def ensure_bootstrap_user(connection):
+    """Create the first administrator once, using deployment environment values."""
+    if connection.execute("SELECT 1 FROM users LIMIT 1").fetchone():
+        return
+    username = os.getenv("ARFSA_USERNAME", "admin").strip() or "admin"
+    password = os.getenv("ARFSA_PASSWORD", "change-me-now")
+    now = utc_now()
+    connection.execute(
+        """INSERT INTO users(username, display_name, password_hash, is_active, is_admin, created_at, updated_at)
+           VALUES(?, ?, ?, 1, 1, ?, ?)""",
+        (username, "Administrator", generate_password_hash(password), now, now),
+    )
+    connection.commit()
+
+
+def admin_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("is_admin"):
+            abort(403)
+        return view(*args, **kwargs)
+    return wrapped
+
+
 def create_app(test_config=None):
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_mapping(
@@ -63,6 +89,7 @@ def create_app(test_config=None):
     with app.app_context():
         connection = get_db()
         init_db(connection)
+        ensure_bootstrap_user(connection)
         ensure_care_structure(connection)
 
     @app.template_filter("datefmt")
@@ -88,6 +115,22 @@ def create_app(test_config=None):
         allowed = {"login", "static", "health"}
         if request.endpoint not in allowed and not session.get("authenticated"):
             return redirect(url_for("login", next=request.full_path.rstrip("?")))
+        if request.endpoint not in allowed and session.get("authenticated"):
+            user = get_db().execute(
+                "SELECT id, username, display_name, is_active, is_admin, access_scope FROM users WHERE id=?",
+                (session.get("user_id"),),
+            ).fetchone()
+            if not user or not user["is_active"]:
+                session.clear()
+                flash("Your account is no longer active.", "error")
+                return redirect(url_for("login"))
+            session["username"] = user["username"]
+            session["display_name"] = user["display_name"]
+            session["is_admin"] = bool(user["is_admin"])
+            session["access_scope"] = user["access_scope"]
+            fh_allowed = {"dashboard", "record_list", "record_detail", "logout"}
+            if user["access_scope"] == "fh_dashboard" and request.endpoint not in fh_allowed:
+                abort(403)
         if request.method in {"POST", "PUT", "PATCH", "DELETE"} and request.endpoint != "login":
             supplied = request.form.get("csrf_token") or request.headers.get("X-CSRF-Token")
             if not supplied or not hmac.compare_digest(str(supplied), str(csrf_token())):
@@ -100,24 +143,36 @@ def create_app(test_config=None):
     @app.route("/login", methods=["GET", "POST"])
     def login():
         if request.method == "POST":
-            username = request.form.get("username", "")
+            username = request.form.get("username", "").strip()
             password = request.form.get("password", "")
-            expected_username = os.getenv("ARFSA_USERNAME", "admin")
-            expected_password = os.getenv("ARFSA_PASSWORD", "change-me-now")
-            valid = hmac.compare_digest(username, expected_username) and hmac.compare_digest(password, expected_password)
+            user = get_db().execute(
+                "SELECT * FROM users WHERE username=? COLLATE NOCASE", (username,)
+            ).fetchone()
+            valid = bool(user and user["is_active"] and check_password_hash(user["password_hash"], password))
             if valid:
                 session.clear()
                 session["authenticated"] = True
-                session["username"] = username
+                session["user_id"] = user["id"]
+                session["username"] = user["username"]
+                session["display_name"] = user["display_name"]
+                session["is_admin"] = bool(user["is_admin"])
+                session["access_scope"] = user["access_scope"]
                 session["csrf_token"] = secrets.token_urlsafe(32)
+                get_db().execute("UPDATE users SET last_login_at=? WHERE id=?", (utc_now(), user["id"]))
+                get_db().commit()
                 destination = request.args.get("next", "")
+                if user["access_scope"] == "fh_dashboard":
+                    destination = url_for("dashboard", dataset="care")
                 if not is_safe_redirect(destination):
                     destination = url_for("dashboard")
                 return redirect(destination)
             flash("The username or password is incorrect.", "error")
-        return render_template("login.html", default_credentials=(
-            not os.getenv("ARFSA_USERNAME") and not os.getenv("ARFSA_PASSWORD")
-        ))
+        default_user = get_db().execute("SELECT password_hash FROM users WHERE username='admin'").fetchone()
+        default_credentials = bool(
+            not os.getenv("ARFSA_USERNAME") and not os.getenv("ARFSA_PASSWORD") and default_user
+            and check_password_hash(default_user["password_hash"], "change-me-now")
+        )
+        return render_template("login.html", default_credentials=default_credentials)
 
     @app.post("/logout")
     def logout():
@@ -128,7 +183,7 @@ def create_app(test_config=None):
     @app.get("/dashboard")
     def dashboard():
         refresh_time_sensitive_statuses(get_db())
-        dataset = valid_dataset(request.args.get("dataset", "combined"))
+        dataset = "care" if session.get("access_scope") == "fh_dashboard" else valid_dataset(request.args.get("dataset", "combined"))
         filters = read_dashboard_filters(request.args)
         if dataset == "combined":
             data = build_interaction_data(get_db(), filters)
@@ -247,7 +302,7 @@ def create_app(test_config=None):
     @app.get("/records")
     def record_list():
         connection = get_db()
-        dataset = request.args.get("dataset", "training")
+        dataset = "care" if session.get("access_scope") == "fh_dashboard" else request.args.get("dataset", "training")
         if dataset not in {"training", "care"}:
             dataset = "training"
         query = request.args.get("q", "").strip()
@@ -287,6 +342,8 @@ def create_app(test_config=None):
         ).fetchone()
         if not record:
             abort(404)
+        if session.get("access_scope") == "fh_dashboard" and record["dataset"] != "care":
+            abort(403)
         statuses = connection.execute(
             "SELECT * FROM topic_statuses WHERE record_id=? ORDER BY topic", (record_id,)
         ).fetchall()
@@ -294,6 +351,8 @@ def create_app(test_config=None):
             "SELECT id, dataset, name, group_name FROM records WHERE farmer_id=? AND id<>? ORDER BY dataset",
             (record["farmer_id"], record_id),
         ).fetchall()
+        if session.get("access_scope") == "fh_dashboard":
+            related = []
         raw = json.loads(record["raw_data"])
         schema = get_schema(connection, record["dataset"])
         sections = group_raw_fields(schema, raw)
@@ -516,8 +575,105 @@ def create_app(test_config=None):
 
     @app.get("/audit")
     def audit():
-        rows = get_db().execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT 500").fetchall()
-        return render_template("audit.html", entries=rows)
+        selected_user = request.args.get("user", "").strip()
+        connection = get_db()
+        if selected_user:
+            rows = connection.execute(
+                """SELECT a.*, COALESCE(u.display_name, a.username) AS display_name
+                   FROM audit_log a LEFT JOIN users u ON u.username=a.username COLLATE NOCASE
+                   WHERE a.username=? COLLATE NOCASE ORDER BY a.id DESC LIMIT 500""",
+                (selected_user,),
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                """SELECT a.*, COALESCE(u.display_name, a.username) AS display_name
+                   FROM audit_log a LEFT JOIN users u ON u.username=a.username COLLATE NOCASE
+                   ORDER BY a.id DESC LIMIT 500"""
+            ).fetchall()
+        usernames = connection.execute(
+            """SELECT DISTINCT a.username, COALESCE(u.display_name, a.username) AS display_name
+               FROM audit_log a LEFT JOIN users u ON u.username=a.username COLLATE NOCASE
+               ORDER BY display_name COLLATE NOCASE"""
+        ).fetchall()
+        return render_template("audit.html", entries=rows, usernames=usernames, selected_user=selected_user)
+
+    @app.route("/users", methods=["GET", "POST"])
+    @admin_required
+    def users():
+        connection = get_db()
+        if request.method == "POST":
+            username = request.form.get("username", "").strip()
+            display_name = request.form.get("display_name", "").strip()
+            password = request.form.get("password", "")
+            if not re.fullmatch(r"[A-Za-z0-9._-]{3,50}", username):
+                flash("Username must be 3–50 characters and use only letters, numbers, dots, dashes or underscores.", "error")
+            elif not display_name or len(display_name) > 80:
+                flash("Enter a display name of no more than 80 characters.", "error")
+            elif not password:
+                flash("Enter a temporary password.", "error")
+            else:
+                now = utc_now()
+                try:
+                    access_scope = request.form.get("access_scope", "full")
+                    if access_scope not in {"full", "fh_dashboard"}:
+                        access_scope = "full"
+                    is_admin = 1 if request.form.get("is_admin") and access_scope == "full" else 0
+                    cursor = connection.execute(
+                        """INSERT INTO users(username, display_name, password_hash, is_active, is_admin, access_scope, created_at, updated_at)
+                           VALUES(?, ?, ?, 1, ?, ?, ?, ?)""",
+                        (username, display_name, generate_password_hash(password),
+                         is_admin, access_scope, now, now),
+                    )
+                    log_audit(connection, session["username"], "create", "user", cursor.lastrowid,
+                              f"Created account {username}")
+                    connection.commit()
+                    flash(f"Account for {display_name} was created.", "success")
+                    return redirect(url_for("users"))
+                except sqlite3.IntegrityError:
+                    connection.rollback()
+                    flash("That username is already in use.", "error")
+        rows = connection.execute("SELECT * FROM users ORDER BY display_name COLLATE NOCASE").fetchall()
+        return render_template("users.html", users=rows)
+
+    @app.post("/users/<int:user_id>/password")
+    @admin_required
+    def user_password(user_id):
+        password = request.form.get("password", "")
+        if not password:
+            flash("Enter a new password.", "error")
+            return redirect(url_for("users"))
+        connection = get_db()
+        user = connection.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+        if not user:
+            abort(404)
+        connection.execute(
+            "UPDATE users SET password_hash=?, updated_at=? WHERE id=?",
+            (generate_password_hash(password), utc_now(), user_id),
+        )
+        log_audit(connection, session["username"], "reset_password", "user", user_id,
+                  f"Reset password for {user['username']}")
+        connection.commit()
+        flash(f"Password for {user['display_name']} was updated.", "success")
+        return redirect(url_for("users"))
+
+    @app.post("/users/<int:user_id>/status")
+    @admin_required
+    def user_status(user_id):
+        connection = get_db()
+        user = connection.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+        if not user:
+            abort(404)
+        if user_id == session.get("user_id"):
+            flash("You cannot deactivate your own account.", "error")
+            return redirect(url_for("users"))
+        new_status = 0 if user["is_active"] else 1
+        connection.execute("UPDATE users SET is_active=?, updated_at=? WHERE id=?", (new_status, utc_now(), user_id))
+        action = "activate" if new_status else "deactivate"
+        log_audit(connection, session["username"], action, "user", user_id,
+                  f"{action.title()}d account {user['username']}")
+        connection.commit()
+        flash(f"{user['display_name']} is now {'active' if new_status else 'inactive'}.", "success")
+        return redirect(url_for("users"))
 
     @app.route("/data-entry", methods=["GET", "POST"])
     def data_entry():

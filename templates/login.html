@@ -8,7 +8,7 @@
   </div>
   <p class="lead">Sign in to manage farmer records, training progress, follow-ups and CBF reports.</p>
   {% if default_credentials %}
-  <div class="notice warning"><strong>Development login:</strong> admin / change-me-now. Configure environment credentials before deployment.</div>
+  <div class="notice warning"><strong>Development login:</strong> admin / change-me-now. Sign in and replace this password before deployment.</div>
   {% endif %}
   <form method="post" class="form-stack">
     <label>Username<input name="username" autocomplete="username" required autofocus></label>
@@ -17,4 +17,3 @@
   </form>
 </section>
 {% endblock %}
-

@@ -151,6 +151,81 @@ class ApplicationTest(unittest.TestCase):
         audit = self.client.get("/audit")
         self.assertIn(b"Created TEST FARMER", audit.data)
 
+    def test_individual_user_login_and_audit_attribution(self):
+        response = self.client.post(
+            "/users",
+            data={
+                "csrf_token": self.csrf(),
+                "display_name": "Field Officer Test",
+                "username": "field.officer.test",
+                "password": "secure-test-password",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        with self.app.app_context():
+            from db import get_db
+
+            user = get_db().execute(
+                "SELECT * FROM users WHERE username='field.officer.test'"
+            ).fetchone()
+            self.assertIsNotNone(user)
+            self.assertNotEqual(user["password_hash"], "secure-test-password")
+
+        self.client.post("/logout", data={"csrf_token": self.csrf()})
+        login = self.client.post(
+            "/login", data={"username": "field.officer.test", "password": "secure-test-password"}
+        )
+        self.assertEqual(login.status_code, 302)
+        self.assertEqual(self.client.get("/users").status_code, 403)
+        created = self.client.post(
+            "/records/new",
+            data={
+                "csrf_token": self.csrf(), "dataset": "training",
+                "field__Name": "ATTRIBUTION TEST FARMER", "field__Sex": "F",
+            },
+        )
+        self.assertEqual(created.status_code, 302)
+        with self.app.app_context():
+            from db import get_db
+
+            audit_user = get_db().execute(
+                "SELECT username FROM audit_log WHERE summary='Created ATTRIBUTION TEST FARMER' ORDER BY id DESC LIMIT 1"
+            ).fetchone()[0]
+            self.assertEqual(audit_user, "field.officer.test")
+
+    def test_fh_dashboard_account_is_restricted_and_read_only(self):
+        created = self.client.post(
+            "/users",
+            data={
+                "csrf_token": self.csrf(), "display_name": "FH Viewer Test",
+                "username": "fh.viewer.test", "password": "fh",
+                "access_scope": "fh_dashboard",
+            },
+        )
+        self.assertEqual(created.status_code, 302)
+        self.client.post("/logout", data={"csrf_token": self.csrf()})
+        login = self.client.post("/login", data={"username": "fh.viewer.test", "password": "fh"})
+        self.assertEqual(login.status_code, 302)
+
+        dashboard = self.client.get("/dashboard?dataset=training")
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertIn(b"FH attendance dashboard", dashboard.data)
+        self.assertIn(b"nav-disabled", dashboard.data)
+
+        farmers = self.client.get("/records?dataset=training")
+        self.assertEqual(farmers.status_code, 200)
+        self.assertIn(b"FH data", farmers.data)
+        self.assertIn(b"Read only", farmers.data)
+        with self.app.app_context():
+            from db import get_db
+
+            care_id = get_db().execute("SELECT id FROM records WHERE dataset='care' LIMIT 1").fetchone()[0]
+            training_id = get_db().execute("SELECT id FROM records WHERE dataset='training' LIMIT 1").fetchone()[0]
+        self.assertEqual(self.client.get(f"/records/{care_id}").status_code, 200)
+        self.assertEqual(self.client.get(f"/records/{training_id}").status_code, 403)
+        self.assertEqual(self.client.get(f"/records/{care_id}/edit").status_code, 403)
+        self.assertEqual(self.client.get("/audit").status_code, 403)
+
     def test_csrf_blocks_mutation(self):
         with self.app.app_context():
             from db import get_db

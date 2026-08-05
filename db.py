@@ -23,6 +23,19 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    display_name TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    is_admin INTEGER NOT NULL DEFAULT 0,
+    access_scope TEXT NOT NULL DEFAULT 'full' CHECK(access_scope IN ('full', 'fh_dashboard')),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    last_login_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS farmers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     uid TEXT UNIQUE,
@@ -131,6 +144,7 @@ CREATE INDEX IF NOT EXISTS idx_topic_status ON topic_statuses(status_code);
 CREATE INDEX IF NOT EXISTS idx_field_events_cbf ON field_events(cbf_name, event_date);
 CREATE INDEX IF NOT EXISTS idx_field_entries_event ON field_event_entries(event_id);
 CREATE INDEX IF NOT EXISTS idx_followup_responses_record ON followup_responses(record_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_users_active ON users(is_active, username);
 """
 
 
@@ -172,6 +186,9 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
     owns_connection = connection is None
     connection = connection or connect()
     connection.executescript(SCHEMA)
+    user_columns = {row["name"] for row in connection.execute("PRAGMA table_info(users)").fetchall()}
+    if "access_scope" not in user_columns:
+        connection.execute("ALTER TABLE users ADD COLUMN access_scope TEXT NOT NULL DEFAULT 'full'")
     connection.commit()
     if owns_connection:
         connection.close()

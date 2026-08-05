@@ -14,7 +14,7 @@
 </section>
 
 <div class="dashboard-controls">
-  <nav class="dataset-tabs" aria-label="Dataset selection">{% for key, label in dataset_labels.items() %}<a class="{{ 'active' if dataset == key }}" href="{{ url_for('dashboard', dataset=key) }}">{{ label }}</a>{% endfor %}</nav>
+  <nav class="dataset-tabs" aria-label="Dataset selection">{% for key, label in dataset_labels.items() %}{% if session.get('access_scope') == 'fh_dashboard' and key != 'care' %}<span class="dataset-tab-disabled" aria-disabled="true">{{ label }}</span>{% else %}<a class="{{ 'active' if dataset == key }}" href="{{ url_for('dashboard', dataset=key) }}">{{ label }}</a>{% endif %}{% endfor %}</nav>
   <span class="scope-label">{{ summary.total_records }} FH participants · {{ summary.groups }} groups and schools</span>
 </div>
 

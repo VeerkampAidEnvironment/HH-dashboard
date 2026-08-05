@@ -1,4 +1,22 @@
 {% extends "base.html" %}
 {% block title %}Audit log - ARFSA{% endblock %}
-{% block content %}<div class="page-heading"><div><p class="eyebrow">Accountability</p><h1>Audit log</h1><p class="lead">The latest 500 additions, edits, archives, restores and identity decisions.</p></div></div><div class="panel"><div class="table-wrap"><table class="data-table"><thead><tr><th>When</th><th>User</th><th>Action</th><th>Entity</th><th>Summary</th></tr></thead><tbody>{% for item in entries %}<tr><td>{{ item.occurred_at[:19].replace('T',' ') }}</td><td>{{ item.username }}</td><td><span class="status-pill">{{ item.action }}</span></td><td>{{ item.entity_type }} #{{ item.entity_id or '-' }}</td><td>{{ item.summary }}</td></tr>{% else %}<tr><td colspan="5" class="empty-cell">No changes have been made in the web application yet.</td></tr>{% endfor %}</tbody></table></div></div>{% endblock %}
-
+{% block content %}
+<div class="page-heading">
+  <div><p class="eyebrow">Accountability</p><h1>Audit log</h1><p class="lead">The latest additions, edits, archives, training entries, follow-ups and identity decisions, attributed to the signed-in user.</p></div>
+</div>
+<div class="panel audit-filter-panel">
+  <form method="get" class="compact-filter-form">
+    <label>User
+      <select name="user" onchange="this.form.submit()">
+        <option value="">All users</option>
+        {% for user in usernames %}<option value="{{ user.username }}" {{ 'selected' if selected_user == user.username }}>{{ user.display_name }}</option>{% endfor %}
+      </select>
+    </label>
+    {% if selected_user %}<a class="button button-ghost button-small" href="{{ url_for('audit') }}">Clear filter</a>{% endif %}
+  </form>
+</div>
+<div class="panel"><div class="table-wrap"><table class="data-table">
+  <thead><tr><th>When</th><th>User</th><th>Action</th><th>Entity</th><th>Summary</th></tr></thead>
+  <tbody>{% for item in entries %}<tr><td>{{ item.occurred_at[:19].replace('T',' ') }}</td><td><strong>{{ item.display_name }}</strong></td><td><span class="status-pill">{{ item.action }}</span></td><td>{{ item.entity_type }} #{{ item.entity_id or '-' }}</td><td>{{ item.summary }}</td></tr>{% else %}<tr><td colspan="5" class="empty-cell">No changes match this selection.</td></tr>{% endfor %}</tbody>
+</table></div></div>
+{% endblock %}

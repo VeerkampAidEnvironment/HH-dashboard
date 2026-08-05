@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}User accounts - ARFSA{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div><p class="eyebrow">Administration</p><h1>User accounts</h1><p class="lead">Give every team member a personal login so their database changes are recorded under their own username.</p></div>
+</div>
+<div class="user-management-grid">
+  <section class="panel user-create-panel">
+    <div class="panel-heading"><div><p class="eyebrow">New login</p><h2>Create an account</h2></div></div>
+    <form method="post" class="form-stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>Full name<input name="display_name" maxlength="80" required placeholder="e.g. Nelly Chebet"></label>
+      <label>Username<input name="username" minlength="3" maxlength="50" pattern="[A-Za-z0-9._-]+" required placeholder="e.g. nelly.chebet"></label>
+      <label>Temporary password<input type="password" name="password" autocomplete="new-password" required></label>
+      <fieldset class="account-access-options"><legend>Account access</legend>
+        <label class="checkbox-label"><input type="radio" name="access_scope" value="full" checked><span><strong>Full system access</strong><small>Dashboards, farmer data and data entry.</small></span></label>
+        <label class="checkbox-label"><input type="radio" name="access_scope" value="fh_dashboard"><span><strong>FH dashboard only</strong><small>Can only view the FH dashboard; all other options are disabled.</small></span></label>
+      </fieldset>
+      <label class="checkbox-label"><input type="checkbox" name="is_admin" value="1"><span>Administrator — can create, reset and deactivate accounts</span></label>
+      <button class="button button-primary" type="submit">Create account</button>
+    </form>
+  </section>
+  <section class="panel">
+    <div class="panel-heading"><div><p class="eyebrow">Access</p><h2>Existing accounts</h2></div><span class="status-pill">{{ users|length }} users</span></div>
+    <div class="user-account-list">
+      {% for user in users %}
+      <article class="user-account-card {{ 'user-inactive' if not user.is_active }}">
+        <div class="user-account-summary">
+          <span class="user-avatar">{{ user.display_name[:1]|upper }}</span>
+          <div><h3>{{ user.display_name }}</h3><p>@{{ user.username }} · {{ 'FH dashboard only' if user.access_scope == 'fh_dashboard' else 'Administrator' if user.is_admin else 'Full access' }}</p><small>{{ 'Active' if user.is_active else 'Inactive' }}{% if user.last_login_at %} · Last login {{ user.last_login_at[:16].replace('T', ' ') }}{% else %} · Never signed in{% endif %}</small></div>
+        </div>
+        <div class="user-row-actions">
+          <form method="post" action="{{ url_for('user_password', user_id=user.id) }}" class="password-reset-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="password" name="password" required autocomplete="new-password" aria-label="New password for {{ user.display_name }}" placeholder="New password">
+            <button class="button button-secondary button-small" type="submit">Reset password</button>
+          </form>
+          <form method="post" action="{{ url_for('user_status', user_id=user.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="button button-ghost button-small" type="submit" {% if user.id == session.get('user_id') %}disabled title="You cannot deactivate yourself"{% endif %}>{{ 'Deactivate' if user.is_active else 'Activate' }}</button>
+          </form>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+{% endblock %}

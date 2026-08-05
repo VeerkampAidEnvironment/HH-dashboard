@@ -10,26 +10,39 @@
 <body class="{% if not session.get('authenticated') %}auth-page{% endif %}">
   {% if session.get('authenticated') %}
   <header class="topbar">
-    <a class="brand" href="{{ url_for('dashboard') }}" aria-label="ARFSA home">
+    <a class="brand" href="{{ url_for('dashboard', dataset='care') if session.get('access_scope') == 'fh_dashboard' else url_for('dashboard') }}" aria-label="ARFSA home">
       <span class="brand-mark">AE</span>
       <span><strong>ARFSA</strong><small>Training Database</small></span>
     </a>
     <button class="menu-toggle" type="button" data-menu-toggle aria-label="Open navigation">Menu</button>
     <nav class="main-nav" data-main-nav aria-label="Primary navigation">
       <span class="nav-section">Overview</span>
-      <a class="{{ 'active' if request.endpoint == 'dashboard' }}" href="{{ url_for('dashboard') }}"><span class="nav-symbol">D</span>Dashboard</a>
+      <a class="{{ 'active' if request.endpoint == 'dashboard' }}" href="{{ url_for('dashboard', dataset='care') if session.get('access_scope') == 'fh_dashboard' else url_for('dashboard') }}"><span class="nav-symbol">D</span>Dashboard</a>
       <span class="nav-section">Database</span>
+      {% if session.get('access_scope') == 'fh_dashboard' %}
+      <a class="{{ 'active' if request.endpoint in ['record_list', 'record_detail'] }}" href="{{ url_for('record_list', dataset='care') }}"><span class="nav-symbol">F</span>Farmers</a>
+      <span class="nav-disabled" aria-disabled="true"><span class="nav-symbol">C</span>CBFs</span>
+      <span class="nav-disabled" aria-disabled="true"><span class="nav-symbol">ID</span>Identity review</span>
+      {% else %}
       <a class="{{ 'active' if request.endpoint in ['record_list', 'record_detail', 'record_new', 'record_edit'] }}" href="{{ url_for('record_list') }}"><span class="nav-symbol">F</span>Farmers</a>
       <a class="{{ 'active' if request.endpoint in ['cbf_list', 'cbf_detail'] }}" href="{{ url_for('cbf_list') }}"><span class="nav-symbol">C</span>CBFs</a>
       <a class="{{ 'active' if request.endpoint == 'matches' }}" href="{{ url_for('matches') }}"><span class="nav-symbol">ID</span>Identity review</a>
+      {% endif %}
       <span class="nav-section">Administration</span>
+      {% if session.get('access_scope') == 'fh_dashboard' %}
+      <span class="nav-disabled" aria-disabled="true"><span class="nav-symbol">+</span>Data entry</span>
+      <span class="nav-disabled" aria-disabled="true"><span class="nav-symbol">A</span>Audit log</span>
+      <span class="nav-disabled" aria-disabled="true"><span class="nav-symbol">UP</span>Bulk upload</span>
+      {% else %}
       <a class="{{ 'active' if request.endpoint == 'data_entry' }}" href="{{ url_for('data_entry') }}"><span class="nav-symbol">+</span>Data entry</a>
       <a class="{{ 'active' if request.endpoint == 'audit' }}" href="{{ url_for('audit') }}"><span class="nav-symbol">A</span>Audit log</a>
       <a href="{{ url_for('bulk_upload') }}"><span class="nav-symbol">UP</span>Bulk upload</a>
+      {% if session.get('is_admin') %}<a class="{{ 'active' if request.endpoint in ['users', 'user_password', 'user_status'] }}" href="{{ url_for('users') }}"><span class="nav-symbol">U</span>User accounts</a>{% endif %}
+      {% endif %}
     </nav>
     <form class="sidebar-signout" method="post" action="{{ url_for('logout') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="signed-in-user"><span>{{ (session.get('username') or 'A')[:1]|upper }}</span><div><strong>{{ session.get('username') or 'Admin' }}</strong><small>Full access</small></div></div>
+      <div class="signed-in-user"><span>{{ (session.get('display_name') or session.get('username') or 'A')[:1]|upper }}</span><div><strong>{{ session.get('display_name') or session.get('username') or 'Admin' }}</strong><small>{{ 'FH dashboard only' if session.get('access_scope') == 'fh_dashboard' else 'Administrator' if session.get('is_admin') else 'Full access' }}</small></div></div>
       <button class="button button-ghost button-small" type="submit">Sign out</button>
     </form>
   </header>
