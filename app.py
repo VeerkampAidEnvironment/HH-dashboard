@@ -30,6 +30,7 @@ from flask import (
 )
 
 from db import get_db, get_setting, init_db, log_audit, register_db, set_setting, utc_now
+from questionnaire import NEXT_ACTION_OPTIONS, QUESTIONNAIRE_VERSION, questionnaire_for_topic
 from training import (
     TRAINING_TOPICS,
     care_module_fields,
@@ -296,9 +297,36 @@ def create_app(test_config=None):
         raw = json.loads(record["raw_data"])
         schema = get_schema(connection, record["dataset"])
         sections = group_raw_fields(schema, raw)
+        followup_history = []
+        if record["dataset"] == "training":
+            next_action_labels = {item["value"]: item["label"] for item in NEXT_ACTION_OPTIONS}
+            response_rows = connection.execute(
+                """SELECT fr.*, e.event_date, e.created_by
+                   FROM followup_responses fr
+                   JOIN field_event_entries fee ON fee.id=fr.event_entry_id
+                   JOIN field_events e ON e.id=fee.event_id
+                   WHERE fr.record_id=? ORDER BY e.event_date DESC, fr.id DESC""",
+                (record_id,),
+            ).fetchall()
+            for response_row in response_rows:
+                response = dict(response_row)
+                stored_answers = json.loads(response["answers"])
+                response["answers"] = [
+                    {
+                        **item,
+                        "display_answer": ", ".join(str(value) for value in item["answer"])
+                        if isinstance(item["answer"], list)
+                        else (str(item["answer"]) if item["answer"] not in {None, ""} else "-"),
+                    }
+                    for item in stored_answers.values()
+                ]
+                response["next_action_label"] = next_action_labels.get(
+                    response["next_action"], response["next_action"]
+                )
+                followup_history.append(response)
         return render_template(
             "record_detail.html", record=record, statuses=statuses, related=related,
-            raw=raw, sections=sections,
+            raw=raw, sections=sections, followup_history=followup_history,
         )
 
     @app.route("/records/new", methods=["GET", "POST"])
@@ -494,6 +522,7 @@ def create_app(test_config=None):
     @app.route("/data-entry", methods=["GET", "POST"])
     def data_entry():
         connection = get_db()
+        refresh_time_sensitive_statuses(connection)
         cbfs = [row[0] for row in connection.execute(
             """SELECT DISTINCT cbf_name FROM records
                WHERE dataset='training' AND archived_at IS NULL
@@ -506,12 +535,25 @@ def create_app(test_config=None):
         if mode not in {"centralized", "followup"}:
             mode = ""
 
-        venues = [row[0] for row in connection.execute(
+        venue_values = [row[0] for row in connection.execute(
             """SELECT DISTINCT TRIM(location) AS venue FROM field_events
                WHERE event_type='centralized'
-               AND TRIM(COALESCE(location,''))<>''
-               ORDER BY venue COLLATE NOCASE"""
+               AND TRIM(COALESCE(location,''))<>''"""
         ).fetchall()]
+        village_where = [
+            "dataset='training'", "archived_at IS NULL",
+            "TRIM(COALESCE(village,''))<>''",
+        ]
+        village_params = []
+        if selected_cbf:
+            village_where.append("cbf_name=?")
+            village_params.append(selected_cbf)
+        venue_values.extend(row[0] for row in connection.execute(
+            f"SELECT DISTINCT TRIM(village) AS venue FROM records WHERE {' AND '.join(village_where)}",
+            village_params,
+        ).fetchall())
+        # Keep the saved spelling for display while ignoring duplicate casing.
+        venues = sorted({venue.casefold(): venue for venue in venue_values}.values(), key=str.casefold)
         selected_venue = request.values.get("location_choice", "").strip()
         new_venue = request.values.get("location_new", "").strip()
         if selected_venue not in venues and selected_venue != "__new__":
@@ -555,7 +597,7 @@ def create_app(test_config=None):
                    FROM records r JOIN farmers f ON f.id=r.farmer_id
                    JOIN topic_statuses ts ON ts.record_id=r.id
                    WHERE r.dataset='training' AND r.archived_at IS NULL
-                   AND r.cbf_name=? AND ts.status_code='CT'
+                   AND r.cbf_name=? AND ts.status_code IN ('CT', 'RT')
                    ORDER BY ts.topic, r.group_name, r.name""",
                 (selected_cbf,),
             ).fetchall()
@@ -583,11 +625,15 @@ def create_app(test_config=None):
             ).fetchall()
             eligible_followup_ids = {row["id"] for row in followup_farmers}
             if selected_record_id in eligible_followup_ids:
-                followup_topics = connection.execute(
+                followup_rows = connection.execute(
                     """SELECT topic, status_label, last_activity_date FROM topic_statuses
                        WHERE record_id=? AND status_code='FU' ORDER BY topic""",
                     (selected_record_id,),
                 ).fetchall()
+                followup_topics = [
+                    {**dict(row), "questionnaire": questionnaire_for_topic(row["topic"])}
+                    for row in followup_rows
+                ]
             else:
                 selected_record_id = None
 
@@ -657,14 +703,24 @@ def save_centralized_training(connection, cbf_name: str, values, username: str):
         record = connection.execute(
             """SELECT r.* FROM records r JOIN topic_statuses ts ON ts.record_id=r.id
                WHERE r.id=? AND r.dataset='training' AND r.archived_at IS NULL
-               AND r.cbf_name=? AND ts.topic=? AND ts.status_code='CT'""",
+               AND r.cbf_name=? AND ts.topic=? AND ts.status_code IN ('CT', 'RT')""",
             (record_id, cbf_name, topic),
         ).fetchone()
         if not record:
             return False, "A selected farmer is no longer eligible for centralized training. Reload the page."
         if record_id not in records_to_update:
             records_to_update[record_id] = {"record": record, "raw": json.loads(record["raw_data"])}
-        records_to_update[record_id]["raw"][f"Training 1 - {topic}"] = event_date
+        raw = records_to_update[record_id]["raw"]
+        training_cycle = next(
+            (
+                number for number in range(1, 4)
+                if raw.get(f"Training {number} - {topic}") in {None, ""}
+            ),
+            None,
+        )
+        if training_cycle is None:
+            return False, f"No additional training cycle is available for {topic}."
+        raw[f"Training {training_cycle} - {topic}"] = event_date
 
     cursor = connection.execute(
         """INSERT INTO field_events(event_type, cbf_name, event_date, location, created_by, created_at)
@@ -708,46 +764,108 @@ def save_followup(connection, cbf_name: str, values, username: str):
         return False, "Select a farmer belonging to this CBF."
 
     raw = json.loads(record["raw_data"])
-    score_entries = []
+    response_entries = []
     topic_count = min(max(values.get("topic_count", 0, type=int), 0), len(TRAINING_TOPICS))
     for index in range(topic_count):
         topic = values.get(f"topic__{index}", "")
-        score_text = values.get(f"score__{index}", "").strip()
-        if not score_text:
-            continue
         if topic not in TRAINING_TOPICS:
             return False, "One of the submitted follow-up topics is invalid."
+        questionnaire = questionnaire_for_topic(topic)
+        answers = {}
+        has_any_answer = False
+        adoption_rate = None
+        next_action = ""
+        for question in questionnaire["questions"]:
+            field_name = f"answer__{index}__{question['id']}"
+            if question["type"] == "multi":
+                answer = [item.strip() for item in values.getlist(field_name) if item.strip()]
+                has_any_answer = has_any_answer or bool(answer)
+            else:
+                answer = values.get(field_name, "").strip()
+                has_any_answer = has_any_answer or bool(answer)
+
+            allowed_options = question.get("options", [])
+            allowed_values = {
+                option["value"] if isinstance(option, dict) else option
+                for option in allowed_options
+            }
+            submitted_values = answer if isinstance(answer, list) else ([answer] if answer else [])
+            if allowed_values and any(item not in allowed_values for item in submitted_values):
+                return False, f"An answer for {topic} is not valid. Reload the page and try again."
+            if question["type"] == "number" and answer:
+                parsed = parse_number(answer)
+                if parsed is None or parsed < 0:
+                    return False, f"Enter a valid non-negative number for {question['label']}."
+                answer = parsed
+            if question["type"] == "adoption_rate" and answer:
+                adoption_rate = parse_number(answer)
+                if adoption_rate is None or not 0 <= adoption_rate <= 100:
+                    return False, f"Enter an adoption rate between 0 and 100 for {topic}."
+                answer = adoption_rate
+            if question["type"] == "next_action":
+                next_action = answer
+            answers[question["id"]] = {
+                "source_id": question["source_id"],
+                "question": question["label"],
+                "answer": answer,
+            }
+
+        if not has_any_answer:
+            continue
+        if adoption_rate is None:
+            return False, f"Enter the adoption rate for {topic}."
+        if not next_action:
+            return False, f"Choose what should happen next for {topic}."
         due = connection.execute(
             "SELECT 1 FROM topic_statuses WHERE record_id=? AND topic=? AND status_code='FU'",
             (record_id, topic),
         ).fetchone()
         if not due:
             return False, f"{topic} is no longer due for follow-up. Reload the page."
-        score = parse_number(score_text)
-        if score is None or score < 0 or score > 100:
-            return False, f"Enter a score between 0 and 100 for {topic}."
         cycle = next((number for number in range(1, 4)
                       if raw.get(f"Training {number} - {topic}") not in {None, ""}
                       and raw.get(f"Follow up {number} - {topic}") in {None, ""}), None)
         if cycle is None:
-            return False, f"No open follow-up cycle was found for {topic}."
-        score_entries.append((topic, score, cycle))
-    if not score_entries:
-        return False, "Enter at least one follow-up score."
+            cycle = next((number for number in range(3, 0, -1)
+                          if raw.get(f"Training {number} - {topic}") not in {None, ""}), None)
+        if cycle is None:
+            return False, f"No training cycle was found for {topic}."
+        response_entries.append({
+            "topic": topic,
+            "score": adoption_rate,
+            "cycle": cycle,
+            "answers": answers,
+            "next_action": next_action,
+        })
+    if not response_entries:
+        return False, "Complete at least one follow-up questionnaire."
 
-    for topic, score, cycle in score_entries:
+    for entry in response_entries:
+        topic, score, cycle = entry["topic"], entry["score"], entry["cycle"]
         raw[f"Follow up {cycle} - {topic}"] = event_date
         raw[f"Follow up {cycle} score - {topic}"] = score
+        raw[f"Follow up {cycle} next action - {topic}"] = entry["next_action"]
     cursor = connection.execute(
         """INSERT INTO field_events(event_type, cbf_name, event_date, location, created_by, created_at)
            VALUES('followup', ?, ?, NULL, ?, ?)""",
         (cbf_name, event_date, username, utc_now()),
     )
     event_id = cursor.lastrowid
-    for topic, score, _cycle in score_entries:
-        connection.execute(
+    for entry in response_entries:
+        entry_cursor = connection.execute(
             "INSERT INTO field_event_entries(event_id, record_id, topic, score) VALUES(?, ?, ?, ?)",
-            (event_id, record_id, topic, score),
+            (event_id, record_id, entry["topic"], entry["score"]),
+        )
+        connection.execute(
+            """INSERT INTO followup_responses(
+                   event_entry_id, record_id, topic, training_cycle, questionnaire_version,
+                   answers, adoption_rate, next_action, created_at
+               ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                entry_cursor.lastrowid, record_id, entry["topic"], entry["cycle"],
+                QUESTIONNAIRE_VERSION, json.dumps(entry["answers"], ensure_ascii=False),
+                entry["score"], entry["next_action"], utc_now(),
+            ),
         )
     connection.execute(
         "UPDATE records SET raw_data=?, updated_at=? WHERE id=?",
@@ -758,7 +876,8 @@ def save_followup(connection, cbf_name: str, values, username: str):
         connection, username, "field_entry", "field_event", event_id,
         f"Recorded follow-up for {record['name']}",
         {"cbf": cbf_name, "date": event_date,
-         "scores": {topic: score for topic, score, _cycle in score_entries}},
+         "scores": {entry["topic"]: entry["score"] for entry in response_entries},
+         "next_actions": {entry["topic"]: entry["next_action"] for entry in response_entries}},
     )
     connection.commit()
     return True, f"Follow-up saved for {record['name']}."
@@ -1053,6 +1172,14 @@ def build_dashboard_data(connection, dataset: str, filters: dict[str, str]):
     followup_ids = ids_for(lambda item: item["followup_needed"], exclude_dropouts=True)
     retraining_ids = ids_for(lambda item: item["retraining_needed"], exclude_dropouts=True)
     waiting_ids = ids_for(lambda item: item["status_code"] == "WAIT", exclude_dropouts=True)
+    followup_actions = sum(
+        1 for status in statuses
+        if status["followup_needed"] and status["record_id"] not in dropped_ids
+    )
+    retraining_actions = sum(
+        1 for status in statuses
+        if status["retraining_needed"] and status["record_id"] not in dropped_ids
+    )
 
     summary = {
         "total_records": len(records),
@@ -1061,6 +1188,8 @@ def build_dashboard_data(connection, dataset: str, filters: dict[str, str]):
         "confirmed": len(confirmed_ids),
         "followup": len(followup_ids),
         "retraining": len(retraining_ids),
+        "followup_actions": followup_actions,
+        "retraining_actions": retraining_actions,
         "dropped": len({
             dashboard_unit(record["id"]) for record in records
             if "drop" in (record["record_status"] or "").lower()

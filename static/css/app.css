@@ -594,6 +594,37 @@ body { background: #eef2f3; }
 .followup-score-list small { margin-top: 3px; color: var(--muted); font-size: 8px; }
 .followup-score-list input { min-height: 36px; }
 .followup-submit { justify-content: flex-end; margin-top: 15px; }
+.questionnaire-topic-list { display: grid; gap: 12px; }
+.questionnaire-topic { overflow: hidden; border: 1px solid #d9e4e5; border-radius: 12px; background: white; }
+.questionnaire-topic[open] { border-color: #8ebfc2; box-shadow: 0 7px 20px rgba(18,47,50,.06); }
+.questionnaire-topic > summary { min-height: 62px; display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px 15px; cursor: pointer; list-style: none; background: linear-gradient(110deg, #fbfdfd, #f3f8f8); }
+.questionnaire-topic > summary::-webkit-details-marker { display: none; }
+.questionnaire-topic > summary > div { min-width: 0; display: flex; align-items: center; gap: 12px; }
+.questionnaire-topic > summary strong, .questionnaire-topic > summary small { display: block; }
+.questionnaire-topic > summary strong { color: #2d4144; font-size: 12px; }
+.questionnaire-topic > summary small { margin-top: 4px; overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.questionnaire-questions { display: grid; gap: 0; padding: 0 18px 18px; }
+.questionnaire-question { display: grid; grid-template-columns: minmax(240px, .9fr) minmax(300px, 1.25fr); align-items: start; gap: 24px; padding: 18px 3px; border-top: 1px solid #e6ecec; }
+.question-copy { display: grid; grid-template-columns: 40px 1fr; gap: 10px; }
+.question-copy > span { width: fit-content; min-width: 34px; padding: 4px 6px; border-radius: 6px; color: var(--ae-darkblue); background: var(--ae-darkblue-10); text-align: center; font-size: 8px; font-weight: 900; }
+.question-copy h3 { margin: 2px 0 0; color: #35474a; font-size: 10px; line-height: 1.45; }
+.question-copy p { margin: 5px 0 0; color: var(--muted); font-size: 8px; line-height: 1.45; }
+.questionnaire-question textarea, .questionnaire-question > input, .question-number input { width: 100%; min-height: 42px; border: 1px solid #bdcdcf; border-radius: 9px; background: white; font-size: 10px; }
+.questionnaire-question textarea { min-height: 82px; padding: 10px; resize: vertical; }
+.question-option-grid { max-height: 220px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; overflow-y: auto; padding: 2px; }
+.question-check { position: relative; min-width: 0; display: flex; cursor: pointer; }
+.question-check input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.question-check span { width: 100%; min-height: 36px; display: flex; align-items: center; padding: 7px 9px 7px 28px; border: 1px solid #d7e1e2; border-radius: 8px; color: #536366; background: #fbfdfd; font-size: 8px; line-height: 1.35; }
+.question-check span::before { position: absolute; left: 10px; width: 11px; height: 11px; border: 1px solid #9eb3b5; border-radius: 3px; background: white; content: ""; }
+.question-check input:checked + span { border-color: #75b5b9; color: #145e64; background: #edf8f8; box-shadow: inset 3px 0 0 var(--ae-darkblue); }
+.question-check input:checked + span::before { border-color: var(--ae-darkblue); background: var(--ae-darkblue); box-shadow: inset 0 0 0 2px white; }
+.questionnaire-switches { min-height: 42px; }
+.questionnaire-switches .switch-option > span { min-height: 36px; font-size: 8px; }
+.question-number { position: relative; max-width: 240px; }
+.question-number input { padding-right: 40px; font-size: 12px; font-weight: 800; }
+.question-number span { position: absolute; right: 14px; top: 50%; color: var(--ae-darkblue); transform: translateY(-50%); font-size: 12px; font-weight: 900; }
+.question-adoption_rate, .question-next_action { margin: 5px -8px 0; padding: 18px 11px; border: 1px solid rgba(239,180,23,.35); border-radius: 10px; background: #fffaf0; }
+.question-next_action { margin-top: 8px; border-color: rgba(8,120,128,.24); background: #f2f9f9; }
 .entry-history { margin-top: 28px; }
 
 @media (max-width: 1280px) {
@@ -653,6 +684,8 @@ body { background: #eef2f3; }
   .entry-workspace { padding: 17px; }
   .participant-checklist { grid-template-columns: 1fr; }
   .followup-score-list > div { grid-template-columns: 1fr; }
+  .questionnaire-question { grid-template-columns: 1fr; gap: 12px; }
+  .question-option-grid { grid-template-columns: 1fr; }
   .fh-track-grid, .fh-profile-columns { grid-template-columns: 1fr; }
   .fh-profile-columns section + section { padding: 20px 0 0; border-top: 1px solid #e3e9ea; border-left: 0; }
   .fh-profile-panel { grid-column: 1 / -1; }

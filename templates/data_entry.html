@@ -31,7 +31,7 @@
       <div class="venue-selector" data-venue-selector>
         <label>Meeting venue<select name="location_choice" required data-venue-select data-enhanced-select data-select-label="Meeting venue" data-search-placeholder="Search meeting venues"><option value="">Select a meeting venue</option>{% for venue in venues %}<option value="{{ venue }}" {{ 'selected' if selected_venue == venue }}>{{ venue }}</option>{% endfor %}<option value="__new__" {{ 'selected' if selected_venue == '__new__' }}>+ Add a new meeting venue</option></select></label>
         <label class="venue-new" data-new-venue-field {{ 'hidden' if selected_venue != '__new__' }}>New meeting venue<input type="text" name="location_new" value="{{ new_venue }}" placeholder="Enter village, venue or training centre" autocomplete="organization" {{ 'required' if selected_venue == '__new__' }} {{ 'disabled' if selected_venue != '__new__' }}></label>
-        <small class="venue-help">Previously used venues are available for quick selection.</small>
+        <small class="venue-help">Choose a known farmer village or a venue used in an earlier training, or add a new one.</small>
       </div>
     </div>
     <div class="topic-entry-list">
@@ -61,9 +61,36 @@
 
   {% if selected_record_id and followup_topics %}<form method="post" class="panel followup-score-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="cbf" value="{{ selected_cbf }}"><input type="hidden" name="mode" value="followup"><input type="hidden" name="group" value="{{ selected_group }}"><input type="hidden" name="event_date" value="{{ selected_event_date }}"><input type="hidden" name="record_id" value="{{ selected_record_id }}"><input type="hidden" name="topic_count" value="{{ followup_topics|length }}">
-    <div class="panel-heading"><div><p class="eyebrow">Scores</p><h2>Topics requiring follow-up</h2><p>Leave a score blank if that topic was not assessed during this visit.</p></div><span class="badge">0–100</span></div>
-    <div class="followup-score-list">{% for item in followup_topics %}<div><input type="hidden" name="topic__{{ loop.index0 }}" value="{{ item.topic }}"><div><strong>{{ item.topic }}</strong><small>Training activity: {{ item.last_activity_date|datefmt }}</small></div><label>Follow-up score<input type="number" name="score__{{ loop.index0 }}" min="0" max="100" step="0.1" placeholder="0–100"></label></div>{% endfor %}</div>
-    <div class="button-row followup-submit"><button class="button button-primary" type="submit">Save follow-up scores</button></div>
+    <div class="panel-heading"><div><p class="eyebrow">Follow-up questionnaire</p><h2>Topics requiring follow-up</h2><p>Open and complete each topic assessed during this visit. All entered answers are stored; the adoption rate is currently used as the final score.</p></div><span class="badge">Questionnaire</span></div>
+    <div class="questionnaire-topic-list">
+      {% for item in followup_topics %}{% set topic_index = loop.index0 %}
+      <details class="questionnaire-topic" {{ 'open' if loop.first }}>
+        <summary><div><span class="topic-number">{{ loop.index }}</span><div><strong>{{ item.questionnaire.title }}</strong><small>{{ item.topic }} · Section {{ item.questionnaire.source_section }} · Last activity {{ item.last_activity_date|datefmt }}</small></div></div><span class="badge">{{ item.questionnaire.questions|length }} questions</span></summary>
+        <input type="hidden" name="topic__{{ topic_index }}" value="{{ item.topic }}">
+        <div class="questionnaire-questions">
+          {% for question in item.questionnaire.questions %}{% set field_name = 'answer__' ~ topic_index ~ '__' ~ question.id %}
+          <section class="questionnaire-question question-{{ question.type }}">
+            <div class="question-copy"><span>{{ question.source_id }}</span><div><h3>{{ question.label }}</h3>{% if question.help %}<p>{{ question.help }}</p>{% endif %}</div></div>
+            {% if question.type == 'textarea' %}
+              <textarea name="{{ field_name }}" rows="3" placeholder="Enter observations or advice"></textarea>
+            {% elif question.type in ['number', 'adoption_rate'] %}
+              <div class="question-number"><input type="number" name="{{ field_name }}" min="0" {% if question.type == 'adoption_rate' %}max="100" step="0.1" placeholder="0–100"{% else %}step="any" placeholder="Enter number"{% endif %}>{% if question.type == 'adoption_rate' %}<span>%</span>{% endif %}</div>
+            {% elif question.type == 'multi' %}
+              <div class="question-option-grid">{% for option in question.options %}<label class="question-check"><input type="checkbox" name="{{ field_name }}" value="{{ option }}"><span>{{ option }}</span></label>{% endfor %}</div>
+            {% elif question.type in ['choice', 'next_action'] and question.options|length <= 6 %}
+              <div class="switch-group switch-group-wrap questionnaire-switches">{% for option in question.options %}{% set option_value = option.value if option is mapping else option %}{% set option_label = option.label if option is mapping else option %}<label class="switch-option"><input type="radio" name="{{ field_name }}" value="{{ option_value }}"><span>{{ option_label }}</span></label>{% endfor %}</div>
+            {% elif question.type in ['choice', 'next_action'] %}
+              <select name="{{ field_name }}" data-enhanced-select data-select-label="{{ question.label }}" data-search-placeholder="Search answers"><option value="">Select an answer</option>{% for option in question.options %}{% set option_value = option.value if option is mapping else option %}{% set option_label = option.label if option is mapping else option %}<option value="{{ option_value }}">{{ option_label }}</option>{% endfor %}</select>
+            {% else %}
+              <input type="text" name="{{ field_name }}" placeholder="Enter answer">
+            {% endif %}
+          </section>
+          {% endfor %}
+        </div>
+      </details>
+      {% endfor %}
+    </div>
+    <div class="button-row followup-submit"><button class="button button-primary" type="submit">Save completed questionnaires</button></div>
   </form>{% elif selected_record_id %}<div class="notice success">This farmer no longer has any topics requiring follow-up.</div>{% endif %}
 </section>
 {% endif %}

@@ -114,21 +114,22 @@ def training_topic_status(raw: dict[str, Any], topic: str, as_of: date | None = 
         training = parse_date(training_value)
         followup = parse_date(followup_value)
         score = parse_number(raw.get(f"Follow up {cycle} score - {topic}"))
+        next_action = str(raw.get(f"Follow up {cycle} next action - {topic}", "")).strip()
         if training:
             activity_dates.append(training)
         if followup:
             activity_dates.append(followup)
-        cycles.append((training, followup, score, training_present, followup_present))
+        cycles.append((training, followup, score, training_present, followup_present, next_action))
 
-    received = any(training_present for _, _, _, training_present, _ in cycles)
-    confirmed = any(score is not None and score > threshold for _, _, score, _, _ in cycles)
+    received = any(training_present for _, _, _, training_present, _, _ in cycles)
+    confirmed = any(score is not None and score >= threshold for _, _, score, _, _, _ in cycles)
     last_activity = max(activity_dates).isoformat() if activity_dates else None
 
     if not received:
         code = "CT"
     else:
         code = "REVIEW"
-        for index, (training, followup, score, training_present, followup_present) in enumerate(cycles):
+        for index, (training, followup, score, training_present, followup_present, next_action) in enumerate(cycles):
             if not training_present:
                 code = "CT" if index == 0 else "RT"
                 break
@@ -140,6 +141,21 @@ def training_topic_status(raw: dict[str, Any], topic: str, as_of: date | None = 
                 break
             if score is None:
                 code = "REVIEW"
+                break
+            if next_action == "ct":
+                if index == len(cycles) - 1 or not cycles[index + 1][3]:
+                    code = "RT"
+                    break
+                continue
+            if next_action in {"followup_1", "followup_3", "followup_6"}:
+                months_until_followup = int(next_action.rsplit("_", 1)[1])
+                if not followup:
+                    code = "REVIEW"
+                else:
+                    code = "WAIT" if as_of < add_months(followup, months_until_followup) else "FU"
+                break
+            if next_action == "none":
+                code = "COMPLETED"
                 break
             if score >= threshold:
                 code = "COMPLETED"

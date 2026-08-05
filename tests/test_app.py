@@ -114,6 +114,17 @@ class ApplicationTest(unittest.TestCase):
         self.assertIn(b"Sex by age", response.data)
         self.assertIn(b"Age distribution within each sex", response.data)
         self.assertIn(b"Sex distribution within each age group", response.data)
+        self.assertIn(b"follow-ups", response.data)
+        self.assertIn(b"CTs", response.data)
+
+        with self.app.app_context():
+            from app import build_dashboard_data
+            from db import get_db
+
+            filters = {key: "" for key in ("gender", "age", "cbf", "group", "date_from", "date_to", "status")}
+            data = build_dashboard_data(get_db(), "training", filters)
+            self.assertGreaterEqual(data["summary"]["followup_actions"], data["summary"]["followup"])
+            self.assertGreaterEqual(data["summary"]["retraining_actions"], data["summary"]["retraining"])
 
     def test_add_archive_restore_and_audit(self):
         response = self.client.post(
@@ -202,7 +213,16 @@ class ApplicationTest(unittest.TestCase):
         venue_page = self.client.get(
             "/data-entry", query_string={"cbf": eligible["cbf_name"], "mode": "centralized"}
         )
+        with self.app.app_context():
+            from db import get_db
+
+            known_village = get_db().execute(
+                """SELECT village FROM records WHERE dataset='training' AND cbf_name=?
+                   AND TRIM(COALESCE(village,''))<>'' LIMIT 1""",
+                (eligible["cbf_name"],),
+            ).fetchone()[0]
         self.assertIn(b'<option value="Test training venue"', venue_page.data)
+        self.assertIn(known_village.encode(), venue_page.data)
         self.assertIn(b'+ Add a new meeting venue', venue_page.data)
         self.assertIn(b'data-new-venue-field', venue_page.data)
 
@@ -247,12 +267,24 @@ class ApplicationTest(unittest.TestCase):
                    AND TRIM(r.cbf_name)<>'' AND ts.status_code='FU' LIMIT 1"""
             ).fetchone()
         self.assertIsNotNone(due)
+        questionnaire_page = self.client.get(
+            "/data-entry",
+            query_string={
+                "cbf": due["cbf_name"], "mode": "followup",
+                "event_date": date.today().isoformat(), "record_id": str(due["id"]),
+            },
+        )
+        self.assertIn(b"Follow-up questionnaire", questionnaire_page.data)
+        self.assertIn(b"Adoption rate", questionnaire_page.data)
+        self.assertIn(b"Centralized training (CT) needed", questionnaire_page.data)
         response = self.client.post(
             "/data-entry",
             data={
                 "csrf_token": self.csrf(), "cbf": due["cbf_name"], "mode": "followup",
                 "event_date": date.today().isoformat(), "record_id": str(due["id"]),
-                "topic_count": "1", "topic__0": due["topic"], "score__0": "55",
+                "topic_count": "1", "topic__0": due["topic"],
+                "answer__0__adoption_rate": "55",
+                "answer__0__next_action": "followup_1",
             },
         )
         self.assertEqual(response.status_code, 302)
@@ -266,6 +298,88 @@ class ApplicationTest(unittest.TestCase):
                 (due["id"], due["topic"]),
             ).fetchone()
             self.assertEqual(latest["score"], 55)
+            stored = connection.execute(
+                """SELECT adoption_rate, next_action, answers FROM followup_responses
+                   WHERE record_id=? AND topic=? ORDER BY id DESC LIMIT 1""",
+                (due["id"], due["topic"]),
+            ).fetchone()
+            self.assertEqual(stored["adoption_rate"], 55)
+            self.assertEqual(stored["next_action"], "followup_1")
+            self.assertEqual(json.loads(stored["answers"])["adoption_rate"]["answer"], 55)
+            status = connection.execute(
+                "SELECT status_code FROM topic_statuses WHERE record_id=? AND topic=?",
+                (due["id"], due["topic"]),
+            ).fetchone()[0]
+            self.assertEqual(status, "WAIT")
+
+    def test_followup_can_request_ct_and_new_ct_restarts_waiting_period(self):
+        with self.app.app_context():
+            from db import get_db
+
+            connection = get_db()
+            candidates = connection.execute(
+                """SELECT r.id, r.cbf_name, ts.topic, r.raw_data FROM records r
+                   JOIN topic_statuses ts ON ts.record_id=r.id
+                   WHERE r.dataset='training' AND r.archived_at IS NULL
+                   AND TRIM(r.cbf_name)<>'' AND ts.status_code='FU'"""
+            ).fetchall()
+            due = next(
+                row for row in candidates
+                if any(
+                    json.loads(row["raw_data"]).get(f"Training {cycle} - {row['topic']}") in {None, ""}
+                    for cycle in (2, 3)
+                )
+            )
+
+        followup = self.client.post(
+            "/data-entry",
+            data={
+                "csrf_token": self.csrf(), "cbf": due["cbf_name"], "mode": "followup",
+                "event_date": date.today().isoformat(), "record_id": str(due["id"]),
+                "topic_count": "1", "topic__0": due["topic"],
+                "answer__0__adoption_rate": "20", "answer__0__next_action": "ct",
+            },
+        )
+        self.assertEqual(followup.status_code, 302)
+        with self.app.app_context():
+            from db import get_db
+
+            status = get_db().execute(
+                "SELECT status_code FROM topic_statuses WHERE record_id=? AND topic=?",
+                (due["id"], due["topic"]),
+            ).fetchone()[0]
+            self.assertEqual(status, "RT")
+
+        retraining = self.client.post(
+            "/data-entry",
+            data={
+                "csrf_token": self.csrf(), "cbf": due["cbf_name"], "mode": "centralized",
+                "event_date": date.today().isoformat(), "location": "Cycle restart venue",
+                "topic_count": "1", "topic__0": due["topic"], "attendee__0": str(due["id"]),
+            },
+        )
+        self.assertEqual(retraining.status_code, 302)
+        with self.app.app_context():
+            from db import get_db
+
+            status = get_db().execute(
+                "SELECT status_code FROM topic_statuses WHERE record_id=? AND topic=?",
+                (due["id"], due["topic"]),
+            ).fetchone()[0]
+            self.assertEqual(status, "WAIT")
+
+    def test_selected_followup_interval_becomes_due_after_that_period(self):
+        from training import training_topic_status
+
+        topic = "Financial Literacy"
+        raw = {
+            f"Training 1 - {topic}": "2026-01-01",
+            f"Follow up 1 - {topic}": "2026-04-01",
+            f"Follow up 1 score - {topic}": 55,
+            f"Follow up 1 next action - {topic}": "followup_1",
+        }
+        self.assertEqual(training_topic_status(raw, topic, as_of=date(2026, 4, 30))["status_code"], "WAIT")
+        self.assertEqual(training_topic_status(raw, topic, as_of=date(2026, 5, 1))["status_code"], "FU")
 
     def test_identity_review_exposes_full_populated_profiles(self):
         response = self.client.get("/matches?status=pending")

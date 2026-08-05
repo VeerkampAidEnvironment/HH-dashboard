@@ -109,6 +109,19 @@ CREATE TABLE IF NOT EXISTS field_event_entries (
     UNIQUE(event_id, record_id, topic)
 );
 
+CREATE TABLE IF NOT EXISTS followup_responses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_entry_id INTEGER NOT NULL UNIQUE REFERENCES field_event_entries(id) ON DELETE CASCADE,
+    record_id INTEGER NOT NULL REFERENCES records(id),
+    topic TEXT NOT NULL,
+    training_cycle INTEGER NOT NULL,
+    questionnaire_version TEXT NOT NULL,
+    answers TEXT NOT NULL,
+    adoption_rate REAL NOT NULL,
+    next_action TEXT NOT NULL CHECK(next_action IN ('followup_1', 'followup_3', 'followup_6', 'ct', 'none')),
+    created_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_records_dataset ON records(dataset, archived_at);
 CREATE INDEX IF NOT EXISTS idx_records_farmer ON records(farmer_id);
 CREATE INDEX IF NOT EXISTS idx_records_cbf ON records(cbf_name);
@@ -117,6 +130,7 @@ CREATE INDEX IF NOT EXISTS idx_topic_record ON topic_statuses(record_id);
 CREATE INDEX IF NOT EXISTS idx_topic_status ON topic_statuses(status_code);
 CREATE INDEX IF NOT EXISTS idx_field_events_cbf ON field_events(cbf_name, event_date);
 CREATE INDEX IF NOT EXISTS idx_field_entries_event ON field_event_entries(event_id);
+CREATE INDEX IF NOT EXISTS idx_followup_responses_record ON followup_responses(record_id, created_at);
 """
 
 

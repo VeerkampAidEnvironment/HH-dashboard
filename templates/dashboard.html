@@ -47,8 +47,8 @@
     ('Unique farmers', summary.unique_farmers, 'Confirmed overlaps removed', 'blue', 'ID'),
     ('Received training', summary.trained, 'At least one attended topic', 'green', 'TR'),
     ('Confirmed adoption' if dataset == 'training' else 'Completed module' if dataset == 'care' else 'Verified completion', summary.confirmed, 'Verified against programme rules', 'green', 'OK'),
-    ('Follow-up needed', summary.followup, 'Currently due for action', 'orange', 'FU'),
-    ('Training needed', summary.retraining, 'New or refresher training', 'red', 'AE')
+    ('Follow-up needed', summary.followup, summary.followup ~ ' farmers · ' ~ summary.followup_actions ~ ' follow-ups', 'orange', 'FU'),
+    ('CTs needed', summary.retraining, summary.retraining ~ ' farmers · ' ~ summary.retraining_actions ~ ' CTs', 'red', 'AE')
   ] %}
   <article class="kpi-card tone-{{ tone }}">
     <div class="kpi-top"><span class="kpi-icon">{{ icon }}</span><span class="kpi-label">{{ label }}</span></div>
@@ -77,7 +77,7 @@
 
   <article class="panel panel-attention">
     <div class="panel-heading"><div><p class="eyebrow">Action centre</p><h2>Immediate priorities</h2></div><span class="badge badge-warm">{{ attention_total }} people</span></div>
-    <div class="attention-summary"><div><strong>{{ summary.followup }}</strong><span>Follow-ups due</span></div><div><strong>{{ summary.retraining }}</strong><span>Training needs</span></div><div><strong>{{ waiting_total }}</strong><span>In follow-up window</span></div></div>
+    <div class="attention-summary"><div><strong>{{ summary.followup }}</strong><span>{{ summary.followup }} farmers · {{ summary.followup_actions }} follow-ups</span></div><div><strong>{{ summary.retraining }}</strong><span>{{ summary.retraining }} farmers · {{ summary.retraining_actions }} CTs</span></div><div><strong>{{ waiting_total }}</strong><span>In follow-up window</span></div></div>
     <div class="focus-list">{% for item in action_topics %}<div><span>{{ item.topic }}</span><strong>{{ item.followup + item.retraining }}</strong><small>actions</small></div>{% else %}<p class="muted">No action topics match the current filters.</p>{% endfor %}</div>
   </article>
 
