@@ -113,6 +113,23 @@ class ApplicationTest(unittest.TestCase):
         self.assertIn(b"Age by sex", response.data)
         self.assertIn(b"Sex by age", response.data)
         self.assertIn(b"Age distribution within each sex", response.data)
+
+    def test_ae_training_activity_chart_has_editable_breakdowns(self):
+        response = self.client.get("/dashboard?dataset=training")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"data-activity-explorer", response.data)
+        self.assertIn(b"timeline-filter-deck", response.data)
+        self.assertIn(b"data-cbf-multiselect", response.data)
+        self.assertIn(b"data-activity-topic", response.data)
+        self.assertIn(b"data-activity-age", response.data)
+        self.assertIn(b"data-activity-stack-mode", response.data)
+        self.assertIn(b'data-value="activity">Activity</button>', response.data)
+        self.assertIn(b'data-value="topic">Training type</button>', response.data)
+        self.assertIn(b'data-value="cbf">CBF</button>', response.data)
+        self.assertNotIn(b'data-activity-group="status"', response.data)
+        self.assertIn(b'data-value="ct">CT</button>', response.data)
+        self.assertIn(b'data-value="fu">Follow-up</button>', response.data)
+        self.assertIn(b"over time", response.data)
         self.assertIn(b"Sex distribution within each age group", response.data)
         self.assertIn(b"follow-ups", response.data)
         self.assertIn(b"CTs", response.data)
@@ -225,6 +242,27 @@ class ApplicationTest(unittest.TestCase):
         self.assertEqual(self.client.get(f"/records/{training_id}").status_code, 403)
         self.assertEqual(self.client.get(f"/records/{care_id}/edit").status_code, 403)
         self.assertEqual(self.client.get("/audit").status_code, 403)
+
+    def test_ae_user_cannot_access_data_entry_bulk_upload_or_user_accounts(self):
+        created = self.client.post(
+            "/users",
+            data={
+                "csrf_token": self.csrf(), "display_name": "AE User Test",
+                "username": "ae.user.test", "password": "ae",
+                "access_scope": "ae_user",
+            },
+        )
+        self.assertEqual(created.status_code, 302)
+        self.client.post("/logout", data={"csrf_token": self.csrf()})
+        login = self.client.post("/login", data={"username": "ae.user.test", "password": "ae"})
+        self.assertEqual(login.status_code, 302)
+        self.assertEqual(self.client.get("/dashboard?dataset=training").status_code, 200)
+        self.assertEqual(self.client.get("/records?dataset=training").status_code, 200)
+        self.assertEqual(self.client.get("/cbfs").status_code, 200)
+        self.assertEqual(self.client.get("/audit").status_code, 200)
+        self.assertEqual(self.client.get("/data-entry").status_code, 403)
+        self.assertEqual(self.client.get("/bulk-upload").status_code, 403)
+        self.assertEqual(self.client.get("/users").status_code, 403)
 
     def test_csrf_blocks_mutation(self):
         with self.app.app_context():

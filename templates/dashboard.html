@@ -58,12 +58,28 @@
 </section>
 
 <section class="analytics-grid">
-  <article class="panel panel-trend">
-    <div class="panel-heading"><div><p class="eyebrow">Training activity</p><h2>Participation over time</h2><p>Farmers with recorded activity during the last 12 active months.</p></div><span class="badge">Monthly</span></div>
-    <div class="trend-chart">
-      <div class="chart-gridlines"><i></i><i></i><i></i><i></i></div>
-      <div class="trend-bars">{% for item in trend %}<div class="trend-column"><span>{{ item.count }}</span><i style="height: {{ [item.width, 5]|max }}%"></i><small>{{ item.month }}</small></div>{% else %}<p class="muted">No dated activity is available for this selection.</p>{% endfor %}</div>
+  <article class="panel panel-trend activity-explorer" data-activity-explorer>
+    <div class="panel-heading activity-heading"><div><p class="eyebrow">Training activity</p><h2>Participation over time</h2><p data-activity-description>All recorded AE activity. Combine the filters below to focus the timeline.</p></div><span class="badge" data-activity-result>All farmers</span></div>
+    <div class="timeline-filter-deck">
+      <section class="timeline-filter-group"><span>Activity</span><div class="timeline-segments" data-activity-type>
+        <button type="button" class="active" data-value="all">All</button><button type="button" data-value="ct">CT</button><button type="button" data-value="fu">Follow-up</button>
+      </div></section>
+      <section class="timeline-filter-group"><span>Gender</span><div class="timeline-segments" data-activity-gender>
+        <button type="button" class="active" data-value="all">All</button>{% for value in activity_filter_options.genders %}<button type="button" data-value="{{ value }}">{{ value }}</button>{% endfor %}
+      </div></section>
+      <section class="timeline-filter-group timeline-filter-age"><span>Age</span><div class="timeline-segments" data-activity-age>
+        <button type="button" class="active" data-value="all">All</button>{% for value in activity_filter_options.ages %}<button type="button" data-value="{{ value }}">{{ value }}</button>{% endfor %}
+      </div></section>
+      <label class="timeline-select-control"><span>Training type</span><select data-activity-topic><option value="all">All training types</option>{% for value in activity_filter_options.topics %}<option value="{{ value }}">{{ value }}</option>{% endfor %}</select></label>
+      <div class="timeline-cbf-control"><span>CBF</span><details data-cbf-multiselect><summary data-cbf-summary>All CBFs</summary><div class="timeline-cbf-menu"><div class="timeline-cbf-menu-head"><strong>Select one or more</strong><button type="button" data-cbf-clear>Clear</button></div>{% for value in activity_filter_options.cbfs %}<label><input type="checkbox" value="{{ value }}"> <span>{{ value }}</span></label>{% endfor %}</div></details></div>
+      <button class="timeline-reset" type="button" data-activity-reset>Reset</button>
     </div>
+    <div class="timeline-view-control"><span>Chart view</span><div class="timeline-segments" data-activity-stack-mode>
+      <button type="button" class="active" data-value="total">Total</button><button type="button" data-value="activity">Activity</button><button type="button" data-value="gender">Gender</button><button type="button" data-value="age">Age</button><button type="button" data-value="topic">Training type</button><button type="button" data-value="cbf">CBF</button>
+    </div></div>
+    <div class="activity-stack-legend" data-activity-legend hidden></div>
+    <div class="activity-timeline-chart" data-activity-chart aria-live="polite"></div>
+    <script type="application/json" data-activity-data>{{ activity_timeline|tojson }}</script>
   </article>
 
   <article class="panel panel-status">

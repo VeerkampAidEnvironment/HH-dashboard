@@ -104,6 +104,166 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
+  document.querySelectorAll("[data-activity-explorer]").forEach((explorer) => {
+    const dataNode = explorer.querySelector("[data-activity-data]");
+    const chart = explorer.querySelector("[data-activity-chart]");
+    const description = explorer.querySelector("[data-activity-description]");
+    const result = explorer.querySelector("[data-activity-result]");
+    const activityControl = explorer.querySelector("[data-activity-type]");
+    const genderControl = explorer.querySelector("[data-activity-gender]");
+    const ageControl = explorer.querySelector("[data-activity-age]");
+    const topicControl = explorer.querySelector("[data-activity-topic]");
+    const stackControl = explorer.querySelector("[data-activity-stack-mode]");
+    const legend = explorer.querySelector("[data-activity-legend]");
+    const cbfControl = explorer.querySelector("[data-cbf-multiselect]");
+    const cbfSummary = explorer.querySelector("[data-cbf-summary]");
+    const cbfBoxes = Array.from(cbfControl?.querySelectorAll('input[type="checkbox"]') || []);
+    let timeline = { months: [], events: [] };
+    try { timeline = JSON.parse(dataNode?.textContent || "{}"); } catch (_error) { timeline = { months: [], events: [] }; }
+
+    const selectedButtonValue = (control) => control?.querySelector("button.active")?.dataset.value || "all";
+    const updateCbfSummary = () => {
+      const selected = cbfBoxes.filter((box) => box.checked);
+      if (cbfSummary) cbfSummary.textContent = !selected.length ? "All CBFs" : selected.length === 1 ? selected[0].value : `${selected.length} CBFs selected`;
+    };
+    const render = () => {
+      const activity = selectedButtonValue(activityControl);
+      const gender = selectedButtonValue(genderControl);
+      const age = selectedButtonValue(ageControl);
+      const topic = topicControl?.value || "all";
+      const stackMode = selectedButtonValue(stackControl) || "total";
+      const selectedCbfs = new Set(cbfBoxes.filter((box) => box.checked).map((box) => box.value));
+      const monthFarmers = new Map((timeline.months || []).map((month) => [month, new Set()]));
+      const allFarmers = new Set();
+      const filteredEvents = (timeline.events || []).filter((event) => {
+        if (activity !== "all" && event.activity !== activity) return;
+        if (gender !== "all" && event.gender !== gender) return;
+        if (age !== "all" && event.age !== age) return;
+        if (topic !== "all" && event.topic !== topic) return;
+        if (selectedCbfs.size && !selectedCbfs.has(event.cbf)) return;
+        return true;
+      });
+      filteredEvents.forEach((event) => {
+        monthFarmers.get(event.month)?.add(event.farmer);
+        allFarmers.add(event.farmer);
+      });
+      const categoryLabel = (event) => {
+        if (stackMode === "activity") return event.activity === "ct" ? "CT" : "Follow-up";
+        return event[stackMode] || "Not recorded";
+      };
+      let categories = [];
+      const monthCategories = new Map();
+      if (stackMode !== "total") {
+        categories = Array.from(new Set(filteredEvents.map(categoryLabel))).sort((a, b) => a.localeCompare(b));
+        if (stackMode === "activity") categories.sort((a) => a === "CT" ? -1 : 1);
+        (timeline.months || []).forEach((month) => {
+          monthCategories.set(month, new Map(categories.map((category) => [category, new Set()])));
+        });
+        filteredEvents.forEach((event) => monthCategories.get(event.month)?.get(categoryLabel(event))?.add(event.farmer));
+      }
+      const items = (timeline.months || []).map((month) => {
+        const segments = stackMode === "total" ? [] : categories.map((category) => ({
+          category, value: monthCategories.get(month)?.get(category)?.size || 0,
+        }));
+        return {
+          label: month,
+          value: stackMode === "total" ? monthFarmers.get(month)?.size || 0 : segments.reduce((sum, item) => sum + item.value, 0),
+          segments,
+        };
+      });
+      const activityLabel = activity === "ct" ? "centralized training" : activity === "fu" ? "follow-up" : "all recorded activity";
+      const details = [activityLabel];
+      if (topic !== "all") details.push(topic);
+      if (gender !== "all") details.push(gender);
+      if (age !== "all") details.push(age);
+      if (selectedCbfs.size) details.push(`${selectedCbfs.size} selected ${selectedCbfs.size === 1 ? "CBF" : "CBFs"}`);
+      if (stackMode !== "total") details.push(`stacked by ${stackMode === "topic" ? "training type" : stackMode}`);
+      if (description) description.textContent = `Showing ${details.join(" · ")} by month.`;
+      if (result) result.textContent = `${allFarmers.size} farmers`;
+      const colorFor = (index) => index < 8
+        ? ["#087880", "#EFB417", "#77aa2a", "#3b82b8", "#8668b1", "#d66a4a", "#36a9a3", "#6d7d80"][index]
+        : `hsl(${(174 + index * 47) % 360} 52% 46%)`;
+      legend?.replaceChildren();
+      if (legend) {
+        legend.hidden = stackMode === "total" || !categories.length;
+        categories.forEach((category, index) => {
+          const item = document.createElement("span");
+          const marker = document.createElement("i");
+          marker.style.background = colorFor(index);
+          item.append(marker, document.createTextNode(category));
+          legend.append(item);
+        });
+      }
+      chart?.replaceChildren();
+      if (!chart || !items.length) {
+        const empty = document.createElement("p");
+        empty.className = "muted activity-empty";
+        empty.textContent = "No activity is available for this selection.";
+        chart?.append(empty);
+        return;
+      }
+      const maximum = Math.max(...items.map((item) => Number(item.value) || 0), 1);
+      const bars = document.createElement("div");
+      bars.className = "activity-timeline-bars";
+      items.forEach((item) => {
+        const column = document.createElement("div");
+        const value = document.createElement("span");
+        const barArea = document.createElement("div");
+        const label = document.createElement("small");
+        const numericValue = Number(item.value) || 0;
+        column.className = "activity-timeline-column";
+        value.textContent = Number(item.value || 0).toLocaleString();
+        label.textContent = item.label;
+        if (stackMode === "total") {
+          const bar = document.createElement("i");
+          bar.style.height = `${numericValue ? Math.max(numericValue / maximum * 100, 5) : 0}%`;
+          barArea.append(bar);
+        } else {
+          const stack = document.createElement("div");
+          stack.className = "activity-stack";
+          stack.style.height = `${numericValue ? Math.max(numericValue / maximum * 100, 5) : 0}%`;
+          item.segments.forEach((segment, index) => {
+            if (!segment.value) return;
+            const part = document.createElement("i");
+            part.style.height = `${segment.value / numericValue * 100}%`;
+            part.style.background = colorFor(index);
+            part.title = `${segment.category}: ${segment.value.toLocaleString()}`;
+            stack.append(part);
+          });
+          barArea.append(stack);
+        }
+        column.append(value, barArea, label);
+        bars.append(column);
+      });
+      chart.append(bars);
+    };
+    [activityControl, genderControl, ageControl, stackControl].forEach((control) => {
+      control?.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => {
+        control.querySelectorAll("button").forEach((item) => item.classList.toggle("active", item === button));
+        render();
+      }));
+    });
+    topicControl?.addEventListener("change", render);
+    cbfBoxes.forEach((box) => box.addEventListener("change", () => { updateCbfSummary(); render(); }));
+    explorer.querySelector("[data-cbf-clear]")?.addEventListener("click", () => {
+      cbfBoxes.forEach((box) => { box.checked = false; });
+      updateCbfSummary();
+      render();
+    });
+    explorer.querySelector("[data-activity-reset]")?.addEventListener("click", () => {
+      [activityControl, genderControl, ageControl].forEach((control) => {
+        control?.querySelectorAll("button").forEach((button) => button.classList.toggle("active", button.dataset.value === "all"));
+      });
+      stackControl?.querySelectorAll("button").forEach((button) => button.classList.toggle("active", button.dataset.value === "total"));
+      if (topicControl) topicControl.value = "all";
+      cbfBoxes.forEach((box) => { box.checked = false; });
+      updateCbfSummary();
+      render();
+    });
+    updateCbfSummary();
+    render();
+  });
+
   document.querySelectorAll("select[data-enhanced-select]").forEach((select, selectIndex) => {
     const options = Array.from(select.options).map((option) => ({
       value: option.value,

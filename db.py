@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     is_active INTEGER NOT NULL DEFAULT 1,
     is_admin INTEGER NOT NULL DEFAULT 0,
-    access_scope TEXT NOT NULL DEFAULT 'full' CHECK(access_scope IN ('full', 'fh_dashboard')),
+    access_scope TEXT NOT NULL DEFAULT 'full' CHECK(access_scope IN ('full', 'ae_user', 'fh_dashboard')),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     last_login_at TEXT
@@ -189,6 +189,34 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
     user_columns = {row["name"] for row in connection.execute("PRAGMA table_info(users)").fetchall()}
     if "access_scope" not in user_columns:
         connection.execute("ALTER TABLE users ADD COLUMN access_scope TEXT NOT NULL DEFAULT 'full'")
+    user_schema = connection.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
+    ).fetchone()["sql"]
+    if "ae_user" not in user_schema:
+        connection.execute("ALTER TABLE users RENAME TO users_legacy")
+        connection.execute(
+            """CREATE TABLE users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                display_name TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                is_admin INTEGER NOT NULL DEFAULT 0,
+                access_scope TEXT NOT NULL DEFAULT 'full' CHECK(access_scope IN ('full', 'ae_user', 'fh_dashboard')),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                last_login_at TEXT
+            )"""
+        )
+        connection.execute(
+            """INSERT INTO users(id, username, display_name, password_hash, is_active, is_admin, access_scope,
+                                 created_at, updated_at, last_login_at)
+               SELECT id, username, display_name, password_hash, is_active, is_admin,
+                      COALESCE(access_scope, 'full'), created_at, updated_at, last_login_at
+               FROM users_legacy"""
+        )
+        connection.execute("DROP TABLE users_legacy")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_users_active ON users(is_active, username)")
     connection.commit()
     if owns_connection:
         connection.close()

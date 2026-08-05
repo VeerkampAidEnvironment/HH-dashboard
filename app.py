@@ -37,6 +37,7 @@ from training import (
     TRAINING_TOPICS,
     care_module_fields,
     care_module_status,
+    parse_date,
     parse_number,
     training_topic_status,
 )
@@ -130,6 +131,9 @@ def create_app(test_config=None):
             session["access_scope"] = user["access_scope"]
             fh_allowed = {"dashboard", "record_list", "record_detail", "logout"}
             if user["access_scope"] == "fh_dashboard" and request.endpoint not in fh_allowed:
+                abort(403)
+            ae_user_denied = {"data_entry", "bulk_upload", "users", "user_password", "user_status", "user_access"}
+            if user["access_scope"] == "ae_user" and request.endpoint in ae_user_denied:
                 abort(403)
         if request.method in {"POST", "PUT", "PATCH", "DELETE"} and request.endpoint != "login":
             supplied = request.form.get("csrf_token") or request.headers.get("X-CSRF-Token")
@@ -615,7 +619,7 @@ def create_app(test_config=None):
                 now = utc_now()
                 try:
                     access_scope = request.form.get("access_scope", "full")
-                    if access_scope not in {"full", "fh_dashboard"}:
+                    if access_scope not in {"full", "ae_user", "fh_dashboard"}:
                         access_scope = "full"
                     is_admin = 1 if request.form.get("is_admin") and access_scope == "full" else 0
                     cursor = connection.execute(
@@ -673,6 +677,31 @@ def create_app(test_config=None):
                   f"{action.title()}d account {user['username']}")
         connection.commit()
         flash(f"{user['display_name']} is now {'active' if new_status else 'inactive'}.", "success")
+        return redirect(url_for("users"))
+
+    @app.post("/users/<int:user_id>/access")
+    @admin_required
+    def user_access(user_id):
+        connection = get_db()
+        user = connection.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+        if not user:
+            abort(404)
+        if user_id == session.get("user_id"):
+            flash("For safety, you cannot change your own access level.", "error")
+            return redirect(url_for("users"))
+        access_scope = request.form.get("access_scope", "full")
+        if access_scope not in {"full", "ae_user", "fh_dashboard"}:
+            abort(400, "Invalid access level")
+        is_admin = 1 if request.form.get("is_admin") and access_scope == "full" else 0
+        connection.execute(
+            "UPDATE users SET access_scope=?, is_admin=?, updated_at=? WHERE id=?",
+            (access_scope, is_admin, utc_now(), user_id),
+        )
+        label = {"full": "Full system access", "ae_user": "AE User", "fh_dashboard": "FH dashboard only"}[access_scope]
+        log_audit(connection, session["username"], "change_access", "user", user_id,
+                  f"Changed access for {user['username']} to {label}")
+        connection.commit()
+        flash(f"Access for {user['display_name']} was updated.", "success")
         return redirect(url_for("users"))
 
     @app.route("/data-entry", methods=["GET", "POST"])
@@ -1433,6 +1462,42 @@ def build_dashboard_data(connection, dataset: str, filters: dict[str, str]):
     for item in trend:
         item["width"] = round(item["count"] / max_trend * 100)
 
+    activity_events = []
+    timeline_month_values = set()
+    activity_filter_options = {"ages": set(), "genders": set(), "cbfs": set()}
+    for record in records:
+        raw = json.loads(record["raw_data"])
+        unit_id = dashboard_unit(record["id"])
+        age = record["age_group"] or "Not recorded"
+        gender = record["sex"] or "Not recorded"
+        cbf = record["cbf_name"] or "Not recorded"
+        activity_filter_options["ages"].add(age)
+        activity_filter_options["genders"].add(gender)
+        activity_filter_options["cbfs"].add(cbf)
+        for topic in TRAINING_TOPICS:
+            for cycle in range(1, 4):
+                for event_type, field_prefix in (("ct", "Training"), ("fu", "Follow up")):
+                    event_date = parse_date(raw.get(f"{field_prefix} {cycle} - {topic}"))
+                    if not event_date:
+                        continue
+                    event_iso = event_date.isoformat()
+                    if (date_from and event_iso < date_from) or (date_to and event_iso > date_to):
+                        continue
+                    month = event_iso[:7]
+                    timeline_month_values.add(month)
+                    activity_events.append({
+                        "month": month, "farmer": unit_id, "activity": event_type,
+                        "topic": topic, "age": age, "gender": gender, "cbf": cbf,
+                    })
+
+    timeline_months = sorted(timeline_month_values)[-12:]
+    visible_months = set(timeline_months)
+    activity_events = [event for event in activity_events if event["month"] in visible_months]
+    activity_filter_options = {
+        key: sorted(values) for key, values in activity_filter_options.items()
+    }
+    activity_filter_options["topics"] = list(TRAINING_TOPICS)
+
     options = {
         "genders": [row[0] for row in connection.execute(
             "SELECT DISTINCT sex FROM records WHERE archived_at IS NULL AND TRIM(COALESCE(sex,''))<>'' ORDER BY sex"
@@ -1454,6 +1519,8 @@ def build_dashboard_data(connection, dataset: str, filters: dict[str, str]):
         "age_by_gender": age_by_gender,
         "gender_by_age": gender_by_age,
         "trend": trend,
+        "activity_timeline": {"months": timeline_months, "events": activity_events},
+        "activity_filter_options": activity_filter_options,
         "status_distribution": status_distribution,
         "action_topics": action_topics,
         "attention_total": len(attention_ids),
