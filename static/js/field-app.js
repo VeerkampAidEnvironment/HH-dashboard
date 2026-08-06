@@ -7,11 +7,13 @@
 
   const config = JSON.parse(configNode.textContent);
   const DB_NAME = "arfsa-ae-field-app";
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
+  const environment = config.environment || "live";
   let fieldPackage = null;
   let currentCbf = config.assignedCbf || "";
   let outbox = [];
   let selectedFarmerId = null;
+  let capturedLocation = null;
   let syncing = false;
 
   const $ = (selector, scope = root) => scope.querySelector(selector);
@@ -40,6 +42,7 @@
       if (!db.objectStoreNames.contains("packages")) db.createObjectStore("packages", { keyPath: "cbf" });
       if (!db.objectStoreNames.contains("outbox")) db.createObjectStore("outbox", { keyPath: "id" });
       if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta", { keyPath: "key" });
+      if (!db.objectStoreNames.contains("packagesV2")) db.createObjectStore("packagesV2", { keyPath: "key" });
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -59,6 +62,8 @@
   const getAllStored = (store) => dbRequest(store, "readonly", (target) => target.getAll());
   const putStored = (store, value) => dbRequest(store, "readwrite", (target) => target.put(value));
   const deleteStored = (store, key) => dbRequest(store, "readwrite", (target) => target.delete(key));
+  const packageKey = (cbf) => `${environment}::${cbf}`;
+  const metaKey = (key) => `${environment}::${key}`;
 
   const alertUser = (message, tone = "info") => {
     const alert = $("[data-field-alert]");
@@ -76,7 +81,63 @@
     $("span", status).textContent = online ? "Online" : "Offline — entries save locally";
   };
 
-  const currentOutbox = () => outbox.filter((item) => item.cbf === currentCbf);
+  const updateLocationStatus = () => {
+    const status = $("[data-location-status]");
+    const captureButton = $("[data-capture-location]");
+    const clearButton = $("[data-clear-location]");
+    if (!capturedLocation) {
+      status.textContent = "Optional — add the device's current GPS location to this follow-up.";
+      status.classList.remove("captured");
+      captureButton.textContent = "Add current location";
+      clearButton.hidden = true;
+      return;
+    }
+    const accuracy = Math.round(capturedLocation.accuracy);
+    status.textContent = `Location added · accuracy approximately ${accuracy} m`;
+    status.classList.add("captured");
+    captureButton.textContent = "Update location";
+    clearButton.hidden = false;
+  };
+
+  const captureCurrentLocation = () => {
+    if (!window.isSecureContext) {
+      alertUser("Location is available only when the app uses HTTPS or localhost.", "warning");
+      return;
+    }
+    if (!("geolocation" in navigator)) {
+      alertUser("This device or browser does not provide location services.", "warning");
+      return;
+    }
+    const button = $("[data-capture-location]");
+    button.disabled = true;
+    button.textContent = "Finding location…";
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        capturedLocation = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+          capturedAt: new Date(position.timestamp).toISOString(),
+        };
+        button.disabled = false;
+        updateLocationStatus();
+        alertUser("Current location added to this follow-up.", "success");
+      },
+      (error) => {
+        button.disabled = false;
+        updateLocationStatus();
+        const messages = {
+          1: "Location permission was declined. You can still save the follow-up without it.",
+          2: "The device could not determine its location. You can try again or continue without it.",
+          3: "Finding the location took too long. You can try again or continue without it.",
+        };
+        alertUser(messages[error.code] || "The current location could not be added.", "warning");
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
+    );
+  };
+
+  const currentOutbox = () => outbox.filter((item) => item.cbf === currentCbf && (item.environment || "live") === environment);
   const queuedCtKeys = () => new Set(currentOutbox()
     .filter((item) => item.type === "centralized")
     .flatMap((item) => item.entries.map((entry) => `${entry.recordId}::${entry.topic}`)));
@@ -159,8 +220,8 @@
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Field data could not be prepared.");
       fieldPackage = payload.package;
       currentCbf = fieldPackage.cbf;
-      await putStored("packages", fieldPackage);
-      await putStored("meta", { key: "lastCbf", value: currentCbf });
+      await putStored("packagesV2", { key: packageKey(currentCbf), package: fieldPackage });
+      await putStored("meta", { key: metaKey("lastCbf"), value: currentCbf });
       renderPackage();
       if (!quiet) alertUser(`${fieldPackage.summary.farmers} beneficiaries are now available offline for ${currentCbf}.`, "success");
       return true;
@@ -437,6 +498,7 @@
     await queueSubmission({
       id: submissionId(),
       type: "centralized",
+      environment,
       cbf: currentCbf,
       eventDate: form.elements.eventDate.value,
       location: form.elements.location.value.trim(),
@@ -487,15 +549,19 @@
     await queueSubmission({
       id: submissionId(),
       type: "followup",
+      environment,
       cbf: currentCbf,
       eventDate: form.elements.eventDate.value,
       recordId: selectedFarmerId,
       responses,
+      geoLocation: capturedLocation ? { ...capturedLocation } : null,
       createdAt: new Date().toISOString(),
       status: "pending",
       summary: `${farmer.name} · ${responses.length} ${responses.length === 1 ? "topic" : "topics"}`,
     });
     selectedFarmerId = null;
+    capturedLocation = null;
+    updateLocationStatus();
     $("[data-followup-questionnaires]").hidden = true;
     $("[data-followup-save]").hidden = true;
     renderFarmerList();
@@ -519,6 +585,7 @@
       const type = item.type === "centralized" ? "Centralized training" : "Follow-up";
       const title = create("div");
       title.append(create("span", "field-outbox-type", type), create("h3", "", item.summary), create("p", "", `${item.eventDate} · Saved ${formatDateTime(item.createdAt)}`));
+      if (item.geoLocation) title.append(create("p", "field-outbox-location", `Location attached · accuracy approximately ${Math.round(item.geoLocation.accuracy)} m`));
       if (item.error) title.append(create("p", "field-outbox-error", item.error));
       const actions = create("div", "field-outbox-actions");
       actions.append(create("span", item.status === "error" ? "status-pill field-status-error" : "status-pill", item.status === "error" ? "Needs attention" : "Waiting to upload"));
@@ -582,7 +649,7 @@
           rejected += 1;
         }
       }
-      if (accepted && fieldPackage) await putStored("packages", fieldPackage);
+      if (accepted && fieldPackage) await putStored("packagesV2", { key: packageKey(currentCbf), package: fieldPackage });
       outbox = await getAllStored("outbox");
       refreshCounts();
       renderOutbox();
@@ -601,13 +668,17 @@
 
   const start = async () => {
     updateConnection();
+    updateLocationStatus();
     $$('input[type="date"]', root).forEach((input) => { if (!input.value) input.value = localDate(); });
     outbox = await getAllStored("outbox");
-    const lastCbf = config.assignedCbf || (await getStored("meta", "lastCbf"))?.value || "";
+    const lastCbf = config.assignedCbf || (await getStored("meta", metaKey("lastCbf")))?.value || (environment === "live" ? (await getStored("meta", "lastCbf"))?.value : "");
     currentCbf = lastCbf;
     const cbfSelect = $("[data-cbf-select]");
     if (cbfSelect && lastCbf) cbfSelect.value = lastCbf;
-    if (lastCbf) fieldPackage = await getStored("packages", lastCbf);
+    if (lastCbf) {
+      const storedPackage = await getStored("packagesV2", packageKey(lastCbf));
+      fieldPackage = storedPackage?.package || (environment === "live" ? await getStored("packages", lastCbf) : null);
+    }
     if (fieldPackage) renderPackage();
     else refreshCounts();
     if ("serviceWorker" in navigator) {
@@ -625,6 +696,11 @@
   $("[data-fu-search]").addEventListener("input", renderFarmerList);
   $("[data-ct-form]").addEventListener("submit", saveCentralized);
   $("[data-followup-form]").addEventListener("submit", saveFollowup);
+  $("[data-capture-location]").addEventListener("click", captureCurrentLocation);
+  $("[data-clear-location]").addEventListener("click", () => {
+    capturedLocation = null;
+    updateLocationStatus();
+  });
   window.addEventListener("online", () => { updateConnection(); if (fieldPackage && currentOutbox().length) synchronize(); });
   window.addEventListener("offline", updateConnection);
   start().catch(() => alertUser("This browser could not open the tablet's offline storage.", "error"));

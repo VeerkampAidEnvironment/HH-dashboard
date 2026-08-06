@@ -14,19 +14,34 @@
 </section>
 
 <div class="dashboard-controls">
+  <div class="dashboard-primary-controls">
   <nav class="dataset-tabs" aria-label="Dataset selection">
     {% for key, label in dataset_labels.items() %}
     <a class="{{ 'active' if dataset == key }}" href="{{ url_for('dashboard', dataset=key) }}">{{ label }}</a>
     {% endfor %}
   </nav>
+  <div class="dashboard-scope-toggle">
+    <span>Dropouts</span>
+    <form method="get" aria-label="Choose whether dropouts are included">
+      <input type="hidden" name="dataset" value="{{ dataset }}">
+      <input type="hidden" name="gender" value="{{ filters.gender }}"><input type="hidden" name="age" value="{{ filters.age }}"><input type="hidden" name="cbf" value="{{ filters.cbf }}"><input type="hidden" name="group" value="{{ filters.group }}"><input type="hidden" name="category" value="{{ filters.category }}"><input type="hidden" name="topic" value="{{ filters.topic }}"><input type="hidden" name="date_from" value="{{ filters.date_from }}"><input type="hidden" name="date_to" value="{{ filters.date_to }}"><input type="hidden" name="status" value="{{ filters.status }}">
+      <button class="{{ 'active' if filters.dropouts != 'include' }}" type="submit" name="dropouts" value="exclude" aria-pressed="{{ 'true' if filters.dropouts != 'include' else 'false' }}">Ignore dropouts</button>
+      <button class="{{ 'active' if filters.dropouts == 'include' }}" type="submit" name="dropouts" value="include" aria-pressed="{{ 'true' if filters.dropouts == 'include' else 'false' }}">Include dropouts</button>
+    </form>
+  </div>
+  </div>
   <span class="scope-label">{% if dataset == 'combined' %}{{ summary.unique_farmers }} combined beneficiaries · {{ summary.total_records }} linked records{% else %}Showing {{ summary.total_records }} source records{% endif %}</span>
 </div>
 
-<form class="filter-panel" method="get">
+<details class="dashboard-filter-details">
+  <summary><span>Filters</span><small>Gender, age, CBF, training type, date and status</small></summary>
+  <form class="filter-panel filter-panel-ae" method="get">
   <input type="hidden" name="dataset" value="{{ dataset }}">
+  <input type="hidden" name="dropouts" value="{{ filters.dropouts }}">
   <label>Gender<select name="gender"><option value="">All</option>{% for item in options.genders %}<option {{ 'selected' if filters.gender == item }}>{{ item }}</option>{% endfor %}</select></label>
   <label>Age group<select name="age"><option value="">All</option>{% for item in options.ages %}<option {{ 'selected' if filters.age == item }}>{{ item }}</option>{% endfor %}</select></label>
   <label>CBF<select name="cbf"><option value="">All CBFs</option>{% for item in options.cbfs %}<option {{ 'selected' if filters.cbf == item }}>{{ item }}</option>{% endfor %}</select></label>
+  <label>Training type<select name="topic"><option value="">All training types</option>{% for item in options.topics %}<option value="{{ item }}" {{ 'selected' if filters.topic == item }}>{{ item }}</option>{% endfor %}</select></label>
   <label>From<input type="date" name="date_from" value="{{ filters.date_from }}"></label>
   <label>To<input type="date" name="date_to" value="{{ filters.date_to }}"></label>
   <label>Status<select name="status">
@@ -35,7 +50,8 @@
     <option value="{{ value }}" {{ 'selected' if filters.status == value }}>{{ label }}</option>{% endfor %}
   </select></label>
   <div class="filter-actions"><button class="button button-primary" type="submit">Apply</button><a class="button button-ghost" href="{{ url_for('dashboard', dataset=dataset) }}">Reset</a></div>
-</form>
+  </form>
+</details>
 
 {% if dataset == 'combined' and summary.total_records != summary.unique_farmers %}
 <div class="notice info">Source records remain separate. “Unique beneficiaries” removes confirmed AE/FH overlaps using the shared beneficiary ID.</div>

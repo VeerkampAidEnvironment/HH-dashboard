@@ -9,6 +9,7 @@
 {% endblock %}
 {% block content %}
 <div class="field-app" data-field-app>
+  {% if not session.get('test_environment') %}<section class="field-test-launch"><div><strong>Practice mode</strong><span>Use a separate test database to try offline entries safely.</span></div><form method="post" action="{{ url_for('test_environment') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="enter"><input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}"><button class="button button-secondary button-small" type="submit">Open testing environment</button></form></section>{% else %}<section class="field-test-launch field-test-active"><div><strong>Testing environment active</strong><span>Field-App synchronization uses only your test database.</span></div><form method="post" action="{{ url_for('test_environment') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="reset"><input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}"><button class="button button-ghost button-small" type="submit">Reset test data</button></form></section>{% endif %}
   <section class="field-hero">
     <div>
       <p class="eyebrow hero-eyebrow">AE offline data collection</p>
@@ -95,6 +96,10 @@
           <label>Follow-up date<input type="date" name="eventDate" required></label>
           <label>Beneficiary group<select name="group" data-fu-group><option value="">All groups</option></select></label>
           <label class="field-search-wide">Find beneficiary<input type="search" name="search" data-fu-search placeholder="Search name, ID, village or group" autocomplete="off"></label>
+          <div class="field-location-capture">
+            <div><strong>Visit location</strong><small data-location-status>Optional — add the device's current GPS location to this follow-up.</small></div>
+            <div class="field-location-actions"><button class="button button-secondary button-small" type="button" data-capture-location>Add current location</button><button class="button button-ghost button-small" type="button" data-clear-location hidden>Remove</button></div>
+          </div>
         </div>
         <div class="field-farmer-list panel" data-farmer-list></div>
         <div class="field-questionnaires" data-followup-questionnaires hidden></div>

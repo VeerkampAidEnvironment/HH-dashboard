@@ -5,14 +5,17 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+from hashlib import sha256
 from datetime import datetime, timezone
 from pathlib import Path
 
 try:
-    from flask import current_app, g
+    from flask import current_app, g, has_request_context, session
 except ModuleNotFoundError:  # Import utilities can run in the spreadsheet runtime.
     current_app = None
     g = None
+    has_request_context = lambda: False
+    session = None
 
 
 SCHEMA = """
@@ -114,7 +117,11 @@ CREATE TABLE IF NOT EXISTS field_events (
     created_at TEXT NOT NULL,
     client_submission_id TEXT,
     device_id TEXT,
-    client_created_at TEXT
+    client_created_at TEXT,
+    latitude REAL,
+    longitude REAL,
+    location_accuracy_m REAL,
+    location_captured_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS field_event_entries (
@@ -156,12 +163,42 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
-def database_path() -> Path:
+def primary_database_path() -> Path:
     configured = os.getenv("ARFSA_DATABASE")
     if configured:
         return Path(configured).expanduser().resolve()
     root = Path(current_app.root_path if current_app else Path(__file__).parent)
     return root / "instance" / "arfsa.db"
+
+
+def test_database_path(username: str) -> Path:
+    safe_name = "".join(character if character.isalnum() else "-" for character in username.lower()).strip("-")
+    suffix = sha256(username.encode("utf-8")).hexdigest()[:12]
+    return primary_database_path().parent / "test-environments" / f"{(safe_name or 'user')[:30]}-{suffix}.db"
+
+
+def ensure_test_database(username: str, *, reset: bool = False) -> Path:
+    """Create a consistent per-user SQLite snapshot without writing to live data."""
+    target = test_database_path(username)
+    if reset and target.exists():
+        target.unlink()
+    if target.exists():
+        return target
+    target.parent.mkdir(parents=True, exist_ok=True)
+    source_connection = sqlite3.connect(primary_database_path())
+    target_connection = sqlite3.connect(target)
+    try:
+        source_connection.backup(target_connection)
+    finally:
+        target_connection.close()
+        source_connection.close()
+    return target
+
+
+def database_path() -> Path:
+    if has_request_context() and session and session.get("test_environment"):
+        return test_database_path(str(session.get("username") or session.get("user_id") or "user"))
+    return primary_database_path()
 
 
 def connect(path: str | Path | None = None) -> sqlite3.Connection:
@@ -227,9 +264,18 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
     field_event_columns = {
         row["name"] for row in connection.execute("PRAGMA table_info(field_events)").fetchall()
     }
-    for column_name in ("client_submission_id", "device_id", "client_created_at"):
+    field_event_migrations = {
+        "client_submission_id": "TEXT",
+        "device_id": "TEXT",
+        "client_created_at": "TEXT",
+        "latitude": "REAL",
+        "longitude": "REAL",
+        "location_accuracy_m": "REAL",
+        "location_captured_at": "TEXT",
+    }
+    for column_name, column_type in field_event_migrations.items():
         if column_name not in field_event_columns:
-            connection.execute(f"ALTER TABLE field_events ADD COLUMN {column_name} TEXT")
+            connection.execute(f"ALTER TABLE field_events ADD COLUMN {column_name} {column_type}")
     connection.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_field_events_client_submission "
         "ON field_events(client_submission_id) WHERE client_submission_id IS NOT NULL"

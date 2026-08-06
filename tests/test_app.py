@@ -109,10 +109,61 @@ class ApplicationTest(unittest.TestCase):
     def test_ae_dashboard_has_interactive_age_gender_breakdowns(self):
         response = self.client.get("/dashboard?dataset=training")
         self.assertEqual(response.status_code, 200)
+        self.assertIn(b'<details class="dashboard-filter-details">', response.data)
+        self.assertNotIn(b'<details class="dashboard-filter-details" open>', response.data)
+        self.assertIn(b"dashboard-primary-controls", response.data)
+        self.assertIn(b'<select name="topic">', response.data)
+        self.assertIn(b"All training types", response.data)
         self.assertIn(b"data-demographic-explorer", response.data)
         self.assertIn(b"Age by sex", response.data)
         self.assertIn(b"Sex by age", response.data)
         self.assertIn(b"Age distribution within each sex", response.data)
+
+    def test_testing_environment_isolated_from_live_database(self):
+        with self.app.app_context():
+            from db import get_db
+
+            live_count = get_db().execute("SELECT COUNT(*) FROM records").fetchone()[0]
+
+        entered = self.client.post(
+            "/test-environment",
+            data={"csrf_token": self.csrf(), "action": "enter", "next": "/data-entry"},
+        )
+        self.assertEqual(entered.status_code, 302)
+        test_page = self.client.get("/data-entry")
+        self.assertIn(b"Testing environment is active", test_page.data)
+
+        created = self.client.post(
+            "/records/new",
+            data={
+                "csrf_token": self.csrf(), "dataset": "training",
+                "field__Name": "PRACTICE ONLY FARMER", "field__Sex": "F",
+            },
+        )
+        self.assertEqual(created.status_code, 302)
+
+        exited = self.client.post(
+            "/test-environment",
+            data={"csrf_token": self.csrf(), "action": "exit", "next": "/data-entry"},
+        )
+        self.assertEqual(exited.status_code, 302)
+        with self.app.app_context():
+            from db import get_db
+
+            self.assertEqual(get_db().execute("SELECT COUNT(*) FROM records").fetchone()[0], live_count)
+            self.assertIsNone(get_db().execute(
+                "SELECT 1 FROM records WHERE name='PRACTICE ONLY FARMER'"
+            ).fetchone())
+
+        live_page = self.client.get("/field-app/")
+        self.assertIn(b"Open testing environment", live_page.data)
+        reentered = self.client.post(
+            "/test-environment",
+            data={"csrf_token": self.csrf(), "action": "enter", "next": "/field-app/"},
+        )
+        self.assertEqual(reentered.status_code, 302)
+        test_field_page = self.client.get("/field-app/")
+        self.assertIn(b'"environment": "test"', test_field_page.data)
 
     def test_ae_training_activity_chart_has_editable_breakdowns(self):
         response = self.client.get("/dashboard?dataset=training")
@@ -138,10 +189,77 @@ class ApplicationTest(unittest.TestCase):
             from app import build_dashboard_data
             from db import get_db
 
-            filters = {key: "" for key in ("gender", "age", "cbf", "group", "date_from", "date_to", "status")}
+            filters = {key: "" for key in ("gender", "age", "cbf", "group", "topic", "date_from", "date_to", "status")}
             data = build_dashboard_data(get_db(), "training", filters)
             self.assertGreaterEqual(data["summary"]["followup_actions"], data["summary"]["followup"])
             self.assertGreaterEqual(data["summary"]["retraining_actions"], data["summary"]["retraining"])
+
+    def test_ae_dashboard_training_type_filter_applies_to_all_metrics(self):
+        from training import TRAINING_TOPICS
+
+        topic = TRAINING_TOPICS[0]
+        response = self.client.get(
+            "/dashboard", query_string={"dataset": "training", "topic": topic}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(f'<option value="{topic}" selected>'.encode(), response.data)
+
+        with self.app.app_context():
+            from app import build_dashboard_data
+            from db import get_db
+
+            filters = {key: "" for key in (
+                "gender", "age", "cbf", "group", "topic", "date_from", "date_to", "status"
+            )}
+            filters["topic"] = topic
+            data = build_dashboard_data(get_db(), "training", filters)
+            self.assertEqual([item["topic"] for item in data["topics"]], [topic])
+            self.assertTrue(all(
+                status["topic"] == topic
+                for statuses in data["status_by_record"].values()
+                for status in statuses
+            ))
+            self.assertTrue(all(
+                event["topic"] == topic for event in data["activity_timeline"]["events"]
+            ))
+            self.assertEqual(data["activity_filter_options"]["topics"], [topic])
+
+        pdf = self.client.get(
+            "/dashboard.pdf", query_string={"dataset": "training", "topic": topic}
+        )
+        self.assertEqual(pdf.status_code, 200)
+        self.assertTrue(pdf.data.startswith(b"%PDF"))
+
+    def test_ae_dashboard_dropout_toggle_changes_the_full_scope(self):
+        default_page = self.client.get("/dashboard?dataset=training")
+        self.assertEqual(default_page.status_code, 200)
+        self.assertIn(b"Ignore dropouts", default_page.data)
+        self.assertIn(b"Include dropouts", default_page.data)
+        self.assertIn(b'name="dropouts" value="exclude" aria-pressed="true"', default_page.data)
+
+        with self.app.app_context():
+            from app import build_dashboard_data
+            from db import get_db
+
+            connection = get_db()
+            expected_active = connection.execute(
+                """SELECT COUNT(*) FROM records WHERE dataset='training' AND archived_at IS NULL
+                   AND LOWER(COALESCE(record_status,'')) NOT LIKE '%drop%'"""
+            ).fetchone()[0]
+            expected_all = connection.execute(
+                "SELECT COUNT(*) FROM records WHERE dataset='training' AND archived_at IS NULL"
+            ).fetchone()[0]
+            base_filters = {key: "" for key in (
+                "gender", "age", "cbf", "group", "topic", "date_from", "date_to", "status"
+            )}
+            active_data = build_dashboard_data(connection, "training", {**base_filters, "dropouts": "exclude"})
+            all_data = build_dashboard_data(connection, "training", {**base_filters, "dropouts": "include"})
+            self.assertEqual(active_data["summary"]["total_records"], expected_active)
+            self.assertEqual(all_data["summary"]["total_records"], expected_all)
+            self.assertGreater(all_data["summary"]["total_records"], active_data["summary"]["total_records"])
+
+        include_page = self.client.get("/dashboard?dataset=training&dropouts=include")
+        self.assertIn(b'name="dropouts" value="include" aria-pressed="true"', include_page.data)
 
     def test_add_archive_restore_and_audit(self):
         response = self.client.post(
@@ -278,7 +396,7 @@ class ApplicationTest(unittest.TestCase):
             from db import get_db
 
             connection = get_db()
-            filters = {key: "" for key in ("gender", "age", "cbf", "group", "date_from", "date_to", "status")}
+            filters = {key: "" for key in ("gender", "age", "cbf", "group", "topic", "date_from", "date_to", "status")}
             data = build_interaction_data(connection, filters)
             expected = connection.execute(
                 """SELECT COUNT(*) FROM matches m WHERE m.status='confirmed' AND EXISTS (
@@ -477,6 +595,12 @@ class ApplicationTest(unittest.TestCase):
                 "eventDate": date.today().isoformat(),
                 "recordId": due["id"],
                 "createdAt": "2026-08-06T09:00:00Z",
+                "geoLocation": {
+                    "latitude": 1.234567,
+                    "longitude": 34.765432,
+                    "accuracy": 12.5,
+                    "capturedAt": "2026-08-06T08:59:30Z",
+                },
                 "responses": [{
                     "topic": due["topic"],
                     "answers": {"adoption_rate": "61", "next_action": "followup_1"},
@@ -492,7 +616,8 @@ class ApplicationTest(unittest.TestCase):
             from db import get_db
 
             stored = get_db().execute(
-                """SELECT fr.adoption_rate, fr.next_action
+                """SELECT fr.adoption_rate, fr.next_action, e.latitude, e.longitude,
+                          e.location_accuracy_m, e.location_captured_at
                    FROM followup_responses fr
                    JOIN field_event_entries fee ON fee.id=fr.event_entry_id
                    JOIN field_events e ON e.id=fee.event_id
@@ -500,6 +625,13 @@ class ApplicationTest(unittest.TestCase):
             ).fetchone()
             self.assertEqual(stored["adoption_rate"], 61)
             self.assertEqual(stored["next_action"], "followup_1")
+            self.assertAlmostEqual(stored["latitude"], 1.234567)
+            self.assertAlmostEqual(stored["longitude"], 34.765432)
+            self.assertEqual(stored["location_accuracy_m"], 12.5)
+            self.assertEqual(stored["location_captured_at"], "2026-08-06T08:59:30Z")
+        detail = self.client.get(f"/records/{due['id']}")
+        self.assertIn(b"Visit location", detail.data)
+        self.assertIn(b"openstreetmap.org", detail.data)
 
     def test_data_entry_uses_switches_for_short_choices(self):
         response = self.client.get("/data-entry")

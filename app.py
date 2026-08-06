@@ -33,7 +33,17 @@ from flask import (
 from werkzeug.datastructures import MultiDict
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from db import get_db, get_setting, init_db, log_audit, register_db, set_setting, utc_now
+from db import (
+    close_db,
+    ensure_test_database,
+    get_db,
+    get_setting,
+    init_db,
+    log_audit,
+    register_db,
+    set_setting,
+    utc_now,
+)
 from questionnaire import NEXT_ACTION_OPTIONS, QUESTIONNAIRE_VERSION, questionnaire_for_topic
 from training import (
     TRAINING_TOPICS,
@@ -196,6 +206,30 @@ def create_app(test_config=None):
     def logout():
         session.clear()
         return redirect(url_for("login"))
+
+    @app.post("/test-environment")
+    def test_environment():
+        action = request.form.get("action", "enter")
+        destination = request.form.get("next", "")
+        if not is_safe_redirect(destination):
+            destination = url_for("data_entry")
+        username = str(session.get("username") or session.get("user_id") or "user")
+        if action == "enter":
+            ensure_test_database(username)
+            session["test_environment"] = True
+            flash("Testing environment active. All changes now go to your separate test database.", "success")
+        elif action == "reset":
+            close_db()
+            ensure_test_database(username, reset=True)
+            session["test_environment"] = True
+            flash("Your testing database was reset from the current live database.", "success")
+        elif action == "exit":
+            close_db()
+            session.pop("test_environment", None)
+            flash("Testing environment closed. You are back in the live database.", "success")
+        else:
+            abort(400, "Invalid testing-environment action")
+        return redirect(destination)
 
     @app.get("/")
     @app.get("/dashboard")
@@ -378,7 +412,8 @@ def create_app(test_config=None):
         if record["dataset"] == "training":
             next_action_labels = {item["value"]: item["label"] for item in NEXT_ACTION_OPTIONS}
             response_rows = connection.execute(
-                """SELECT fr.*, e.event_date, e.created_by
+                """SELECT fr.*, e.event_date, e.created_by, e.latitude, e.longitude,
+                          e.location_accuracy_m, e.location_captured_at
                    FROM followup_responses fr
                    JOIN field_event_entries fee ON fee.id=fr.event_entry_id
                    JOIN field_events e ON e.id=fee.event_id
@@ -885,6 +920,7 @@ def create_app(test_config=None):
                 "assignedCbf": assigned_cbf,
                 "canChooseCbf": session.get("access_scope") != "ae_user",
                 "username": session.get("username", ""),
+                "environment": "test" if session.get("test_environment") else "live",
             },
         )
 
@@ -1088,6 +1124,7 @@ def synchronize_field_submission(connection, cbf_name: str, submission, username
     submission_type = str(submission.get("type") or "").strip()
     client_created_at = str(submission.get("createdAt") or "")[:40] or None
     pairs = [("event_date", str(submission.get("eventDate") or ""))]
+    save_kwargs = {}
     if submission_type == "centralized":
         location = str(submission.get("location") or "").strip()
         entries = submission.get("entries")
@@ -1133,6 +1170,24 @@ def synchronize_field_submission(connection, cbf_name: str, submission, username
                     pairs.extend((field_name, str(item)) for item in value)
                 elif value is not None:
                     pairs.append((field_name, str(value)))
+        geo_location = submission.get("geoLocation")
+        if geo_location is not None:
+            if not isinstance(geo_location, dict):
+                return {"id": submission_id, "status": "rejected", "message": "The captured location is invalid."}
+            try:
+                latitude = float(geo_location.get("latitude"))
+                longitude = float(geo_location.get("longitude"))
+                accuracy = float(geo_location.get("accuracy"))
+            except (TypeError, ValueError):
+                return {"id": submission_id, "status": "rejected", "message": "The captured location is invalid."}
+            if not (-90 <= latitude <= 90 and -180 <= longitude <= 180 and 0 <= accuracy <= 100000):
+                return {"id": submission_id, "status": "rejected", "message": "The captured location is outside the valid range."}
+            save_kwargs = {
+                "latitude": latitude,
+                "longitude": longitude,
+                "location_accuracy_m": accuracy,
+                "location_captured_at": str(geo_location.get("capturedAt") or "")[:40] or None,
+            }
         save_function = save_followup
     else:
         return {"id": submission_id, "status": "rejected", "message": "The submission type is not supported."}
@@ -1143,6 +1198,7 @@ def synchronize_field_submission(connection, cbf_name: str, submission, username
             client_submission_id=submission_id,
             device_id=device_id,
             client_created_at=client_created_at,
+            **save_kwargs,
         )
     except sqlite3.IntegrityError:
         connection.rollback()
@@ -1258,6 +1314,8 @@ def save_followup(
     connection, cbf_name: str, values, username: str, *,
     client_submission_id: str | None = None, device_id: str | None = None,
     client_created_at: str | None = None,
+    latitude: float | None = None, longitude: float | None = None,
+    location_accuracy_m: float | None = None, location_captured_at: str | None = None,
 ):
     event_date = valid_iso_date(values.get("event_date", ""))
     record_id = values.get("record_id", type=int)
@@ -1356,10 +1414,12 @@ def save_followup(
     cursor = connection.execute(
         """INSERT INTO field_events(
                event_type, cbf_name, event_date, location, created_by, created_at,
-               client_submission_id, device_id, client_created_at
-           ) VALUES('followup', ?, ?, NULL, ?, ?, ?, ?, ?)""",
+               client_submission_id, device_id, client_created_at,
+               latitude, longitude, location_accuracy_m, location_captured_at
+           ) VALUES('followup', ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (cbf_name, event_date, username, utc_now(),
-         client_submission_id, device_id, client_created_at),
+         client_submission_id, device_id, client_created_at,
+         latitude, longitude, location_accuracy_m, location_captured_at),
     )
     event_id = cursor.lastrowid
     for entry in response_entries:
@@ -1388,7 +1448,11 @@ def save_followup(
         f"Recorded follow-up for {record['name']}",
         {"cbf": cbf_name, "date": event_date,
          "scores": {entry["topic"]: entry["score"] for entry in response_entries},
-         "next_actions": {entry["topic"]: entry["next_action"] for entry in response_entries}},
+         "next_actions": {entry["topic"]: entry["next_action"] for entry in response_entries},
+         "location": {
+             "latitude": latitude, "longitude": longitude,
+             "accuracy_m": location_accuracy_m, "captured_at": location_captured_at,
+         } if latitude is not None and longitude is not None else None},
     )
     connection.commit()
     return True, f"Follow-up saved for {record['name']}."
@@ -1412,10 +1476,12 @@ def valid_dataset(value: str) -> str:
 
 
 def read_dashboard_filters(values) -> dict[str, str]:
-    return {
+    filters = {
         key: values.get(key, "").strip()
-        for key in ("gender", "age", "cbf", "group", "category", "date_from", "date_to", "status")
+        for key in ("gender", "age", "cbf", "group", "category", "topic", "date_from", "date_to", "status")
     }
+    filters["dropouts"] = "include" if values.get("dropouts") == "include" else "exclude"
+    return filters
 
 
 def _record_query(dataset: str, filters: dict[str, str]):
@@ -1431,6 +1497,8 @@ def _record_query(dataset: str, filters: dict[str, str]):
             "AND EXISTS (SELECT 1 FROM audit_log a WHERE a.entity_type='match' "
             "AND a.entity_id=m.id AND a.action='confirm'))"
         )
+    if dataset == "training" and filters.get("dropouts", "exclude") != "include":
+        where.append("LOWER(COALESCE(record_status,'')) NOT LIKE '%drop%'")
     for filter_key, column in (("gender", "sex"), ("age", "age_group"), ("cbf", "cbf_name"), ("group", "group_name")):
         if not filters.get(filter_key):
             continue
@@ -1617,6 +1685,11 @@ def build_dashboard_data(connection, dataset: str, filters: dict[str, str]):
             WHERE {where} ORDER BY ts.topic""",
         params,
     ).fetchall())
+    topic_filter = filters.get("topic", "") if dataset == "training" else ""
+    if topic_filter not in TRAINING_TOPICS:
+        topic_filter = ""
+    if topic_filter:
+        statuses = [status for status in statuses if status["topic"] == topic_filter]
     status_by_record = defaultdict(list)
     for status in statuses:
         status_by_record[status["record_id"]].append(status)
@@ -1800,7 +1873,7 @@ def build_dashboard_data(connection, dataset: str, filters: dict[str, str]):
         activity_filter_options["ages"].add(age)
         activity_filter_options["genders"].add(gender)
         activity_filter_options["cbfs"].add(cbf)
-        for topic in TRAINING_TOPICS:
+        for topic in ([topic_filter] if topic_filter else TRAINING_TOPICS):
             for cycle in range(1, 4):
                 for event_type, field_prefix in (("ct", "Training"), ("fu", "Follow up")):
                     event_date = parse_date(raw.get(f"{field_prefix} {cycle} - {topic}"))
@@ -1822,7 +1895,7 @@ def build_dashboard_data(connection, dataset: str, filters: dict[str, str]):
     activity_filter_options = {
         key: sorted(values) for key, values in activity_filter_options.items()
     }
-    activity_filter_options["topics"] = list(TRAINING_TOPICS)
+    activity_filter_options["topics"] = [topic_filter] if topic_filter else list(TRAINING_TOPICS)
 
     options = {
         "genders": [row[0] for row in connection.execute(
@@ -1834,6 +1907,7 @@ def build_dashboard_data(connection, dataset: str, filters: dict[str, str]):
         "cbfs": [row[0] for row in connection.execute(
             "SELECT DISTINCT cbf_name FROM records WHERE archived_at IS NULL AND TRIM(COALESCE(cbf_name,''))<>'' ORDER BY cbf_name"
         )],
+        "topics": list(TRAINING_TOPICS),
     }
     return {
         "summary": summary,
@@ -2053,8 +2127,10 @@ def build_fh_dashboard_data(connection, filters: dict[str, str]):
 
 def describe_filters(dataset: str, filters: dict[str, str]) -> list[str]:
     descriptions = [f"Dataset: {DATASET_LABELS[dataset]}"]
-    labels = {"gender": "Gender", "age": "Age group", "cbf": "CBF", "group": "Group", "category": "Category", "date_from": "From", "date_to": "To", "status": "Status"}
-    descriptions.extend(f"{labels[key]}: {value}" for key, value in filters.items() if value)
+    labels = {"gender": "Gender", "age": "Age group", "cbf": "CBF", "group": "Group", "category": "Category", "topic": "Training type", "date_from": "From", "date_to": "To", "status": "Status"}
+    descriptions.extend(f"{labels[key]}: {value}" for key, value in filters.items() if value and key in labels)
+    if dataset == "training":
+        descriptions.append("Dropouts: Included" if filters.get("dropouts") == "include" else "Dropouts: Excluded")
     return descriptions
 
 
@@ -2088,7 +2164,7 @@ def build_cbf_group_reports(connection, cbf_name: str, supplied_filters: dict):
     if not exists:
         return []
     filters = {key: supplied_filters.get(key, "") for key in (
-        "gender", "age", "cbf", "group", "category", "date_from", "date_to", "status"
+        "gender", "age", "cbf", "group", "category", "topic", "date_from", "date_to", "status", "dropouts"
     )}
     selected_group = filters.get("group", "")
     if selected_group:

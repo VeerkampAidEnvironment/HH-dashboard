@@ -59,6 +59,12 @@
   {% endif %}
 
   <main class="{% if session.get('authenticated') %}page-shell{% else %}auth-shell{% endif %}">
+    {% if session.get('test_environment') %}
+    <section class="test-environment-banner" role="status">
+      <div><strong>Testing environment</strong><span>Changes are saved only in your separate test database.</span></div>
+      <form method="post" action="{{ url_for('test_environment') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="exit"><input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}"><button type="submit">Exit testing</button></form>
+    </section>
+    {% endif %}
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         <div class="flash-stack" aria-live="polite">

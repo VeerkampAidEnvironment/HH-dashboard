@@ -82,6 +82,12 @@ To prepare a CBF tablet:
 
 Each tablet submission has a unique client ID. Repeating an interrupted upload therefore cannot create the same event twice. Rejected submissions remain in the tablet's Pending list with the server message and can be retried or deliberately discarded. Do not clear the browser's site data while unsynchronized entries remain.
 
+When recording a follow-up, the user can optionally press **Add current location**. The browser asks for permission and stores the latitude, longitude, estimated accuracy and capture time with that offline submission. A follow-up can still be saved if location permission is declined or GPS is unavailable.
+
+## Testing environment
+
+Use **Open testing environment** on either **Data entry** or **AE Field App** to work in a personal copy of the live database. You can add practice CTs and follow-ups, including offline submissions, without changing live records. The yellow testing banner confirms that the mode is active. Choose **Exit testing** to return to live data. **Reset test data** discards all of your practice changes and makes a fresh copy of the current live database.
+
 Service workers require HTTPS outside localhost. Production hosting must therefore use HTTPS, secure cookies, reliable backups and personal CBF accounts before field deployment.
 
 ## Tests
