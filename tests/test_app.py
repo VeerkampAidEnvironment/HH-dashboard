@@ -339,6 +339,168 @@ class ApplicationTest(unittest.TestCase):
         self.assertIn(b'+ Add a new meeting venue', venue_page.data)
         self.assertIn(b'data-new-venue-field', venue_page.data)
 
+    def test_field_app_shell_manifest_and_bootstrap_are_ae_only(self):
+        with self.app.app_context():
+            from db import get_db
+
+            cbf = get_db().execute(
+                """SELECT cbf_name FROM records WHERE dataset='training'
+                   AND archived_at IS NULL AND TRIM(cbf_name)<>'' LIMIT 1"""
+            ).fetchone()[0]
+        page = self.client.get("/field-app/")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b"AE offline data collection", page.data)
+        self.assertIn(b"field-app-config", page.data)
+        self.assertIn(b"field-app.js", page.data)
+        manifest = self.client.get("/field-app/manifest.webmanifest")
+        self.assertEqual(manifest.status_code, 200)
+        self.assertEqual(manifest.headers["Content-Type"], "application/manifest+json")
+        manifest_data = json.loads(manifest.data)
+        self.assertEqual(manifest_data["start_url"], "/field-app/")
+        self.assertEqual({icon["sizes"] for icon in manifest_data["icons"]}, {"192x192", "512x512"})
+        worker = self.client.get("/field-app/service-worker.js")
+        self.assertEqual(worker.status_code, 200)
+        self.assertIn(b"arfsa-field-shell", worker.data)
+        worker.close()
+
+        bootstrap = self.client.get("/field-app/api/bootstrap", query_string={"cbf": cbf})
+        self.assertEqual(bootstrap.status_code, 200)
+        package = bootstrap.get_json()["package"]
+        self.assertEqual(package["cbf"], cbf)
+        self.assertEqual(len(package["topics"]), 8)
+        self.assertTrue(package["farmers"])
+        self.assertNotIn("raw_data", package["farmers"][0])
+        self.assertNotIn("phone", package["farmers"][0])
+        with self.app.app_context():
+            from db import get_db
+
+            expected = get_db().execute(
+                """SELECT COUNT(*) FROM records WHERE dataset='training'
+                   AND archived_at IS NULL AND cbf_name=?""",
+                (cbf,),
+            ).fetchone()[0]
+        self.assertEqual(package["summary"]["farmers"], expected)
+
+    def test_field_app_centralized_sync_is_idempotent(self):
+        with self.app.app_context():
+            from db import get_db
+
+            eligible = get_db().execute(
+                """SELECT r.id, r.cbf_name, ts.topic FROM records r
+                   JOIN topic_statuses ts ON ts.record_id=r.id
+                   WHERE r.dataset='training' AND r.archived_at IS NULL
+                   AND TRIM(r.cbf_name)<>'' AND ts.status_code IN ('CT','RT') LIMIT 1"""
+            ).fetchone()
+        submission_id = "field-test-centralized-0001"
+        payload = {
+            "cbf": eligible["cbf_name"],
+            "deviceId": "test-tablet-0001",
+            "submissions": [{
+                "id": submission_id,
+                "type": "centralized",
+                "eventDate": date.today().isoformat(),
+                "location": "Offline sync venue",
+                "createdAt": "2026-08-06T08:00:00Z",
+                "entries": [{"recordId": eligible["id"], "topic": eligible["topic"]}],
+            }],
+        }
+        first = self.client.post(
+            "/field-app/api/sync", json=payload, headers={"X-CSRF-Token": self.csrf()}
+        )
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.get_json()["results"][0]["status"], "accepted")
+        second = self.client.post(
+            "/field-app/api/sync", json=payload, headers={"X-CSRF-Token": self.csrf()}
+        )
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.get_json()["results"][0]["status"], "duplicate")
+        with self.app.app_context():
+            from db import get_db
+
+            rows = get_db().execute(
+                """SELECT id, device_id, client_created_at FROM field_events
+                   WHERE client_submission_id=?""", (submission_id,)
+            ).fetchall()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["device_id"], "test-tablet-0001")
+            self.assertEqual(rows[0]["client_created_at"], "2026-08-06T08:00:00Z")
+
+    def test_ae_field_user_is_restricted_to_assigned_cbf_package(self):
+        with self.app.app_context():
+            from db import get_db
+
+            cbfs = [row[0] for row in get_db().execute(
+                """SELECT DISTINCT cbf_name FROM records WHERE dataset='training'
+                   AND archived_at IS NULL AND TRIM(cbf_name)<>'' ORDER BY cbf_name LIMIT 2"""
+            ).fetchall()]
+        self.assertEqual(len(cbfs), 2)
+        created = self.client.post(
+            "/users",
+            data={
+                "csrf_token": self.csrf(), "display_name": "Offline CBF Test",
+                "username": "offline.cbf.test", "password": "field-password",
+                "access_scope": "ae_user", "cbf_name": cbfs[0],
+            },
+        )
+        self.assertEqual(created.status_code, 302)
+        self.client.post("/logout", data={"csrf_token": self.csrf()})
+        login = self.client.post(
+            "/login", data={"username": "offline.cbf.test", "password": "field-password"}
+        )
+        self.assertEqual(login.status_code, 302)
+        self.assertEqual(self.client.get("/field-app/").status_code, 200)
+        assigned = self.client.get("/field-app/api/bootstrap")
+        self.assertEqual(assigned.status_code, 200)
+        self.assertEqual(assigned.get_json()["package"]["cbf"], cbfs[0])
+        self.assertEqual(
+            self.client.get("/field-app/api/bootstrap", query_string={"cbf": cbfs[1]}).status_code,
+            403,
+        )
+
+    def test_field_app_followup_sync_uses_existing_questionnaire_rules(self):
+        with self.app.app_context():
+            from db import get_db
+
+            due = get_db().execute(
+                """SELECT r.id, r.cbf_name, ts.topic FROM records r
+                   JOIN topic_statuses ts ON ts.record_id=r.id
+                   WHERE r.dataset='training' AND r.archived_at IS NULL
+                   AND TRIM(r.cbf_name)<>'' AND ts.status_code='FU' LIMIT 1"""
+            ).fetchone()
+        self.assertIsNotNone(due)
+        payload = {
+            "cbf": due["cbf_name"],
+            "deviceId": "test-tablet-followup",
+            "submissions": [{
+                "id": "field-test-followup-0001",
+                "type": "followup",
+                "eventDate": date.today().isoformat(),
+                "recordId": due["id"],
+                "createdAt": "2026-08-06T09:00:00Z",
+                "responses": [{
+                    "topic": due["topic"],
+                    "answers": {"adoption_rate": "61", "next_action": "followup_1"},
+                }],
+            }],
+        }
+        response = self.client.post(
+            "/field-app/api/sync", json=payload, headers={"X-CSRF-Token": self.csrf()}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["results"][0]["status"], "accepted")
+        with self.app.app_context():
+            from db import get_db
+
+            stored = get_db().execute(
+                """SELECT fr.adoption_rate, fr.next_action
+                   FROM followup_responses fr
+                   JOIN field_event_entries fee ON fee.id=fr.event_entry_id
+                   JOIN field_events e ON e.id=fee.event_id
+                   WHERE e.client_submission_id='field-test-followup-0001'"""
+            ).fetchone()
+            self.assertEqual(stored["adoption_rate"], 61)
+            self.assertEqual(stored["next_action"], "followup_1")
+
     def test_data_entry_uses_switches_for_short_choices(self):
         response = self.client.get("/data-entry")
         self.assertEqual(response.status_code, 200)

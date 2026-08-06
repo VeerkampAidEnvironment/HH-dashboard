@@ -68,6 +68,22 @@ Combined is reserved for relationships between AE exposure/adoption and FH outco
 
 The **Administration → Data entry** page lets a CBF select their name and record either a centralized training or a farmer follow-up. Centralized training lists CT-eligible farmers separately for each topic and records the event date, location and attendance. Follow-up entry lists only farmers with due follow-ups and accepts scores only for their FU topics. Every submission updates the AE record, recalculates topic status, creates an event-history entry and is written to the audit log.
 
+## AE Field App
+
+The **Administration → AE Field App** is an installable, tablet-oriented PWA for offline AE data entry. It stores a CBF's prepared beneficiary worklist and questionnaires in IndexedDB, saves CT and follow-up submissions to a local outbox without requiring a connection, and uploads them when the user chooses **Synchronize now** or the app detects that internet has returned.
+
+To prepare a CBF tablet:
+
+1. In **User accounts**, create an **AE field user** and assign the account to one CBF.
+2. Sign in on the tablet while online and open **AE Field App**.
+3. Press **Prepare or update field data** and confirm the beneficiary count.
+4. Install the app from the browser's **Add to Home screen** or **Install app** action if desired.
+5. After fieldwork, open the app online and press **Synchronize now**. Keep every pending entry until it is confirmed as synchronized.
+
+Each tablet submission has a unique client ID. Repeating an interrupted upload therefore cannot create the same event twice. Rejected submissions remain in the tablet's Pending list with the server message and can be retried or deliberately discarded. Do not clear the browser's site data while unsynchronized entries remain.
+
+Service workers require HTTPS outside localhost. Production hosting must therefore use HTTPS, secure cookies, reliable backups and personal CBF accounts before field deployment.
+
 ## Tests
 
 ```powershell

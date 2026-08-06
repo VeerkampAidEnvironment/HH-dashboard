@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}AE Field App - ARFSA{% endblock %}
+{% block head %}
+  <link rel="manifest" href="{{ url_for('field_app_manifest') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/field-app-icon-192.png') }}">
+  <meta name="application-name" content="ARFSA Field">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+{% endblock %}
+{% block content %}
+<div class="field-app" data-field-app>
+  <section class="field-hero">
+    <div>
+      <p class="eyebrow hero-eyebrow">AE offline data collection</p>
+      <h1>Field App</h1>
+      <p>Prepare while connected, enter CTs and follow-ups anywhere, then synchronize when internet returns.</p>
+    </div>
+    <div class="field-hero-actions">
+      <span class="connection-pill" data-connection-status><i></i><span>Checking connection</span></span>
+      <button class="button field-button-light" type="button" data-sync-now>Synchronize now</button>
+    </div>
+  </section>
+
+  <div class="field-alert" data-field-alert hidden role="status" aria-live="polite"></div>
+
+  <section class="field-prepare panel" data-prepare-panel>
+    <div>
+      <p class="eyebrow">Prepare this tablet</p>
+      <h2>{% if assigned_cbf %}{{ assigned_cbf }} field data{% else %}Choose the CBF for this tablet{% endif %}</h2>
+      <p>The latest assigned beneficiaries, eligibility and questionnaires will be stored on this tablet for offline use.</p>
+    </div>
+    <div class="field-prepare-controls">
+      {% if can_choose_cbf %}
+      <label>Community Based Facilitator
+        <select data-cbf-select>
+          <option value="">Select a CBF</option>
+          {% for cbf in cbfs %}<option value="{{ cbf }}">{{ cbf }}</option>{% endfor %}
+        </select>
+      </label>
+      {% else %}
+      <input type="hidden" data-cbf-select value="{{ assigned_cbf }}">
+      {% endif %}
+      <button class="button button-primary" type="button" data-prepare>Prepare or update field data</button>
+    </div>
+  </section>
+
+  <section class="field-ready" data-field-ready hidden>
+    <div class="field-summary-grid">
+      <article class="field-summary-card field-summary-primary"><span>Prepared for</span><strong data-summary-cbf>—</strong><small data-summary-time>Not prepared</small></article>
+      <article class="field-summary-card"><span>Beneficiaries</span><strong data-summary-farmers>0</strong><small>available offline</small></article>
+      <article class="field-summary-card"><span>CT topics due</span><strong data-summary-ct>0</strong><small>eligible entries</small></article>
+      <article class="field-summary-card"><span>Follow-ups due</span><strong data-summary-fu>0</strong><small>topic questionnaires</small></article>
+      <article class="field-summary-card field-summary-pending"><span>Waiting to upload</span><strong data-summary-pending>0</strong><small data-summary-pending-label>tablet submissions</small></article>
+    </div>
+
+    <nav class="field-tabs" aria-label="Field app sections">
+      <button class="active" type="button" data-field-tab="home">Today</button>
+      <button type="button" data-field-tab="centralized">Centralized training</button>
+      <button type="button" data-field-tab="followup">Follow-up</button>
+      <button type="button" data-field-tab="pending">Pending <span data-pending-badge>0</span></button>
+    </nav>
+
+    <section class="field-pane active" data-field-pane="home">
+      <div class="field-home-grid">
+        <button class="field-action-card" type="button" data-open-pane="centralized">
+          <span class="field-action-symbol">CT</span><span><strong>Record centralized training</strong><small>Choose topics and mark attending beneficiaries.</small></span><b>Start</b>
+        </button>
+        <button class="field-action-card" type="button" data-open-pane="followup">
+          <span class="field-action-symbol field-action-fu">FU</span><span><strong>Record a beneficiary follow-up</strong><small>Find a beneficiary and complete due questionnaires.</small></span><b>Start</b>
+        </button>
+      </div>
+      <div class="panel field-safety-card">
+        <div class="field-safety-icon">✓</div>
+        <div><h2>Your offline entries are saved on this tablet</h2><p>You can close the app between visits. Keep pending entries until they show as synchronized.</p></div>
+      </div>
+    </section>
+
+    <section class="field-pane" data-field-pane="centralized" hidden>
+      <div class="field-pane-heading"><div><p class="eyebrow">Centralized training</p><h2>Record attendance by topic</h2><p>Only beneficiaries eligible when the tablet was last prepared are shown.</p></div><button class="button button-ghost" type="button" data-open-pane="home">Back</button></div>
+      <form class="field-form" data-ct-form>
+        <div class="field-event-grid panel">
+          <label>Training date<input type="date" name="eventDate" required></label>
+          <label>Meeting venue<input type="text" name="location" list="field-venues" required placeholder="Village, venue or training centre"><datalist id="field-venues" data-venue-list></datalist></label>
+          <label>Beneficiary group<select name="group" data-ct-group><option value="">All groups</option></select></label>
+        </div>
+        <div class="field-topic-list" data-ct-topics></div>
+        <div class="field-sticky-save"><span data-ct-selection-count>No attendees selected</span><button class="button button-primary" type="submit">Save safely on this tablet</button></div>
+      </form>
+    </section>
+
+    <section class="field-pane" data-field-pane="followup" hidden>
+      <div class="field-pane-heading"><div><p class="eyebrow">Beneficiary follow-up</p><h2>Complete due questionnaires</h2><p>Search the prepared worklist and select the beneficiary visited.</p></div><button class="button button-ghost" type="button" data-open-pane="home">Back</button></div>
+      <form class="field-form" data-followup-form>
+        <div class="field-event-grid panel field-followup-selector">
+          <label>Follow-up date<input type="date" name="eventDate" required></label>
+          <label>Beneficiary group<select name="group" data-fu-group><option value="">All groups</option></select></label>
+          <label class="field-search-wide">Find beneficiary<input type="search" name="search" data-fu-search placeholder="Search name, ID, village or group" autocomplete="off"></label>
+        </div>
+        <div class="field-farmer-list panel" data-farmer-list></div>
+        <div class="field-questionnaires" data-followup-questionnaires hidden></div>
+        <div class="field-sticky-save" data-followup-save hidden><span data-followup-selection>Complete at least one topic</span><button class="button button-primary" type="submit">Save safely on this tablet</button></div>
+      </form>
+    </section>
+
+    <section class="field-pane" data-field-pane="pending" hidden>
+      <div class="field-pane-heading"><div><p class="eyebrow">Synchronization queue</p><h2>Entries stored on this tablet</h2><p>Accepted entries disappear from this list after synchronization. Entries needing attention remain visible.</p></div><button class="button button-primary" type="button" data-sync-now>Synchronize now</button></div>
+      <div class="field-outbox" data-outbox-list></div>
+    </section>
+  </section>
+</div>
+<script id="field-app-config" type="application/json">{{ field_app_config|tojson }}</script>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/field-app.js') }}" defer></script>
+{% endblock %}

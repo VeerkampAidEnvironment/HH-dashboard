@@ -22,6 +22,7 @@ from flask import (
     Flask,
     abort,
     flash,
+    jsonify,
     make_response,
     redirect,
     render_template,
@@ -29,6 +30,7 @@ from flask import (
     session,
     url_for,
 )
+from werkzeug.datastructures import MultiDict
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from db import get_db, get_setting, init_db, log_audit, register_db, set_setting, utc_now
@@ -123,10 +125,12 @@ def create_app(test_config=None):
     def protect_application():
         allowed = {"login", "static", "health"}
         if request.endpoint not in allowed and not session.get("authenticated"):
+            if request.path.startswith("/field-app/api/"):
+                return jsonify({"ok": False, "error": "Sign in online before synchronizing."}), 401
             return redirect(url_for("login", next=request.full_path.rstrip("?")))
         if request.endpoint not in allowed and session.get("authenticated"):
             user = get_db().execute(
-                "SELECT id, username, display_name, is_active, is_admin, access_scope FROM users WHERE id=?",
+                "SELECT id, username, display_name, is_active, is_admin, access_scope, cbf_name FROM users WHERE id=?",
                 (session.get("user_id"),),
             ).fetchone()
             if not user or not user["is_active"]:
@@ -137,6 +141,7 @@ def create_app(test_config=None):
             session["display_name"] = user["display_name"]
             session["is_admin"] = bool(user["is_admin"])
             session["access_scope"] = user["access_scope"]
+            session["cbf_name"] = user["cbf_name"] or ""
             fh_allowed = {"dashboard", "record_list", "record_detail", "logout"}
             if user["access_scope"] == "fh_dashboard" and request.endpoint not in fh_allowed:
                 abort(403)
@@ -169,6 +174,7 @@ def create_app(test_config=None):
                 session["display_name"] = user["display_name"]
                 session["is_admin"] = bool(user["is_admin"])
                 session["access_scope"] = user["access_scope"]
+                session["cbf_name"] = user["cbf_name"] or ""
                 session["csrf_token"] = secrets.token_urlsafe(32)
                 get_db().execute("UPDATE users SET last_login_at=? WHERE id=?", (utc_now(), user["id"]))
                 get_db().commit()
@@ -613,6 +619,11 @@ def create_app(test_config=None):
     @admin_required
     def users():
         connection = get_db()
+        cbfs = [row[0] for row in connection.execute(
+            """SELECT DISTINCT cbf_name FROM records
+               WHERE dataset='training' AND archived_at IS NULL
+               AND TRIM(COALESCE(cbf_name,''))<>'' ORDER BY cbf_name"""
+        ).fetchall()]
         if request.method == "POST":
             username = request.form.get("username", "").strip()
             display_name = request.form.get("display_name", "").strip()
@@ -629,12 +640,16 @@ def create_app(test_config=None):
                     access_scope = request.form.get("access_scope", "full")
                     if access_scope not in {"full", "ae_user", "fh_dashboard"}:
                         access_scope = "full"
+                    cbf_name = request.form.get("cbf_name", "").strip() if access_scope == "ae_user" else ""
+                    if cbf_name not in cbfs:
+                        cbf_name = ""
                     is_admin = 1 if request.form.get("is_admin") and access_scope == "full" else 0
                     cursor = connection.execute(
-                        """INSERT INTO users(username, display_name, password_hash, is_active, is_admin, access_scope, created_at, updated_at)
-                           VALUES(?, ?, ?, 1, ?, ?, ?, ?)""",
+                        """INSERT INTO users(username, display_name, password_hash, is_active, is_admin,
+                                             access_scope, cbf_name, created_at, updated_at)
+                           VALUES(?, ?, ?, 1, ?, ?, ?, ?, ?)""",
                         (username, display_name, generate_password_hash(password),
-                         is_admin, access_scope, now, now),
+                         is_admin, access_scope, cbf_name or None, now, now),
                     )
                     log_audit(connection, session["username"], "create", "user", cursor.lastrowid,
                               f"Created account {username}")
@@ -645,7 +660,7 @@ def create_app(test_config=None):
                     connection.rollback()
                     flash("That username is already in use.", "error")
         rows = connection.execute("SELECT * FROM users ORDER BY display_name COLLATE NOCASE").fetchall()
-        return render_template("users.html", users=rows)
+        return render_template("users.html", users=rows, cbfs=cbfs)
 
     @app.post("/users/<int:user_id>/password")
     @admin_required
@@ -700,14 +715,23 @@ def create_app(test_config=None):
         access_scope = request.form.get("access_scope", "full")
         if access_scope not in {"full", "ae_user", "fh_dashboard"}:
             abort(400, "Invalid access level")
+        cbfs = {row[0] for row in connection.execute(
+            """SELECT DISTINCT cbf_name FROM records
+               WHERE dataset='training' AND archived_at IS NULL
+               AND TRIM(COALESCE(cbf_name,''))<>''"""
+        ).fetchall()}
+        cbf_name = request.form.get("cbf_name", "").strip() if access_scope == "ae_user" else ""
+        if cbf_name and cbf_name not in cbfs:
+            abort(400, "Invalid CBF assignment")
         is_admin = 1 if request.form.get("is_admin") and access_scope == "full" else 0
         connection.execute(
-            "UPDATE users SET access_scope=?, is_admin=?, updated_at=? WHERE id=?",
-            (access_scope, is_admin, utc_now(), user_id),
+            "UPDATE users SET access_scope=?, is_admin=?, cbf_name=?, updated_at=? WHERE id=?",
+            (access_scope, is_admin, cbf_name or None, utc_now(), user_id),
         )
         label = {"full": "Full system access", "ae_user": "AE User", "fh_dashboard": "FH dashboard only"}[access_scope]
         log_audit(connection, session["username"], "change_access", "user", user_id,
-                  f"Changed access for {user['username']} to {label}")
+                  f"Changed access for {user['username']} to {label}",
+                  {"access_scope": access_scope, "cbf_name": cbf_name or None})
         connection.commit()
         flash(f"Access for {user['display_name']} was updated.", "success")
         return redirect(url_for("users"))
@@ -844,6 +868,93 @@ def create_app(test_config=None):
             venues=venues, selected_venue=selected_venue, new_venue=new_venue,
         )
 
+    @app.get("/field-app/")
+    def field_app():
+        connection = get_db()
+        cbfs = available_ae_cbfs(connection)
+        assigned_cbf = session.get("cbf_name", "") if session.get("access_scope") == "ae_user" else ""
+        return render_template(
+            "field_app.html",
+            cbfs=cbfs,
+            assigned_cbf=assigned_cbf,
+            can_choose_cbf=session.get("access_scope") != "ae_user",
+            field_app_config={
+                "bootstrapUrl": url_for("field_app_bootstrap"),
+                "syncUrl": url_for("field_app_sync"),
+                "csrfToken": csrf_token(),
+                "assignedCbf": assigned_cbf,
+                "canChooseCbf": session.get("access_scope") != "ae_user",
+                "username": session.get("username", ""),
+            },
+        )
+
+    @app.get("/field-app/manifest.webmanifest")
+    def field_app_manifest():
+        response = make_response(json.dumps({
+            "name": "ARFSA AE Field App",
+            "short_name": "ARFSA Field",
+            "description": "Offline centralized training and beneficiary follow-up entry.",
+            "start_url": url_for("field_app"),
+            "scope": "/field-app/",
+            "display": "standalone",
+            "background_color": "#f8f8f8",
+            "theme_color": "#087880",
+            "icons": [
+                {
+                    "src": url_for("static", filename="img/field-app-icon-192.png"),
+                    "sizes": "192x192", "type": "image/png", "purpose": "any maskable",
+                },
+                {
+                    "src": url_for("static", filename="img/field-app-icon-512.png"),
+                    "sizes": "512x512", "type": "image/png", "purpose": "any maskable",
+                },
+            ],
+        }))
+        response.headers["Content-Type"] = "application/manifest+json"
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+    @app.get("/field-app/service-worker.js")
+    def field_app_service_worker():
+        response = make_response(app.send_static_file("js/field-service-worker.js"))
+        response.headers["Content-Type"] = "application/javascript; charset=utf-8"
+        response.headers["Cache-Control"] = "no-cache"
+        response.headers["Service-Worker-Allowed"] = "/field-app/"
+        return response
+
+    @app.get("/field-app/api/bootstrap")
+    def field_app_bootstrap():
+        connection = get_db()
+        cbf_name = field_app_cbf(connection, request.args.get("cbf", ""))
+        refresh_time_sensitive_statuses(connection)
+        return jsonify({"ok": True, "package": build_field_app_package(connection, cbf_name)})
+
+    @app.post("/field-app/api/sync")
+    def field_app_sync():
+        connection = get_db()
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({"ok": False, "error": "The synchronization data is invalid."}), 400
+        requested_cbf = str(payload.get("cbf") or "").strip()
+        cbf_name = field_app_cbf(connection, requested_cbf)
+        device_id = str(payload.get("deviceId") or "").strip()
+        submissions = payload.get("submissions")
+        if not device_id or len(device_id) > 100:
+            return jsonify({"ok": False, "error": "This tablet could not be identified."}), 400
+        if not isinstance(submissions, list) or len(submissions) > 100:
+            return jsonify({"ok": False, "error": "Synchronize no more than 100 submissions at once."}), 400
+        results = [
+            synchronize_field_submission(
+                connection, cbf_name, submission, session["username"], device_id
+            )
+            for submission in submissions
+        ]
+        return jsonify({
+            "ok": all(item["status"] in {"accepted", "duplicate"} for item in results),
+            "results": results,
+            "serverTime": utc_now(),
+        })
+
     @app.get("/bulk-upload")
     def bulk_upload():
         return render_template("bulk_upload.html")
@@ -862,7 +973,204 @@ def valid_iso_date(value: str) -> str | None:
         return None
 
 
-def save_centralized_training(connection, cbf_name: str, values, username: str):
+def available_ae_cbfs(connection) -> list[str]:
+    return [row[0] for row in connection.execute(
+        """SELECT DISTINCT cbf_name FROM records
+           WHERE dataset='training' AND archived_at IS NULL
+           AND TRIM(COALESCE(cbf_name,''))<>'' ORDER BY cbf_name"""
+    ).fetchall()]
+
+
+def field_app_cbf(connection, requested_cbf: str) -> str:
+    requested_cbf = str(requested_cbf or "").strip()
+    if session.get("access_scope") == "ae_user":
+        assigned_cbf = str(session.get("cbf_name") or "").strip()
+        if not assigned_cbf:
+            abort(403, "An administrator must assign this account to a CBF before field data can be prepared.")
+        if requested_cbf and requested_cbf != assigned_cbf:
+            abort(403, "This account cannot access another CBF's field data.")
+        return assigned_cbf
+    if requested_cbf not in available_ae_cbfs(connection):
+        abort(400, "Select a valid CBF before preparing field data.")
+    return requested_cbf
+
+
+def build_field_app_package(connection, cbf_name: str) -> dict:
+    records = connection.execute(
+        """SELECT r.id, r.name, r.group_name, r.village, r.updated_at, f.uid
+           FROM records r JOIN farmers f ON f.id=r.farmer_id
+           WHERE r.dataset='training' AND r.archived_at IS NULL AND r.cbf_name=?
+           ORDER BY r.group_name COLLATE NOCASE, r.name COLLATE NOCASE""",
+        (cbf_name,),
+    ).fetchall()
+    record_ids = [row["id"] for row in records]
+    statuses_by_record = defaultdict(list)
+    if record_ids:
+        placeholders = ",".join("?" for _ in record_ids)
+        status_rows = connection.execute(
+            f"""SELECT record_id, topic, status_code, status_label, last_activity_date
+                FROM topic_statuses WHERE record_id IN ({placeholders})
+                ORDER BY topic""",
+            record_ids,
+        ).fetchall()
+        for row in status_rows:
+            statuses_by_record[row["record_id"]].append({
+                "topic": row["topic"],
+                "code": row["status_code"],
+                "label": row["status_label"],
+                "lastActivityDate": row["last_activity_date"],
+            })
+    farmers = []
+    ct_entries = 0
+    followup_entries = 0
+    for row in records:
+        statuses = statuses_by_record[row["id"]]
+        ct_topics = [item["topic"] for item in statuses if item["code"] in {"CT", "RT"}]
+        followup_topics = [item for item in statuses if item["code"] == "FU"]
+        ct_entries += len(ct_topics)
+        followup_entries += len(followup_topics)
+        farmers.append({
+            "id": row["id"],
+            "uid": row["uid"],
+            "name": row["name"],
+            "group": row["group_name"] or "",
+            "village": row["village"] or "",
+            "updatedAt": row["updated_at"],
+            "ctTopics": ct_topics,
+            "followupTopics": followup_topics,
+        })
+    venue_rows = connection.execute(
+        """SELECT location AS venue FROM field_events
+           WHERE event_type='centralized' AND TRIM(COALESCE(location,''))<>''
+           UNION
+           SELECT village AS venue FROM records
+           WHERE dataset='training' AND archived_at IS NULL AND cbf_name=?
+           AND TRIM(COALESCE(village,''))<>''
+           ORDER BY venue COLLATE NOCASE""",
+        (cbf_name,),
+    ).fetchall()
+    return {
+        "version": 1,
+        "questionnaireVersion": QUESTIONNAIRE_VERSION,
+        "preparedAt": utc_now(),
+        "cbf": cbf_name,
+        "topics": list(TRAINING_TOPICS),
+        "questionnaires": {
+            topic: questionnaire_for_topic(topic) for topic in TRAINING_TOPICS
+        },
+        "groups": sorted(
+            {row["group_name"] for row in records if row["group_name"]}, key=str.casefold
+        ),
+        "venues": [row["venue"] for row in venue_rows],
+        "farmers": farmers,
+        "summary": {
+            "farmers": len(farmers),
+            "centralizedTrainingDue": ct_entries,
+            "followupsDue": followup_entries,
+        },
+    }
+
+
+def synchronize_field_submission(connection, cbf_name: str, submission, username: str, device_id: str) -> dict:
+    if not isinstance(submission, dict):
+        return {"id": "", "status": "rejected", "message": "A submission is not valid."}
+    submission_id = str(submission.get("id") or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9._:-]{8,100}", submission_id):
+        return {"id": submission_id[:100], "status": "rejected", "message": "The submission ID is invalid."}
+    existing = connection.execute(
+        "SELECT id FROM field_events WHERE client_submission_id=?", (submission_id,)
+    ).fetchone()
+    if existing:
+        return {
+            "id": submission_id, "status": "duplicate", "eventId": existing["id"],
+            "message": "This submission was already synchronized.",
+        }
+    submission_type = str(submission.get("type") or "").strip()
+    client_created_at = str(submission.get("createdAt") or "")[:40] or None
+    pairs = [("event_date", str(submission.get("eventDate") or ""))]
+    if submission_type == "centralized":
+        location = str(submission.get("location") or "").strip()
+        entries = submission.get("entries")
+        if not isinstance(entries, list) or not entries or len(entries) > 2000:
+            return {"id": submission_id, "status": "rejected", "message": "Select at least one valid attendee."}
+        grouped_entries = defaultdict(list)
+        try:
+            for entry in entries:
+                record_id = int(entry.get("recordId"))
+                topic = str(entry.get("topic") or "")
+                if record_id <= 0 or topic not in TRAINING_TOPICS:
+                    raise ValueError
+                grouped_entries[topic].append(str(record_id))
+        except (AttributeError, TypeError, ValueError):
+            return {"id": submission_id, "status": "rejected", "message": "One or more attendance entries are invalid."}
+        pairs.append(("location_choice", location))
+        pairs.append(("topic_count", str(len(grouped_entries))))
+        for index, (topic, record_ids) in enumerate(grouped_entries.items()):
+            pairs.append((f"topic__{index}", topic))
+            pairs.extend((f"attendee__{index}", record_id) for record_id in record_ids)
+        save_function = save_centralized_training
+    elif submission_type == "followup":
+        responses = submission.get("responses")
+        try:
+            record_id = int(submission.get("recordId"))
+        except (TypeError, ValueError):
+            record_id = 0
+        if record_id <= 0 or not isinstance(responses, list) or not responses or len(responses) > len(TRAINING_TOPICS):
+            return {"id": submission_id, "status": "rejected", "message": "Complete at least one valid follow-up topic."}
+        pairs.extend((("record_id", str(record_id)), ("topic_count", str(len(responses)))))
+        for index, response_entry in enumerate(responses):
+            if not isinstance(response_entry, dict):
+                return {"id": submission_id, "status": "rejected", "message": "A follow-up response is invalid."}
+            topic = str(response_entry.get("topic") or "")
+            answers = response_entry.get("answers")
+            if topic not in TRAINING_TOPICS or not isinstance(answers, dict):
+                return {"id": submission_id, "status": "rejected", "message": "A follow-up topic or answer is invalid."}
+            pairs.append((f"topic__{index}", topic))
+            for question in questionnaire_for_topic(topic)["questions"]:
+                value = answers.get(question["id"], "")
+                field_name = f"answer__{index}__{question['id']}"
+                if isinstance(value, list):
+                    pairs.extend((field_name, str(item)) for item in value)
+                elif value is not None:
+                    pairs.append((field_name, str(value)))
+        save_function = save_followup
+    else:
+        return {"id": submission_id, "status": "rejected", "message": "The submission type is not supported."}
+
+    try:
+        success, message = save_function(
+            connection, cbf_name, MultiDict(pairs), username,
+            client_submission_id=submission_id,
+            device_id=device_id,
+            client_created_at=client_created_at,
+        )
+    except sqlite3.IntegrityError:
+        connection.rollback()
+        existing = connection.execute(
+            "SELECT id FROM field_events WHERE client_submission_id=?", (submission_id,)
+        ).fetchone()
+        if existing:
+            return {
+                "id": submission_id, "status": "duplicate", "eventId": existing["id"],
+                "message": "This submission was already synchronized.",
+            }
+        return {"id": submission_id, "status": "rejected", "message": "The server could not store this submission."}
+    if not success:
+        return {"id": submission_id, "status": "rejected", "message": message}
+    event = connection.execute(
+        "SELECT id FROM field_events WHERE client_submission_id=?", (submission_id,)
+    ).fetchone()
+    return {
+        "id": submission_id, "status": "accepted", "eventId": event["id"] if event else None,
+        "message": message,
+    }
+
+
+def save_centralized_training(
+    connection, cbf_name: str, values, username: str, *,
+    client_submission_id: str | None = None, device_id: str | None = None,
+    client_created_at: str | None = None,
+):
     event_date = valid_iso_date(values.get("event_date", ""))
     location_choice = values.get("location_choice", "").strip()
     if location_choice == "__new__":
@@ -916,9 +1224,12 @@ def save_centralized_training(connection, cbf_name: str, values, username: str):
         raw[f"Training {training_cycle} - {topic}"] = event_date
 
     cursor = connection.execute(
-        """INSERT INTO field_events(event_type, cbf_name, event_date, location, created_by, created_at)
-           VALUES('centralized', ?, ?, ?, ?, ?)""",
-        (cbf_name, event_date, location, username, utc_now()),
+        """INSERT INTO field_events(
+               event_type, cbf_name, event_date, location, created_by, created_at,
+               client_submission_id, device_id, client_created_at
+           ) VALUES('centralized', ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (cbf_name, event_date, location, username, utc_now(),
+         client_submission_id, device_id, client_created_at),
     )
     event_id = cursor.lastrowid
     for record_id, topic in sorted(requested_entries):
@@ -943,7 +1254,11 @@ def save_centralized_training(connection, cbf_name: str, values, username: str):
     return True, f"Centralized training saved for {len(records_to_update)} beneficiaries."
 
 
-def save_followup(connection, cbf_name: str, values, username: str):
+def save_followup(
+    connection, cbf_name: str, values, username: str, *,
+    client_submission_id: str | None = None, device_id: str | None = None,
+    client_created_at: str | None = None,
+):
     event_date = valid_iso_date(values.get("event_date", ""))
     record_id = values.get("record_id", type=int)
     if not event_date:
@@ -1039,9 +1354,12 @@ def save_followup(connection, cbf_name: str, values, username: str):
         raw[f"Follow up {cycle} score - {topic}"] = score
         raw[f"Follow up {cycle} next action - {topic}"] = entry["next_action"]
     cursor = connection.execute(
-        """INSERT INTO field_events(event_type, cbf_name, event_date, location, created_by, created_at)
-           VALUES('followup', ?, ?, NULL, ?, ?)""",
-        (cbf_name, event_date, username, utc_now()),
+        """INSERT INTO field_events(
+               event_type, cbf_name, event_date, location, created_by, created_at,
+               client_submission_id, device_id, client_created_at
+           ) VALUES('followup', ?, ?, NULL, ?, ?, ?, ?, ?)""",
+        (cbf_name, event_date, username, utc_now(),
+         client_submission_id, device_id, client_created_at),
     )
     event_id = cursor.lastrowid
     for entry in response_entries:

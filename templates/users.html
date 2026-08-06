@@ -14,9 +14,10 @@
       <label>Temporary password<input type="password" name="password" autocomplete="new-password" required></label>
       <fieldset class="account-access-options"><legend>Account access</legend>
         <label class="checkbox-label"><input type="radio" name="access_scope" value="full" checked><span><strong>Full system access</strong><small>Dashboards, beneficiary data and data entry.</small></span></label>
-        <label class="checkbox-label"><input type="radio" name="access_scope" value="ae_user"><span><strong>AE User</strong><small>Everything except data entry, bulk upload and user accounts.</small></span></label>
+        <label class="checkbox-label"><input type="radio" name="access_scope" value="ae_user"><span><strong>AE field user</strong><small>AE dashboards plus the offline Field App for the assigned CBF.</small></span></label>
         <label class="checkbox-label"><input type="radio" name="access_scope" value="fh_dashboard"><span><strong>FH dashboard only</strong><small>Can only view the FH dashboard and read-only FH beneficiary records.</small></span></label>
       </fieldset>
+      <label>CBF assignment<select name="cbf_name"><option value="">Select a CBF for an AE field user</option>{% for cbf in cbfs %}<option value="{{ cbf }}">{{ cbf }}</option>{% endfor %}</select><small>Used only when the account is an AE field user.</small></label>
       <label class="checkbox-label"><input type="checkbox" name="is_admin" value="1"><span>Administrator — can create, reset and deactivate accounts</span></label>
       <button class="button button-primary" type="submit">Create account</button>
     </form>
@@ -28,15 +29,18 @@
       <article class="user-account-card {{ 'user-inactive' if not user.is_active }}">
         <div class="user-account-summary">
           <span class="user-avatar">{{ user.display_name[:1]|upper }}</span>
-          <div><h3>{{ user.display_name }}</h3><p>@{{ user.username }} · {{ 'FH dashboard only' if user.access_scope == 'fh_dashboard' else 'AE User' if user.access_scope == 'ae_user' else 'Administrator' if user.is_admin else 'Full access' }}</p><small>{{ 'Active' if user.is_active else 'Inactive' }}{% if user.last_login_at %} · Last login {{ user.last_login_at[:16].replace('T', ' ') }}{% else %} · Never signed in{% endif %}</small></div>
+          <div><h3>{{ user.display_name }}</h3><p>@{{ user.username }} · {{ 'FH dashboard only' if user.access_scope == 'fh_dashboard' else 'AE field user' if user.access_scope == 'ae_user' else 'Administrator' if user.is_admin else 'Full access' }}{% if user.cbf_name %} · {{ user.cbf_name }}{% endif %}</p><small>{{ 'Active' if user.is_active else 'Inactive' }}{% if user.last_login_at %} · Last login {{ user.last_login_at[:16].replace('T', ' ') }}{% else %} · Never signed in{% endif %}</small></div>
         </div>
         <div class="user-row-actions">
           <form method="post" action="{{ url_for('user_access', user_id=user.id) }}" class="access-update-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <select name="access_scope" aria-label="Access level for {{ user.display_name }}" {% if user.id == session.get('user_id') %}disabled{% endif %}>
               <option value="full" {{ 'selected' if user.access_scope == 'full' }}>Full system access</option>
-              <option value="ae_user" {{ 'selected' if user.access_scope == 'ae_user' }}>AE User</option>
+              <option value="ae_user" {{ 'selected' if user.access_scope == 'ae_user' }}>AE field user</option>
               <option value="fh_dashboard" {{ 'selected' if user.access_scope == 'fh_dashboard' }}>FH dashboard only</option>
+            </select>
+            <select name="cbf_name" aria-label="CBF assignment for {{ user.display_name }}" {% if user.id == session.get('user_id') %}disabled{% endif %}>
+              <option value="">No CBF assigned</option>{% for cbf in cbfs %}<option value="{{ cbf }}" {{ 'selected' if user.cbf_name == cbf }}>{{ cbf }}</option>{% endfor %}
             </select>
             <label class="mini-checkbox"><input type="checkbox" name="is_admin" value="1" {{ 'checked' if user.is_admin }} {% if user.id == session.get('user_id') %}disabled{% endif %}> Admin</label>
             <button class="button button-secondary button-small" type="submit" {% if user.id == session.get('user_id') %}disabled title="You cannot change your own access"{% endif %}>Save access</button>

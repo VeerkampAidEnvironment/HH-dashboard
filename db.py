@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS users (
     is_active INTEGER NOT NULL DEFAULT 1,
     is_admin INTEGER NOT NULL DEFAULT 0,
     access_scope TEXT NOT NULL DEFAULT 'full' CHECK(access_scope IN ('full', 'ae_user', 'fh_dashboard')),
+    cbf_name TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     last_login_at TEXT
@@ -110,7 +111,10 @@ CREATE TABLE IF NOT EXISTS field_events (
     event_date TEXT NOT NULL,
     location TEXT,
     created_by TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    client_submission_id TEXT,
+    device_id TEXT,
+    client_created_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS field_event_entries (
@@ -189,6 +193,8 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
     user_columns = {row["name"] for row in connection.execute("PRAGMA table_info(users)").fetchall()}
     if "access_scope" not in user_columns:
         connection.execute("ALTER TABLE users ADD COLUMN access_scope TEXT NOT NULL DEFAULT 'full'")
+    if "cbf_name" not in user_columns:
+        connection.execute("ALTER TABLE users ADD COLUMN cbf_name TEXT")
     user_schema = connection.execute(
         "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
     ).fetchone()["sql"]
@@ -203,20 +209,31 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
                 is_active INTEGER NOT NULL DEFAULT 1,
                 is_admin INTEGER NOT NULL DEFAULT 0,
                 access_scope TEXT NOT NULL DEFAULT 'full' CHECK(access_scope IN ('full', 'ae_user', 'fh_dashboard')),
+                cbf_name TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 last_login_at TEXT
             )"""
         )
         connection.execute(
-            """INSERT INTO users(id, username, display_name, password_hash, is_active, is_admin, access_scope,
+            """INSERT INTO users(id, username, display_name, password_hash, is_active, is_admin, access_scope, cbf_name,
                                  created_at, updated_at, last_login_at)
                SELECT id, username, display_name, password_hash, is_active, is_admin,
-                      COALESCE(access_scope, 'full'), created_at, updated_at, last_login_at
+                      COALESCE(access_scope, 'full'), cbf_name, created_at, updated_at, last_login_at
                FROM users_legacy"""
         )
         connection.execute("DROP TABLE users_legacy")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_users_active ON users(is_active, username)")
+    field_event_columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(field_events)").fetchall()
+    }
+    for column_name in ("client_submission_id", "device_id", "client_created_at"):
+        if column_name not in field_event_columns:
+            connection.execute(f"ALTER TABLE field_events ADD COLUMN {column_name} TEXT")
+    connection.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_field_events_client_submission "
+        "ON field_events(client_submission_id) WHERE client_submission_id IS NOT NULL"
+    )
     connection.commit()
     if owns_connection:
         connection.close()
