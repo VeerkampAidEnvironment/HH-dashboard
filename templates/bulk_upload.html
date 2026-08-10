@@ -1,4 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Bulk upload - ARFSA{% endblock %}
-{% block content %}<div class="page-heading"><div><p class="eyebrow">Reserved workflow</p><h1>Bulk upload</h1><p class="lead">This section is intentionally reserved until the upload format and validation rules are defined.</p></div></div><div class="empty-state"><span class="empty-icon">↑</span><h2>Bulk upload is coming later</h2><p>Individual additions and changes are available now. No file can be uploaded from this screen yet.</p><a class="button button-primary" href="{{ url_for('record_new') }}">Add an individual record</a></div>{% endblock %}
-
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Administration</p><h1>Bulk upload</h1><p class="lead">Add new beneficiaries from an updated Farmer Database workbook.</p></div></div>
+<div class="form-card panel"><form method="post" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="section-heading"><p class="eyebrow">AE data</p><h2>Farmer Database</h2><p>Use the updated <strong>Farmer Database EDIT HERE</strong> .xlsx file. The file may omit existing beneficiaries or list them in a different order.</p></div>
+  <label>Excel workbook<input type="file" name="workbook" accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required></label>
+  <p class="muted">Existing database records are never removed or overwritten. Beneficiaries are matched by phone number or by their name, sex, group and village. Re-uploading the same file is safe.</p>
+  <div class="button-row"><button class="button button-primary" type="submit">Check and add new data</button></div>
+</form></div>
+{% if result %}<div class="panel"><div class="section-heading"><p class="eyebrow">Upload result</p><h2>{{ result.added }} new beneficiaries added</h2><p>{{ result.existing }} existing rows skipped{% if result.duplicates %} · {{ result.duplicates }} duplicate beneficiaries skipped{% endif %}.</p></div></div>{% endif %}
+{% endblock %}

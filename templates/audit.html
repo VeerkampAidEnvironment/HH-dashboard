@@ -17,6 +17,22 @@
 </div>
 <div class="panel"><div class="table-wrap"><table class="data-table">
   <thead><tr><th>When</th><th>User</th><th>Action</th><th>Entity</th><th>Summary</th></tr></thead>
-  <tbody>{% for item in entries %}<tr><td>{{ item.occurred_at[:19].replace('T',' ') }}</td><td><strong>{{ item.display_name }}</strong></td><td><span class="status-pill">{{ item.action }}</span></td><td>{{ item.entity_type }} #{{ item.entity_id or '-' }}</td><td>{{ item.summary }}</td></tr>{% else %}<tr><td colspan="5" class="empty-cell">No changes match this selection.</td></tr>{% endfor %}</tbody>
+  <tbody>{% for item in entries %}<tr>
+    <td>{{ item.occurred_at[:19].replace('T',' ') }}</td><td><strong>{{ item.display_name }}</strong></td><td><span class="status-pill">{{ item.action }}</span></td><td>{{ item.entity_type }} #{{ item.entity_id or '-' }}</td>
+    <td>{{ item.summary }}
+      {% if item.action == 'bulk_upload' and item.change_details %}
+      <details class="audit-details"><summary>View upload details</summary>
+        <div class="audit-upload-summary">
+          <span><small>Workbook</small><strong>{{ item.change_details.filename or '—' }}</strong></span>
+          <span><small>Added</small><strong>{{ item.change_details.added or 0 }}</strong></span>
+          <span><small>Existing skipped</small><strong>{{ item.change_details.existing or 0 }}</strong></span>
+          <span><small>Duplicates skipped</small><strong>{{ item.change_details.duplicates or 0 }}</strong></span>
+        </div>
+        {% if item.change_details.beneficiaries %}<div class="table-wrap audit-beneficiary-list"><table class="data-table"><thead><tr><th>UID</th><th>Beneficiary</th><th>Sex</th><th>Village</th><th>Group</th><th>Source row</th></tr></thead><tbody>
+          {% for person in item.change_details.beneficiaries %}<tr><td><a href="{{ url_for('record_detail', record_id=person.record_id) }}">{{ person.uid }}</a></td><td><strong>{{ person.name }}</strong></td><td>{{ person.sex or '—' }}</td><td>{{ person.village or '—' }}</td><td>{{ person.group_name or '—' }}</td><td>{{ person.source_row }}</td></tr>{% endfor %}
+        </tbody></table></div>{% elif item.change_details.added %}<p class="muted">Beneficiary-level details were not recorded for this older upload.</p>{% endif %}
+      </details>{% endif %}
+    </td>
+  </tr>{% else %}<tr><td colspan="5" class="empty-cell">No changes match this selection.</td></tr>{% endfor %}</tbody>
 </table></div></div>
 {% endblock %}

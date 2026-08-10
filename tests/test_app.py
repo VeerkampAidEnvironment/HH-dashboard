@@ -64,6 +64,15 @@ class ApplicationTest(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertNotIn(b"Internal Server Error", response.data)
 
+    def test_bulk_upload_requires_an_excel_workbook(self):
+        response = self.client.post(
+            "/bulk-upload",
+            data={"csrf_token": self.csrf()},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Choose the updated Farmer Database Excel file", response.data)
+
     def test_record_cbf_and_pdf_routes(self):
         with self.app.app_context():
             from db import get_db

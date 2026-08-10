@@ -33,6 +33,7 @@ from flask import (
 from werkzeug.datastructures import MultiDict
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from bulk_import import BulkImportError, append_farmer_database
 from db import (
     close_db,
     ensure_test_database,
@@ -93,7 +94,7 @@ def create_app(test_config=None):
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=os.getenv("ARFSA_SECURE_COOKIES", "0") == "1",
-        MAX_CONTENT_LENGTH=8 * 1024 * 1024,
+        MAX_CONTENT_LENGTH=16 * 1024 * 1024,
     )
     if test_config:
         app.config.update(test_config)
@@ -643,12 +644,20 @@ def create_app(test_config=None):
                    FROM audit_log a LEFT JOIN users u ON u.username=a.username COLLATE NOCASE
                    ORDER BY a.id DESC LIMIT 500"""
             ).fetchall()
+        entries = []
+        for row in rows:
+            entry = dict(row)
+            try:
+                entry["change_details"] = json.loads(entry["changes"]) if entry["changes"] else {}
+            except (json.JSONDecodeError, TypeError):
+                entry["change_details"] = {}
+            entries.append(entry)
         usernames = connection.execute(
             """SELECT DISTINCT a.username, COALESCE(u.display_name, a.username) AS display_name
                FROM audit_log a LEFT JOIN users u ON u.username=a.username COLLATE NOCASE
                ORDER BY display_name COLLATE NOCASE"""
         ).fetchall()
-        return render_template("audit.html", entries=rows, usernames=usernames, selected_user=selected_user)
+        return render_template("audit.html", entries=entries, usernames=usernames, selected_user=selected_user)
 
     @app.route("/users", methods=["GET", "POST"])
     @admin_required
@@ -991,9 +1000,34 @@ def create_app(test_config=None):
             "serverTime": utc_now(),
         })
 
-    @app.get("/bulk-upload")
+    @app.route("/bulk-upload", methods=["GET", "POST"])
     def bulk_upload():
-        return render_template("bulk_upload.html")
+        result = None
+        if request.method == "POST":
+            upload = request.files.get("workbook")
+            if not upload or not upload.filename:
+                flash("Choose the updated Farmer Database Excel file.", "error")
+                return render_template("bulk_upload.html", result=result)
+            if Path(upload.filename).suffix.lower() not in {".xlsx", ".xlsm"}:
+                flash("Upload an .xlsx or .xlsm Excel workbook.", "error")
+                return render_template("bulk_upload.html", result=result)
+            connection = get_db()
+            try:
+                result = append_farmer_database(connection, upload.stream, upload.filename)
+                log_audit(connection, session["username"], "bulk_upload", "records", None,
+                          f"Bulk upload added {result['added']} AE beneficiaries",
+                          {"filename": Path(upload.filename).name, **result})
+                connection.commit()
+                flash(f"Safely added {result['added']} new beneficiaries." if result["added"] else
+                      "No new beneficiaries were found; the database was not changed.", "success")
+            except BulkImportError as exc:
+                connection.rollback()
+                flash(str(exc), "error")
+            except Exception as exc:
+                connection.rollback()
+                app.logger.exception("Bulk Farmer Database upload failed")
+                flash(f"The workbook could not be imported ({type(exc).__name__}). No data was added.", "error")
+        return render_template("bulk_upload.html", result=result)
 
     @app.errorhandler(404)
     def not_found(_error):
