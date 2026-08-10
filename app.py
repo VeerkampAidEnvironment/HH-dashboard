@@ -323,13 +323,36 @@ def create_app(test_config=None):
             flash(f"Assigned {group_name} to {cbf_name} and updated {cursor.rowcount} beneficiaries.", "success")
             return redirect(url_for("cbf_list"))
         rows = connection.execute(
-            """SELECT cbf_name, COUNT(*) AS participant_count, COUNT(DISTINCT farmer_id) AS farmer_count,
-                      COUNT(DISTINCT group_name) AS group_count
-               FROM records WHERE archived_at IS NULL AND dataset='training' AND TRIM(cbf_name)<>''
-               GROUP BY cbf_name ORDER BY cbf_name"""
+            """SELECT r.cbf_name, COUNT(DISTINCT r.id) AS participant_count,
+                      COUNT(DISTINCT r.farmer_id) AS farmer_count, COUNT(DISTINCT r.group_name) AS group_count,
+                      COUNT(ts.id) AS topic_count,
+                      COALESCE(SUM(ts.training_received), 0) AS topics_received,
+                      COALESCE(SUM(ts.confirmed_trained), 0) AS topics_confirmed,
+                      COUNT(DISTINCT CASE WHEN ts.followup_needed=1 THEN r.id END) AS followup_people,
+                      COALESCE(SUM(ts.followup_needed), 0) AS followup_actions,
+                      COUNT(DISTINCT CASE WHEN ts.retraining_needed=1 THEN r.id END) AS training_need_people
+               FROM records r LEFT JOIN topic_statuses ts ON ts.record_id=r.id
+               WHERE r.archived_at IS NULL AND r.dataset='training' AND TRIM(r.cbf_name)<>''
+               GROUP BY r.cbf_name ORDER BY r.cbf_name"""
         ).fetchall()
+        cbfs = []
+        for row in rows:
+            cbf = dict(row)
+            cbf["progress_rate"] = round(100 * cbf["topics_received"] / cbf["topic_count"]) if cbf["topic_count"] else 0
+            cbf["adoption_rate"] = round(100 * cbf["topics_confirmed"] / cbf["topic_count"]) if cbf["topic_count"] else 0
+            cbf["urgency_score"] = cbf["followup_actions"] / cbf["participant_count"] if cbf["participant_count"] else 0
+            if cbf["followup_people"] == 0:
+                cbf.update(urgency="clear", urgency_label="No follow-ups due")
+            elif cbf["urgency_score"] >= 4:
+                cbf.update(urgency="high", urgency_label="High follow-up load")
+            elif cbf["urgency_score"] >= 3:
+                cbf.update(urgency="attention", urgency_label="Needs attention")
+            else:
+                cbf.update(urgency="due", urgency_label="Follow-up due")
+            cbfs.append(cbf)
+        cbfs.sort(key=lambda item: (-item["urgency_score"], item["cbf_name"].casefold()))
         return render_template(
-            "cbfs.html", cbfs=rows, cbf_names=cbf_names,
+            "cbfs.html", cbfs=cbfs, cbf_names=cbf_names,
             group_assignments=group_assignments,
         )
 

@@ -501,10 +501,46 @@ body { background: #eef2f3; }
 .audit-upload-summary small { color: var(--muted); }
 .audit-beneficiary-list { max-height: 420px; border: 1px solid #e2eaea; border-radius: 9px; }
 .audit-beneficiary-list thead { position: sticky; top: 0; z-index: 1; background: white; }
-.cbf-assignment-panel { margin-bottom: 22px; }
+.cbf-assignment-panel { margin-bottom: 20px; padding: 0; overflow: hidden; }
+.cbf-assignment-panel > summary, .cbf-group-overview > summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 17px 20px; cursor: pointer; list-style: none; }
+.cbf-assignment-panel > summary::-webkit-details-marker, .cbf-group-overview > summary::-webkit-details-marker { display: none; }
+.cbf-assignment-panel > summary span small, .cbf-assignment-panel > summary span strong, .cbf-group-overview > summary span small, .cbf-group-overview > summary span strong { display: block; }
+.cbf-assignment-panel > summary small, .cbf-group-overview > summary small { margin-bottom: 3px; color: var(--muted); font-size: 9px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+.cbf-assignment-panel > summary b, .cbf-group-overview > summary b { color: var(--ae-darkblue); font-size: 11px; }
+.cbf-assignment-body { padding: 0 20px 20px; border-top: 1px solid #e7eeee; }
+.cbf-assignment-body > p { margin: 14px 0; color: var(--muted); }
 .cbf-assignment-form { display: grid; grid-template-columns: minmax(280px, 1.5fr) minmax(220px, 1fr) auto; gap: 12px; align-items: end; }
 .cbf-assignment-form .button { min-height: 43px; }
-.cbf-group-overview { margin-top: 22px; }
+.cbf-progress-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.cbf-progress-card { position: relative; display: grid; gap: 16px; padding: 19px; overflow: hidden; border: 1px solid #dfe8e9; border-left: 4px solid #9ab3b5; border-radius: 14px; color: var(--ae-black); background: white; box-shadow: 0 7px 20px rgba(28,55,58,.06); transition: transform .16s ease, box-shadow .16s ease; }
+.cbf-progress-card:hover { transform: translateY(-2px); border-color: #bad0d2; box-shadow: 0 12px 26px rgba(28,55,58,.1); }
+.cbf-progress-card.urgency-high { border-left-color: #c45120; }
+.cbf-progress-card.urgency-attention { border-left-color: #d98212; }
+.cbf-progress-card.urgency-due { border-left-color: #d6ad19; }
+.cbf-progress-card.urgency-clear { border-left-color: #46a758; }
+.cbf-progress-card header { display: grid; grid-template-columns: auto 1fr auto; gap: 11px; align-items: center; }
+.cbf-progress-card h2, .cbf-progress-card p { margin: 0; }
+.cbf-progress-card h2 { color: var(--ae-darkblue); font-size: 16px; }
+.cbf-progress-card header p { margin-top: 3px; color: var(--muted); font-size: 10px; }
+.cbf-urgency { padding: 5px 8px; border-radius: 99px; color: #75600a; background: #fff7cf; font-size: 9px; font-weight: 900; white-space: nowrap; }
+.urgency-high .cbf-urgency { color: #873112; background: #ffebe3; }
+.urgency-attention .cbf-urgency { color: #8c4c08; background: #fff1dc; }
+.urgency-clear .cbf-urgency { color: #2f713b; background: #eaf7ec; }
+.cbf-progress-heading { display: flex; justify-content: space-between; color: var(--muted); font-size: 10px; }
+.cbf-progress-heading strong { color: var(--ae-darkblue); font-size: 13px; }
+.cbf-progress-track { height: 7px; margin-top: -10px; overflow: hidden; border-radius: 99px; background: #e8eeee; }
+.cbf-progress-track span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--ae-darkblue), #28a2a7); }
+.cbf-card-stats { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid #e6eded; border-radius: 10px; background: #f8fafa; }
+.cbf-card-stats span { padding: 10px; text-align: center; border-right: 1px solid #e1e9ea; }
+.cbf-card-stats span:last-child { border-right: 0; }
+.cbf-card-stats strong, .cbf-card-stats small { display: block; }
+.cbf-card-stats strong { color: var(--ae-darkblue); font-size: 17px; }
+.cbf-card-stats small { margin-top: 2px; color: var(--muted); font-size: 8px; }
+.urgency-high .followup-stat strong { color: #b45309; }
+.cbf-progress-card footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 9px; }
+.cbf-progress-card footer b { color: var(--ae-darkblue); font-size: 10px; }
+.cbf-group-overview { margin-top: 20px; padding: 0; overflow: hidden; }
+.cbf-group-overview .table-wrap { border-top: 1px solid #e7eeee; }
 @media (max-width: 760px) { .audit-details { min-width: 0; } .audit-upload-summary { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 900px) { .cbf-assignment-form { grid-template-columns: 1fr; } }
 .main-nav .nav-disabled { display: flex; align-items: center; gap: 10px; padding: 10px 12px; color: rgba(255,255,255,.28); cursor: not-allowed; }

@@ -6,11 +6,18 @@ from typing import Any, BinaryIO
 from openpyxl import load_workbook
 from db import set_setting, utc_now
 from scripts.import_data import care_field_schema, clean, json_value, normalize, normalize_age_group, normalize_phone, normalize_sex
-from training import TRAINING_TOPICS, care_module_status, training_topic_status
+from training import TRAINING_TOPICS, care_module_status, parse_date, training_topic_status
 
 
 class BulkImportError(ValueError):
     pass
+
+
+AE_IDENTITY_FIELDS = (
+    "Name", "Sex", "Age group", "PWD (Y/N)", "Phone Number", "Village", "Parish",
+    "Sub County", "DISTRICT", "Designation", "GROUP NAME", "Meeting Venue", "Benefiary Type",
+)
+MAX_EXPECTED_ROW_SHIFT = 3
 
 
 def _identity_keys(core: dict[str, Any]) -> set[tuple[str, ...]]:
@@ -69,6 +76,66 @@ def _is_training_field(field: str) -> bool:
     return field.startswith("Training ") or field.startswith("Follow up ") or field == "Number of Birds Vaccinated"
 
 
+def _comparable_value(field: str, value: Any) -> str:
+    if field == "Phone Number":
+        return normalize_phone(value)
+    if field == "Sex":
+        return normalize_sex(value)
+    return normalize(value)
+
+
+def _exact_activity_value(value: Any) -> str:
+    parsed = parse_date(value)
+    return parsed.isoformat() if parsed else clean(value)
+
+
+def _ae_match_score(uploaded_raw: dict[str, Any], existing_raw: dict[str, Any]) -> tuple[int, int] | None:
+    """Score compatible records, allowing the stored record to have missing training dates."""
+    characteristic_matches = 0
+    for field in AE_IDENTITY_FIELDS:
+        uploaded = _comparable_value(field, uploaded_raw.get(field))
+        existing = _comparable_value(field, existing_raw.get(field))
+        if uploaded and existing:
+            if uploaded != existing:
+                return None
+            characteristic_matches += 1
+
+    exact_training_dates = 0
+    for field, existing_value in existing_raw.items():
+        if not field.startswith("Training ") or not clean(existing_value):
+            continue
+        uploaded_value = uploaded_raw.get(field)
+        if not clean(uploaded_value) or _exact_activity_value(uploaded_value) != _exact_activity_value(existing_value):
+            return None
+        exact_training_dates += 1
+    return exact_training_dates, characteristic_matches
+
+
+def _select_ae_match(uploaded_raw: dict[str, Any], candidate_ids: set[int], existing_by_id: dict[int, dict[str, Any]], uploaded_row: int | None = None) -> tuple[int | None, bool]:
+    scored = []
+    for candidate_id in candidate_ids:
+        score = _ae_match_score(uploaded_raw, existing_by_id[candidate_id]["raw"])
+        if score is not None:
+            scored.append((score, candidate_id))
+    if not scored:
+        return None, False
+    scored.sort(reverse=True)
+    best_score = scored[0][0]
+    best_ids = [candidate_id for score, candidate_id in scored if score == best_score]
+    if len(best_ids) == 1:
+        return best_ids[0], False
+    if uploaded_row is not None:
+        distances = sorted(
+            (abs(existing_by_id[candidate_id]["source_row"] - uploaded_row), candidate_id)
+            for candidate_id in best_ids if existing_by_id[candidate_id].get("source_row") is not None
+        )
+        if distances and distances[0][0] <= MAX_EXPECTED_ROW_SHIFT and (
+            len(distances) == 1 or distances[0][0] < distances[1][0]
+        ):
+            return distances[0][1], False
+    return None, True
+
+
 def append_farmer_database(connection, file: BinaryIO, filename: str = "") -> dict[str, int]:
     try:
         workbook = load_workbook(file, read_only=True, data_only=True, keep_links=False)
@@ -90,7 +157,7 @@ def append_farmer_database(connection, file: BinaryIO, filename: str = "") -> di
         existing_by_id = {}
         identity_matches: dict[tuple[str, ...], set[int]] = {}
         for existing_row in connection.execute(
-            """SELECT r.id, r.name, r.sex, r.phone, r.village, r.group_name, r.raw_data, f.uid
+            """SELECT r.id, r.source_row, r.name, r.sex, r.phone, r.village, r.group_name, r.raw_data, f.uid
                FROM records r JOIN farmers f ON f.id=r.farmer_id WHERE r.dataset='training'"""
         ).fetchall():
             existing = dict(existing_row)
@@ -122,12 +189,14 @@ def append_farmer_database(connection, file: BinaryIO, filename: str = "") -> di
             phone = normalize_phone(core.get("phone"))
             phone_matches = identity_matches.get(("phone", phone), set()) if len(phone) >= 9 else set()
             profile = next(identity for identity in identities if identity[0] == "profile")
-            matching_ids = set(phone_matches) if phone_matches else set(identity_matches.get(profile, set()))
+            matching_ids = set(phone_matches) | set(identity_matches.get(profile, set()))
             if matching_ids:
-                if len(matching_ids) != 1:
+                matched_id, is_ambiguous = _select_ae_match(raw, matching_ids, existing_by_id, row_number)
+                if is_ambiguous or matched_id is None:
                     ambiguous += 1
                     continue
-                existing = existing_by_id[matching_ids.pop()]
+                existing = existing_by_id[matched_id]
+            if matching_ids:
                 merged = dict(existing["raw"])
                 added_fields = []
                 for field, value in raw.items():

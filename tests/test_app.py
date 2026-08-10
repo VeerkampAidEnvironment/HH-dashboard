@@ -73,6 +73,41 @@ class ApplicationTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Choose the updated Excel file", response.data)
 
+    def test_ae_bulk_match_uses_full_profile_and_exact_existing_training_dates(self):
+        from bulk_import import _select_ae_match
+
+        field = "Training 1 - Household Resource Mapping (PIP)"
+        uploaded = {
+            "Name": "TEST BENEFICIARY", "Sex": "F", "Age group": "A",
+            "Phone Number": "0777000000", "Village": "TEST VILLAGE",
+            "Parish": "TEST PARISH", "Sub County": "TEST SUBCOUNTY",
+            "DISTRICT": "TEST DISTRICT", "GROUP NAME": "TEST GROUP",
+            field: "2026-07-14",
+            "Training 2 - Household Resource Mapping (PIP)": "2026-08-01",
+        }
+        candidates = {
+            1: {"raw": {**uploaded, field: "2026-07-14", "Training 2 - Household Resource Mapping (PIP)": ""}},
+            2: {"raw": {**uploaded, field: "2026-07-15", "Training 2 - Household Resource Mapping (PIP)": ""}},
+        }
+        match_id, ambiguous = _select_ae_match(uploaded, {1, 2}, candidates)
+        self.assertEqual(match_id, 1)
+        self.assertFalse(ambiguous)
+
+        candidates[3] = {"raw": {**candidates[1]["raw"], "Village": "OTHER VILLAGE"}}
+        match_id, ambiguous = _select_ae_match(uploaded, {1, 3}, candidates)
+        self.assertEqual(match_id, 1)
+        self.assertFalse(ambiguous)
+
+        candidates[1]["source_row"] = 99
+        candidates[4] = {"raw": dict(candidates[1]["raw"]), "source_row": 140}
+        match_id, ambiguous = _select_ae_match(uploaded, {1, 4}, candidates, uploaded_row=100)
+        self.assertEqual(match_id, 1)
+        self.assertFalse(ambiguous)
+        candidates[1]["source_row"] = 120
+        match_id, ambiguous = _select_ae_match(uploaded, {1, 4}, candidates, uploaded_row=100)
+        self.assertIsNone(match_id)
+        self.assertTrue(ambiguous)
+
     def test_record_cbf_and_pdf_routes(self):
         with self.app.app_context():
             from db import get_db

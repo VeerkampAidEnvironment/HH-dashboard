@@ -1,21 +1,33 @@
 {% extends "base.html" %}
 {% block title %}CBFs - ARFSA{% endblock %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">Community-based facilitators</p><h1>CBF progress pages</h1><p class="lead">Assign farmer groups and open facilitator pages for group coverage, beneficiary priorities and reports.</p></div></div>
-{% if session.get('access_scope') != 'ae_user' %}<section class="panel cbf-assignment-panel">
-  <div class="panel-heading"><div><p class="eyebrow">Group management</p><h2>Assign a farmer group</h2><p>All AE beneficiaries in the selected group will move to the chosen CBF. Future bulk uploads will use the same assignment.</p></div></div>
-  <form method="post" class="cbf-assignment-form">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <label>Farmer group<select name="group_name" required><option value="">Select a group</option>{% for group in group_assignments %}<option value="{{ group.name }}">{{ group.name }} — {{ group.cbf_name or 'Unassigned' }} ({{ group.participant_count }})</option>{% endfor %}</select></label>
-    <label>Assign to CBF<select name="cbf_name" required><option value="">Select a CBF</option>{% for cbf_name in cbf_names %}<option value="{{ cbf_name }}">{{ cbf_name }}</option>{% endfor %}</select></label>
-    <button class="button button-primary" type="submit">Assign group and update beneficiaries</button>
-  </form>
-</section>{% endif %}
-<section class="card-grid">
-  {% for cbf in cbfs %}<a class="entity-card" href="{{ url_for('cbf_detail', cbf_name=cbf.cbf_name) }}">
-    <span class="avatar">{{ cbf.cbf_name[:2] }}</span><div><h2>{{ cbf.cbf_name }}</h2><p>{{ cbf.group_count }} groups</p></div>
-    <div class="entity-stats"><span><strong>{{ cbf.participant_count }}</strong> records</span><span><strong>{{ cbf.farmer_count }}</strong> beneficiaries</span></div><b aria-hidden="true">→</b>
-  </a>{% else %}<div class="empty-state"><h2>No CBF mappings found</h2><p>CBF mappings are imported from the macro workbook.</p></div>{% endfor %}
+<div class="page-heading"><div><p class="eyebrow">Community-based facilitators</p><h1>CBF progress</h1><p class="lead">See training progress and follow-up urgency across facilitators at a glance.</p></div></div>
+
+{% if session.get('access_scope') != 'ae_user' %}<details class="panel cbf-assignment-panel">
+  <summary><span><small>Group management</small><strong>Assign a farmer group to a CBF</strong></span><b>Manage</b></summary>
+  <div class="cbf-assignment-body"><p>All AE beneficiaries in the selected group will move to the chosen CBF. Future bulk uploads use the same assignment.</p>
+    <form method="post" class="cbf-assignment-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>Farmer group<select name="group_name" required><option value="">Select a group</option>{% for group in group_assignments %}<option value="{{ group.name }}">{{ group.name }} — {{ group.cbf_name or 'Unassigned' }} ({{ group.participant_count }})</option>{% endfor %}</select></label>
+      <label>Assign to CBF<select name="cbf_name" required><option value="">Select a CBF</option>{% for cbf_name in cbf_names %}<option value="{{ cbf_name }}">{{ cbf_name }}</option>{% endfor %}</select></label>
+      <button class="button button-primary" type="submit">Assign group</button>
+    </form>
+  </div>
+</details>{% endif %}
+
+<section class="cbf-progress-grid">
+  {% for cbf in cbfs %}<a class="cbf-progress-card urgency-{{ cbf.urgency }}" href="{{ url_for('cbf_detail', cbf_name=cbf.cbf_name) }}">
+    <header><span class="avatar">{{ cbf.cbf_name[:2] }}</span><div><h2>{{ cbf.cbf_name }}</h2><p>{{ cbf.group_count }} {{ 'group' if cbf.group_count == 1 else 'groups' }}</p></div><span class="cbf-urgency">{{ cbf.urgency_label }}</span></header>
+    <div class="cbf-progress-heading"><span>Training received</span><strong>{{ cbf.progress_rate }}%</strong></div>
+    <div class="cbf-progress-track" role="progressbar" aria-label="Training received" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ cbf.progress_rate }}"><span style="width: {{ cbf.progress_rate }}%"></span></div>
+    <div class="cbf-card-stats">
+      <span><strong>{{ cbf.farmer_count }}</strong><small>Beneficiaries</small></span>
+      <span class="followup-stat"><strong>{{ cbf.followup_people }}</strong><small>Follow-ups due</small></span>
+      <span><strong>{{ cbf.followup_actions }}</strong><small>Topic actions</small></span>
+    </div>
+    <footer><span>{{ cbf.training_need_people }} beneficiaries need training</span><b>Open progress →</b></footer>
+  </a>{% else %}<div class="empty-state"><h2>No CBF mappings found</h2><p>Assign farmer groups to CBFs to start tracking progress.</p></div>{% endfor %}
 </section>
-<section class="panel cbf-group-overview"><div class="panel-heading"><div><p class="eyebrow">Current mapping</p><h2>Farmer groups</h2></div><span class="badge">{{ group_assignments|length }} groups</span></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Farmer group</th><th>CBF</th><th>Beneficiaries</th></tr></thead><tbody>{% for group in group_assignments %}<tr><td><strong>{{ group.name }}</strong></td><td>{{ group.cbf_name or 'Unassigned' }}</td><td>{{ group.participant_count }}</td></tr>{% else %}<tr><td colspan="3" class="empty-cell">No farmer groups found.</td></tr>{% endfor %}</tbody></table></div></section>
+
+<details class="panel cbf-group-overview"><summary><span><small>Current mapping</small><strong>{{ group_assignments|length }} farmer groups</strong></span><b>View groups</b></summary><div class="table-wrap"><table class="data-table"><thead><tr><th>Farmer group</th><th>CBF</th><th>Beneficiaries</th></tr></thead><tbody>{% for group in group_assignments %}<tr><td><strong>{{ group.name }}</strong></td><td>{{ group.cbf_name or 'Unassigned' }}</td><td>{{ group.participant_count }}</td></tr>{% else %}<tr><td colspan="3" class="empty-cell">No farmer groups found.</td></tr>{% endfor %}</tbody></table></div></details>
 {% endblock %}
