@@ -64,6 +64,12 @@ class ApplicationTest(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertNotIn(b"Internal Server Error", response.data)
 
+    def test_static_assets_use_cache_busting_version(self):
+        response = self.client.get("/cbfs")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'/static/css/app.css?v=', response.data)
+        self.assertIn(b'/static/js/app.js?v=', response.data)
+
     def test_bulk_upload_requires_an_excel_workbook(self):
         response = self.client.post(
             "/bulk-upload",

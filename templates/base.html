@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#087880">
   <title>{% block title %}ARFSA Database{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css', v=asset_version) }}">
   {% block head %}{% endblock %}
 </head>
 <body class="{% if not session.get('authenticated') %}auth-page{% endif %}">
@@ -83,7 +83,7 @@
     <span>Data changes are recorded in the audit log</span>
   </footer>
   {% endif %}
-  <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/app.js', v=asset_version) }}" defer></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

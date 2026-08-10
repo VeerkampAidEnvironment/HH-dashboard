@@ -98,6 +98,10 @@ def create_app(test_config=None):
     )
     if test_config:
         app.config.update(test_config)
+    static_files = [Path(app.static_folder) / "css" / "app.css", Path(app.static_folder) / "js" / "app.js"]
+    app.config["ASSET_VERSION"] = str(max(
+        int(path.stat().st_mtime_ns) for path in static_files if path.exists()
+    ))
     Path(app.instance_path).mkdir(parents=True, exist_ok=True)
     register_db(app)
     with app.app_context():
@@ -130,6 +134,7 @@ def create_app(test_config=None):
             "csrf_token": csrf_token,
             "dataset_labels": DATASET_LABELS,
             "current_year": date.today().year,
+            "asset_version": app.config["ASSET_VERSION"],
         }
 
     @app.before_request
