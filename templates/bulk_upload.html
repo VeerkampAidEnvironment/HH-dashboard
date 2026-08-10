@@ -1,12 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Bulk upload - ARFSA{% endblock %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">Administration</p><h1>Bulk upload</h1><p class="lead">Add new beneficiaries from an updated Farmer Database workbook.</p></div></div>
+<div class="page-heading"><div><p class="eyebrow">Administration</p><h1>Bulk upload</h1><p class="lead">First choose which project database you are uploading.</p></div></div>
 <div class="form-card panel"><form method="post" enctype="multipart/form-data">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="section-heading"><p class="eyebrow">AE data</p><h2>Farmer Database</h2><p>Use the updated <strong>Farmer Database EDIT HERE</strong> .xlsx file. The file may omit existing beneficiaries or list them in a different order.</p></div>
+  <fieldset class="switch-field"><legend>1. What are you uploading?</legend><div class="switch-group switch-group-wrap"><label class="switch-option"><input type="radio" name="dataset" value="training" required checked><span><strong>AE data</strong><small>Farmer Database EDIT HERE</small></span></label><label class="switch-option"><input type="radio" name="dataset" value="care"><span><strong>FH data</strong><small>Care Groups Monitoring Database</small></span></label></div></fieldset>
+  <div class="section-heading"><p class="eyebrow">2. Select workbook</p><h2>Updated project database</h2><p>Use the updated .xlsx workbook for the project selected above.</p></div>
   <label>Excel workbook<input type="file" name="workbook" accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required></label>
-  <p class="muted">Existing database values are never removed or overwritten. Newly filled training and follow-up cells are added to matched beneficiaries. Beneficiaries are matched by phone number or by their name, sex, group and village. Re-uploading the same file is safe.</p>
+  <p class="muted">New beneficiaries are added. For existing beneficiaries, only empty training, follow-up or FH attendance cells are filled; existing values are never overwritten. Re-uploading the same file is safe.</p>
   <div class="button-row"><button class="button button-primary" type="submit">Check and add new data</button></div>
 </form></div>
 {% if result %}<div class="panel"><div class="section-heading"><p class="eyebrow">Upload result</p><h2>{{ result.added }} new beneficiaries added · {{ result.updated }} existing beneficiaries updated</h2><p>{{ result.existing }} unchanged rows skipped{% if result.duplicates %} · {{ result.duplicates }} duplicate beneficiaries skipped{% endif %}{% if result.ambiguous %} · {{ result.ambiguous }} ambiguous matches safely skipped{% endif %}.</p></div></div>{% endif %}

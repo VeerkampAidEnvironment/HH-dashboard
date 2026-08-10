@@ -33,7 +33,7 @@ from flask import (
 from werkzeug.datastructures import MultiDict
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from bulk_import import BulkImportError, append_farmer_database
+from bulk_import import BulkImportError, append_care_database, append_farmer_database
 from db import (
     close_db,
     ensure_test_database,
@@ -268,16 +268,70 @@ def create_app(test_config=None):
         response.headers["Content-Disposition"] = f'attachment; filename="arfsa-{dataset}-dashboard.pdf"'
         return response
 
-    @app.get("/cbfs")
+    @app.route("/cbfs", methods=["GET", "POST"])
     def cbf_list():
         connection = get_db()
+        group_rows = connection.execute(
+            """SELECT group_name, COALESCE(NULLIF(TRIM(cbf_name), ''), '') AS cbf_name, COUNT(*) AS participant_count
+               FROM records WHERE dataset='training' AND archived_at IS NULL AND TRIM(group_name)<>''
+               GROUP BY group_name, COALESCE(NULLIF(TRIM(cbf_name), ''), '')
+               ORDER BY group_name COLLATE NOCASE, participant_count DESC"""
+        ).fetchall()
+        groups_by_name = {}
+        for row in group_rows:
+            group = groups_by_name.setdefault(row["group_name"], {"name": row["group_name"], "cbfs": [], "participant_count": 0})
+            group["participant_count"] += row["participant_count"]
+            if row["cbf_name"]:
+                group["cbfs"].append(row["cbf_name"])
+        group_assignments = []
+        for group in groups_by_name.values():
+            unique_cbfs = sorted(set(group["cbfs"]), key=str.casefold)
+            group["cbf_name"] = unique_cbfs[0] if len(unique_cbfs) == 1 else ("Multiple CBFs" if unique_cbfs else "")
+            group_assignments.append(group)
+        mapped_cbfs = set(get_setting(connection, "cbf_group_map", {}).values())
+        cbf_names = sorted(mapped_cbfs | {
+            row[0] for row in connection.execute(
+                """SELECT cbf_name FROM records WHERE dataset='training' AND TRIM(COALESCE(cbf_name,''))<>''
+                   UNION SELECT cbf_name FROM users WHERE TRIM(COALESCE(cbf_name,''))<>''"""
+            ).fetchall()
+        }, key=str.casefold)
+        if request.method == "POST":
+            if session.get("access_scope") == "ae_user":
+                abort(403)
+            group_name = request.form.get("group_name", "").strip()
+            cbf_name = request.form.get("cbf_name", "").strip()
+            if group_name not in groups_by_name or cbf_name not in cbf_names:
+                flash("Choose a valid farmer group and CBF.", "error")
+                return redirect(url_for("cbf_list"))
+            previous_cbfs = sorted(set(groups_by_name[group_name]["cbfs"]), key=str.casefold)
+            cursor = connection.execute(
+                "UPDATE records SET cbf_name=?, updated_at=? WHERE dataset='training' AND group_name=?",
+                (cbf_name, utc_now(), group_name),
+            )
+            cbf_map = get_setting(connection, "cbf_group_map", {})
+            normalized_group = " ".join(
+                "".join(char.lower() if char.isalnum() else " " for char in group_name).split()
+            )
+            cbf_map[normalized_group] = cbf_name
+            set_setting(connection, "cbf_group_map", cbf_map)
+            log_audit(
+                connection, session["username"], "assign_group", "cbf_group", None,
+                f"Assigned {group_name} to {cbf_name}",
+                {"group": group_name, "from": previous_cbfs, "to": cbf_name, "beneficiaries_updated": cursor.rowcount},
+            )
+            connection.commit()
+            flash(f"Assigned {group_name} to {cbf_name} and updated {cursor.rowcount} beneficiaries.", "success")
+            return redirect(url_for("cbf_list"))
         rows = connection.execute(
             """SELECT cbf_name, COUNT(*) AS participant_count, COUNT(DISTINCT farmer_id) AS farmer_count,
                       COUNT(DISTINCT group_name) AS group_count
                FROM records WHERE archived_at IS NULL AND dataset='training' AND TRIM(cbf_name)<>''
                GROUP BY cbf_name ORDER BY cbf_name"""
         ).fetchall()
-        return render_template("cbfs.html", cbfs=rows)
+        return render_template(
+            "cbfs.html", cbfs=rows, cbf_names=cbf_names,
+            group_assignments=group_assignments,
+        )
 
     @app.get("/cbfs/<path:cbf_name>")
     def cbf_detail(cbf_name):
@@ -1004,22 +1058,27 @@ def create_app(test_config=None):
     def bulk_upload():
         result = None
         if request.method == "POST":
+            dataset = request.form.get("dataset", "")
+            if dataset not in {"training", "care"}:
+                flash("Choose whether this is AE or FH data.", "error")
+                return render_template("bulk_upload.html", result=result)
             upload = request.files.get("workbook")
             if not upload or not upload.filename:
-                flash("Choose the updated Farmer Database Excel file.", "error")
+                flash("Choose the updated Excel file.", "error")
                 return render_template("bulk_upload.html", result=result)
             if Path(upload.filename).suffix.lower() not in {".xlsx", ".xlsm"}:
                 flash("Upload an .xlsx or .xlsm Excel workbook.", "error")
                 return render_template("bulk_upload.html", result=result)
             connection = get_db()
             try:
-                result = append_farmer_database(connection, upload.stream, upload.filename)
+                result = (append_farmer_database if dataset == "training" else append_care_database)(connection, upload.stream, upload.filename)
+                dataset_label = "AE" if dataset == "training" else "FH"
                 log_audit(connection, session["username"], "bulk_upload", "records", None,
-                          f"Bulk upload added {result['added']} beneficiaries and updated training for {result['updated']}",
-                          {"filename": Path(upload.filename).name, **result})
+                          f"{dataset_label} bulk upload added {result['added']} beneficiaries and updated {result['updated']} existing records",
+                          {"dataset": dataset, "filename": Path(upload.filename).name, **result})
                 connection.commit()
                 if result["added"] or result["updated"]:
-                    flash(f"Safely added {result['added']} new beneficiaries and updated training for {result['updated']} existing beneficiaries.", "success")
+                    flash(f"Safely added {result['added']} new beneficiaries and updated {result['updated']} existing beneficiaries.", "success")
                 else:
                     flash("No new beneficiaries or training entries were found; the database was not changed.", "success")
             except BulkImportError as exc:

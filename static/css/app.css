@@ -501,7 +501,12 @@ body { background: #eef2f3; }
 .audit-upload-summary small { color: var(--muted); }
 .audit-beneficiary-list { max-height: 420px; border: 1px solid #e2eaea; border-radius: 9px; }
 .audit-beneficiary-list thead { position: sticky; top: 0; z-index: 1; background: white; }
+.cbf-assignment-panel { margin-bottom: 22px; }
+.cbf-assignment-form { display: grid; grid-template-columns: minmax(280px, 1.5fr) minmax(220px, 1fr) auto; gap: 12px; align-items: end; }
+.cbf-assignment-form .button { min-height: 43px; }
+.cbf-group-overview { margin-top: 22px; }
 @media (max-width: 760px) { .audit-details { min-width: 0; } .audit-upload-summary { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 900px) { .cbf-assignment-form { grid-template-columns: 1fr; } }
 .main-nav .nav-disabled { display: flex; align-items: center; gap: 10px; padding: 10px 12px; color: rgba(255,255,255,.28); cursor: not-allowed; }
 .main-nav .nav-disabled .nav-symbol { opacity: .45; }
 .dataset-tab-disabled { display: inline-flex; align-items: center; justify-content: center; padding: 9px 16px; border-radius: 9px; color: rgba(40,40,40,.32); background: rgba(40,40,40,.06); cursor: not-allowed; }

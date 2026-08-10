@@ -67,11 +67,11 @@ class ApplicationTest(unittest.TestCase):
     def test_bulk_upload_requires_an_excel_workbook(self):
         response = self.client.post(
             "/bulk-upload",
-            data={"csrf_token": self.csrf()},
+            data={"csrf_token": self.csrf(), "dataset": "training"},
             content_type="multipart/form-data",
         )
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Choose the updated Farmer Database Excel file", response.data)
+        self.assertIn(b"Choose the updated Excel file", response.data)
 
     def test_record_cbf_and_pdf_routes(self):
         with self.app.app_context():
@@ -97,6 +97,48 @@ class ApplicationTest(unittest.TestCase):
         all_zip = self.client.get(f"/cbf-reports/{cbf_path}.zip")
         self.assertEqual(all_zip.status_code, 200)
         self.assertEqual(all_zip.headers["Content-Type"], "application/zip")
+
+    def test_cbf_group_assignment_updates_every_group_beneficiary(self):
+        with self.app.app_context():
+            from db import get_db, get_setting
+
+            connection = get_db()
+            group_name = connection.execute(
+                """SELECT group_name FROM records WHERE dataset='training' AND TRIM(group_name)<>''
+                   GROUP BY group_name ORDER BY COUNT(*) DESC LIMIT 1"""
+            ).fetchone()[0]
+            original = connection.execute(
+                "SELECT id, cbf_name FROM records WHERE dataset='training' AND group_name=?",
+                (group_name,),
+            ).fetchall()
+            target_cbf = connection.execute(
+                """SELECT cbf_name FROM records WHERE dataset='training' AND TRIM(cbf_name)<>''
+                   AND cbf_name<>? LIMIT 1""",
+                (original[0]["cbf_name"],),
+            ).fetchone()[0]
+            original_map = get_setting(connection, "cbf_group_map", {})
+
+        response = self.client.post(
+            "/cbfs",
+            data={"csrf_token": self.csrf(), "group_name": group_name, "cbf_name": target_cbf},
+        )
+        self.assertEqual(response.status_code, 302)
+        with self.app.app_context():
+            from db import get_db, get_setting, set_setting
+
+            connection = get_db()
+            assigned = connection.execute(
+                "SELECT DISTINCT cbf_name FROM records WHERE dataset='training' AND group_name=?",
+                (group_name,),
+            ).fetchall()
+            self.assertEqual([row[0] for row in assigned], [target_cbf])
+            normalized_group = " ".join("".join(
+                character.lower() if character.isalnum() else " " for character in group_name
+            ).split())
+            self.assertEqual(get_setting(connection, "cbf_group_map")[normalized_group], target_cbf)
+            connection.executemany("UPDATE records SET cbf_name=? WHERE id=?", [(row["cbf_name"], row["id"]) for row in original])
+            set_setting(connection, "cbf_group_map", original_map)
+            connection.commit()
 
     def test_fh_dashboard_uses_attendance_structure(self):
         response = self.client.get("/dashboard?dataset=care")

@@ -32,8 +32,8 @@
         {% if item.change_details.beneficiaries %}<div class="table-wrap audit-beneficiary-list"><table class="data-table"><thead><tr><th>UID</th><th>Beneficiary</th><th>Sex</th><th>Village</th><th>Group</th><th>Source row</th></tr></thead><tbody>
           {% for person in item.change_details.beneficiaries %}<tr><td><a href="{{ url_for('record_detail', record_id=person.record_id) }}">{{ person.uid }}</a></td><td><strong>{{ person.name }}</strong></td><td>{{ person.sex or '—' }}</td><td>{{ person.village or '—' }}</td><td>{{ person.group_name or '—' }}</td><td>{{ person.source_row }}</td></tr>{% endfor %}
         </tbody></table></div>{% elif item.change_details.added %}<p class="muted">Beneficiary-level details were not recorded for this older upload.</p>{% endif %}
-        {% if item.change_details.training_updates %}<h4>Existing beneficiaries with new training data</h4><div class="table-wrap audit-beneficiary-list"><table class="data-table"><thead><tr><th>UID</th><th>Beneficiary</th><th>New cells</th><th>Fields added</th></tr></thead><tbody>
-          {% for person in item.change_details.training_updates %}<tr><td><a href="{{ url_for('record_detail', record_id=person.record_id) }}">{{ person.uid }}</a></td><td><strong>{{ person.name }}</strong></td><td>{{ person.field_count }}</td><td>{{ person.fields|join(', ') }}</td></tr>{% endfor %}
+        {% set updates = item.change_details.training_updates or item.change_details.attendance_updates %}{% if updates %}<h4>Existing beneficiaries with new {{ 'attendance' if item.change_details.dataset == 'care' else 'training' }} data</h4><div class="table-wrap audit-beneficiary-list"><table class="data-table"><thead><tr><th>UID</th><th>Beneficiary</th><th>New cells</th><th>Fields added</th></tr></thead><tbody>
+          {% for person in updates %}<tr><td><a href="{{ url_for('record_detail', record_id=person.record_id) }}">{{ person.uid }}</a></td><td><strong>{{ person.name }}</strong></td><td>{{ person.field_count }}</td><td>{{ person.fields|join(', ') }}</td></tr>{% endfor %}
         </tbody></table></div>{% endif %}
       </details>{% endif %}
     </td>
