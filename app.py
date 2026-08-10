@@ -1015,11 +1015,13 @@ def create_app(test_config=None):
             try:
                 result = append_farmer_database(connection, upload.stream, upload.filename)
                 log_audit(connection, session["username"], "bulk_upload", "records", None,
-                          f"Bulk upload added {result['added']} AE beneficiaries",
+                          f"Bulk upload added {result['added']} beneficiaries and updated training for {result['updated']}",
                           {"filename": Path(upload.filename).name, **result})
                 connection.commit()
-                flash(f"Safely added {result['added']} new beneficiaries." if result["added"] else
-                      "No new beneficiaries were found; the database was not changed.", "success")
+                if result["added"] or result["updated"]:
+                    flash(f"Safely added {result['added']} new beneficiaries and updated training for {result['updated']} existing beneficiaries.", "success")
+                else:
+                    flash("No new beneficiaries or training entries were found; the database was not changed.", "success")
             except BulkImportError as exc:
                 connection.rollback()
                 flash(str(exc), "error")

@@ -6,8 +6,8 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="section-heading"><p class="eyebrow">AE data</p><h2>Farmer Database</h2><p>Use the updated <strong>Farmer Database EDIT HERE</strong> .xlsx file. The file may omit existing beneficiaries or list them in a different order.</p></div>
   <label>Excel workbook<input type="file" name="workbook" accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required></label>
-  <p class="muted">Existing database records are never removed or overwritten. Beneficiaries are matched by phone number or by their name, sex, group and village. Re-uploading the same file is safe.</p>
+  <p class="muted">Existing database values are never removed or overwritten. Newly filled training and follow-up cells are added to matched beneficiaries. Beneficiaries are matched by phone number or by their name, sex, group and village. Re-uploading the same file is safe.</p>
   <div class="button-row"><button class="button button-primary" type="submit">Check and add new data</button></div>
 </form></div>
-{% if result %}<div class="panel"><div class="section-heading"><p class="eyebrow">Upload result</p><h2>{{ result.added }} new beneficiaries added</h2><p>{{ result.existing }} existing rows skipped{% if result.duplicates %} · {{ result.duplicates }} duplicate beneficiaries skipped{% endif %}.</p></div></div>{% endif %}
+{% if result %}<div class="panel"><div class="section-heading"><p class="eyebrow">Upload result</p><h2>{{ result.added }} new beneficiaries added · {{ result.updated }} existing beneficiaries updated</h2><p>{{ result.existing }} unchanged rows skipped{% if result.duplicates %} · {{ result.duplicates }} duplicate beneficiaries skipped{% endif %}{% if result.ambiguous %} · {{ result.ambiguous }} ambiguous matches safely skipped{% endif %}.</p></div></div>{% endif %}
 {% endblock %}

@@ -40,6 +40,22 @@ def _insert_record(connection, source_row: int, raw: dict[str, Any], core: dict[
     return cursor.lastrowid, uid
 
 
+def _replace_statuses(connection, record_id: int, raw: dict[str, Any]) -> None:
+    connection.execute("DELETE FROM topic_statuses WHERE record_id=?", (record_id,))
+    for topic in TRAINING_TOPICS:
+        status = training_topic_status(raw, topic)
+        connection.execute("""INSERT INTO topic_statuses(record_id, topic, status_code, status_label,
+            training_received, confirmed_trained, followup_needed, retraining_needed, last_activity_date, details)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)""",
+            (record_id, topic, status["status_code"], status["status_label"], status["training_received"],
+             status["confirmed_trained"], status["followup_needed"], status["retraining_needed"],
+             status.get("last_activity_date")))
+
+
+def _is_training_field(field: str) -> bool:
+    return field.startswith("Training ") or field.startswith("Follow up ") or field == "Number of Birds Vaccinated"
+
+
 def append_farmer_database(connection, file: BinaryIO, filename: str = "") -> dict[str, int]:
     try:
         workbook = load_workbook(file, read_only=True, data_only=True, keep_links=False)
@@ -58,17 +74,24 @@ def append_farmer_database(connection, file: BinaryIO, filename: str = "") -> di
             cbf_map = {normalize(group): clean(cbf) for cbf, group in
                        workbook["CBF_Groups"].iter_rows(min_row=2, max_col=2, values_only=True)
                        if clean(cbf) and clean(group)}
-        existing_identities = set()
+        existing_by_id = {}
+        identity_matches: dict[tuple[str, ...], set[int]] = {}
         for existing_row in connection.execute(
-            "SELECT name, sex, phone, village, group_name FROM records WHERE dataset='training'"
+            """SELECT r.id, r.name, r.sex, r.phone, r.village, r.group_name, r.raw_data, f.uid
+               FROM records r JOIN farmers f ON f.id=r.farmer_id WHERE r.dataset='training'"""
         ).fetchall():
-            existing_identities.update(_identity_keys(dict(existing_row)))
+            existing = dict(existing_row)
+            existing["raw"] = json.loads(existing.pop("raw_data"))
+            existing_by_id[existing["id"]] = existing
+            for identity in _identity_keys(existing):
+                identity_matches.setdefault(identity, set()).add(existing["id"])
         next_source_row = connection.execute(
             "SELECT COALESCE(MAX(source_row), 2) + 1 FROM records WHERE dataset='training'"
         ).fetchone()[0]
         uploaded_identities = set()
         new_rows = []
-        unchanged = duplicates = 0
+        training_updates = []
+        unchanged = duplicates = ambiguous = 0
         for row_number, row in enumerate(sheet.iter_rows(min_row=3, max_row=sheet.max_row, max_col=88, values_only=True), start=3):
             if not clean(row[0]):
                 continue
@@ -83,8 +106,34 @@ def append_farmer_database(connection, file: BinaryIO, filename: str = "") -> di
             if not core["name"]:
                 raise BulkImportError(f"Row {row_number} has no beneficiary name.")
             identities = _identity_keys(core)
-            if identities & existing_identities:
-                unchanged += 1
+            phone = normalize_phone(core.get("phone"))
+            phone_matches = identity_matches.get(("phone", phone), set()) if len(phone) >= 9 else set()
+            profile = next(identity for identity in identities if identity[0] == "profile")
+            matching_ids = set(phone_matches) if phone_matches else set(identity_matches.get(profile, set()))
+            if matching_ids:
+                if len(matching_ids) != 1:
+                    ambiguous += 1
+                    continue
+                existing = existing_by_id[matching_ids.pop()]
+                merged = dict(existing["raw"])
+                added_fields = []
+                for field, value in raw.items():
+                    if _is_training_field(field) and clean(value) and not clean(merged.get(field)):
+                        merged[field] = value
+                        added_fields.append(field)
+                if added_fields:
+                    connection.execute(
+                        "UPDATE records SET raw_data=?, updated_at=? WHERE id=?",
+                        (json.dumps(merged, ensure_ascii=False, default=json_value), utc_now(), existing["id"]),
+                    )
+                    _replace_statuses(connection, existing["id"], merged)
+                    existing["raw"] = merged
+                    training_updates.append({
+                        "record_id": existing["id"], "uid": existing["uid"], "name": existing["name"],
+                        "fields": added_fields, "field_count": len(added_fields),
+                    })
+                else:
+                    unchanged += 1
                 continue
             if identities & uploaded_identities:
                 duplicates += 1
@@ -100,21 +149,15 @@ def append_farmer_database(connection, file: BinaryIO, filename: str = "") -> di
                 "village": core["village"], "group_name": core["group_name"],
                 "source_row": assigned_source_row,
             }
-            for topic in TRAINING_TOPICS:
-                status = training_topic_status(raw, topic)
-                details = {key: value for key, value in status.items() if key not in {"status_code", "status_label", "training_received", "confirmed_trained", "followup_needed", "retraining_needed", "last_activity_date"}}
-                connection.execute("""INSERT INTO topic_statuses(record_id, topic, status_code, status_label,
-                    training_received, confirmed_trained, followup_needed, retraining_needed, last_activity_date, details)
-                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (record_id, topic, status["status_code"], status["status_label"], status["training_received"],
-                     status["confirmed_trained"], status["followup_needed"], status["retraining_needed"],
-                     status.get("last_activity_date"), json.dumps(details, ensure_ascii=False) if details else None))
+            _replace_statuses(connection, record_id, raw)
         if cbf_map:
             set_setting(connection, "cbf_group_map", cbf_map)
         set_setting(connection, "training_source", filename or "Farmer database upload")
         return {
-            "added": len(new_rows), "existing": unchanged, "duplicates": duplicates,
+            "added": len(new_rows), "updated": len(training_updates), "existing": unchanged,
+            "duplicates": duplicates, "ambiguous": ambiguous,
             "beneficiaries": [core["audit"] for _raw, core in new_rows],
+            "training_updates": training_updates,
         }
     finally:
         workbook.close()
