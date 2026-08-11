@@ -67,6 +67,53 @@ document.addEventListener("DOMContentLoaded", () => {
     update();
   });
 
+  document.querySelectorAll("[data-pathway-expand]").forEach((button) => {
+    const panel = button.closest(".training-combination-section");
+    const rows = Array.from(panel?.querySelectorAll("[data-pathway-extra][hidden]") || []);
+    const allRows = Array.from(panel?.querySelectorAll("[data-pathway-extra]") || []);
+    const combinationsBody = panel?.querySelector("[data-pathway-combinations]");
+    const limit = Number(combinationsBody?.dataset.pathwayLimit || 12);
+    button.addEventListener("click", () => {
+      const expanded = button.getAttribute("aria-expanded") === "true";
+      allRows.forEach((row, index) => {
+        row.hidden = expanded && index >= limit;
+      });
+      button.setAttribute("aria-expanded", String(!expanded));
+      button.textContent = expanded ? button.dataset.expandLabel : button.dataset.collapseLabel;
+    });
+    if (rows.length) button.setAttribute("aria-expanded", "false");
+  });
+
+  document.querySelectorAll("[data-pathway-sort]").forEach((button) => {
+    const panel = button.closest(".training-combination-section");
+    const body = panel?.querySelector("[data-pathway-combinations]");
+    const expandButton = panel?.querySelector("[data-pathway-expand]");
+    if (!body) return;
+    button.addEventListener("click", () => {
+      const defaultDirection = button.dataset.defaultDirection || "asc";
+      const ascending = button.dataset.direction
+        ? button.dataset.direction !== "asc"
+        : defaultDirection === "asc";
+      const sortKey = button.dataset.pathwaySortKey || "trainingCount";
+      const rows = Array.from(body.querySelectorAll("[data-pathway-extra]"));
+      rows.sort((left, right) => {
+        const difference = Number(left.dataset[sortKey]) - Number(right.dataset[sortKey]);
+        if (difference) return ascending ? difference : -difference;
+        return Number(left.dataset.defaultRank) - Number(right.dataset.defaultRank);
+      });
+      rows.forEach((row, index) => {
+        body.appendChild(row);
+        row.querySelector(".combination-rank").textContent = String(index + 1);
+      });
+      const expanded = expandButton?.getAttribute("aria-expanded") === "true";
+      const limit = Number(body.dataset.pathwayLimit || 12);
+      rows.forEach((row, index) => { row.hidden = !expanded && index >= limit; });
+      button.dataset.direction = ascending ? "asc" : "desc";
+      button.setAttribute("aria-sort", ascending ? "ascending" : "descending");
+      button.querySelector("span").textContent = ascending ? "↑" : "↓";
+    });
+  });
+
   document.querySelectorAll("[data-dashboard-group-multiselect]").forEach((control) => {
     const allBox = control.querySelector("[data-dashboard-group-all]");
     const boxes = Array.from(control.querySelectorAll("[data-dashboard-group-option]"));

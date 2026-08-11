@@ -1971,6 +1971,60 @@ def build_dashboard_data(connection, dataset: str, filters: dict[str, str]):
         topics, key=lambda item: (item["followup"] + item["retraining"], item["participants"]), reverse=True
     )[:3]
 
+    pathway_topics = selected_topics if topic_filter else list(TRAINING_TOPICS)
+    pathway_labels = {
+        "Household Resource Mapping (PIP)": "PIP",
+        "SWC": "SWC",
+        "Kitchen garden Establishment and Vegetable growing": "Kitchen",
+        "Bio-inputs training": "Bio",
+        "Poultry Mgt and Vaccination": "Poultry",
+        "Financial Literacy": "Finance",
+        "Tree planting/Agroforestry": "Trees",
+        "Sustainable/Regenerative Agriculture": "Sust. ag",
+    }
+    combination_counts = Counter()
+    training_count_distribution = Counter()
+    if dataset == "training" and pathway_topics:
+        for record in records:
+            received_by_topic = {
+                status["topic"]: bool(status["training_received"])
+                for status in status_by_record.get(record["id"], [])
+            }
+            combination = tuple(bool(received_by_topic.get(topic)) for topic in pathway_topics)
+            combination_counts[combination] += 1
+            training_count_distribution[sum(combination)] += 1
+    pathway_total = sum(combination_counts.values())
+    all_combinations = []
+    for combination, count in sorted(
+        combination_counts.items(), key=lambda item: (-item[1], -sum(item[0]), item[0])
+    ):
+        all_combinations.append({
+            "cells": combination,
+            "count": count,
+            "percent": round(count / pathway_total * 100, 1) if pathway_total else 0,
+            "training_count": sum(combination),
+        })
+    initial_combination_count = 12
+    shown_combinations = sum(item["count"] for item in all_combinations[:initial_combination_count])
+    max_training_count = max(training_count_distribution.values(), default=1)
+    training_pathways = {
+        "topics": [{"name": topic, "short": pathway_labels.get(topic, topic)} for topic in pathway_topics],
+        "combinations": all_combinations,
+        "initial_combination_count": initial_combination_count,
+        "hidden_combination_count": max(0, len(all_combinations) - initial_combination_count),
+        "other_count": max(0, pathway_total - shown_combinations),
+        "total": pathway_total,
+        "distribution": [
+            {
+                "number": number,
+                "count": training_count_distribution[number],
+                "percent": round(training_count_distribution[number] / pathway_total * 100, 1) if pathway_total else 0,
+                "width": round(training_count_distribution[number] / max_training_count * 100),
+            }
+            for number in range(len(pathway_topics) + 1)
+        ],
+    }
+
     demographic_records = records
     if dataset == "combined":
         records_by_farmer = {}
@@ -2070,6 +2124,7 @@ def build_dashboard_data(connection, dataset: str, filters: dict[str, str]):
         "action_topics": action_topics,
         "attention_total": len(attention_ids),
         "waiting_total": len(waiting_ids),
+        "training_pathways": training_pathways,
         "options": options,
     }
 

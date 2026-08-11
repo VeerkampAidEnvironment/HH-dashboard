@@ -256,6 +256,31 @@ class ApplicationTest(unittest.TestCase):
         self.assertIn(selected[0].encode(), response.data)
         self.assertIn(selected[1].encode(), response.data)
 
+    def test_ae_dashboard_shows_training_pathway_heatmap_and_distribution(self):
+        response = self.client.get("/dashboard?dataset=training")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Training pathways", response.data)
+        self.assertIn(b"Most common combinations", response.data)
+        self.assertIn(b"Number of trainings received", response.data)
+        self.assertIn(b"training-heatmap", response.data)
+        self.assertIn(b"data-pathway-sort", response.data)
+        self.assertIn(b'data-pathway-sort-key="share"', response.data)
+
+        with self.app.app_context():
+            from app import build_dashboard_data
+            from db import get_db
+
+            filters = {key: "" for key in (
+                "gender", "age", "cbf", "group", "topic", "date_from", "date_to", "status"
+            )}
+            data = build_dashboard_data(get_db(), "training", filters)
+            pathways = data["training_pathways"]
+            self.assertEqual(len(pathways["topics"]), 8)
+            self.assertGreaterEqual(len(pathways["combinations"]), min(12, pathways["total"]))
+            self.assertEqual(pathways["initial_combination_count"], 12)
+            self.assertEqual(sum(item["count"] for item in pathways["distribution"]), pathways["total"])
+            self.assertEqual(pathways["total"], data["summary"]["total_records"])
+
     def test_dashboard_cbf_filter_accepts_multiple_values(self):
         with self.app.app_context():
             from db import get_db

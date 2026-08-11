@@ -170,6 +170,26 @@
     </div>
   </article>
 
+  {% if dataset == 'training' %}<article class="panel panel-training-pathways">
+    <div class="panel-heading"><div><p class="eyebrow">Training pathways</p><h2>How trainings are combined</h2><p>Exact combinations for each beneficiary, plus the distribution of how many trainings people received.</p></div><span class="badge">{{ training_pathways.total }} people</span></div>
+    <div class="training-pathways-layout">
+      <section class="training-combination-section">
+        <div class="pathway-section-heading"><div><h3>Most common combinations</h3><p>Filled cells mean that training was received.</p></div><span>Top {{ [training_pathways.initial_combination_count, training_pathways.combinations|length]|min }}</span></div>
+        <div class="training-heatmap-wrap"><table class="training-heatmap">
+          <thead><tr><th class="combination-rank">#</th>{% for topic in training_pathways.topics %}<th title="{{ topic.name }}"><span>{{ topic.short }}</span></th>{% endfor %}<th><button class="pathway-sort" type="button" data-pathway-sort data-pathway-sort-key="trainingCount" aria-label="Sort combinations by number of trainings" aria-sort="none">Trainings <span aria-hidden="true">↕</span></button></th><th>People</th><th><button class="pathway-sort" type="button" data-pathway-sort data-pathway-sort-key="share" data-default-direction="desc" aria-label="Sort combinations by share of beneficiaries" aria-sort="none">Share <span aria-hidden="true">↕</span></button></th></tr></thead>
+          <tbody data-pathway-combinations data-pathway-limit="{{ training_pathways.initial_combination_count }}">{% for combination in training_pathways.combinations %}<tr {{ 'hidden' if loop.index > training_pathways.initial_combination_count else '' }} data-pathway-extra data-training-count="{{ combination.training_count }}" data-share="{{ combination.percent }}" data-default-rank="{{ loop.index }}"><td class="combination-rank">{{ loop.index }}</td>{% for received in combination.cells %}<td><i class="heatmap-cell {{ 'received' if received else 'missing' }}" title="{{ training_pathways.topics[loop.index0].name }}: {{ 'received' if received else 'not received' }}"></i></td>{% endfor %}<td><strong>{{ combination.training_count }}</strong></td><td><strong>{{ combination.count }}</strong></td><td><span class="combination-share">{{ combination.percent }}%</span></td></tr>{% else %}<tr><td colspan="{{ training_pathways.topics|length + 4 }}" class="empty-cell">No training combinations match the selected filters.</td></tr>{% endfor %}</tbody>
+        </table></div>
+        {% if training_pathways.hidden_combination_count %}<button class="pathway-expand" type="button" data-pathway-expand data-expand-label="Show all {{ training_pathways.combinations|length }} combinations" data-collapse-label="Show top {{ training_pathways.initial_combination_count }} combinations">Show all {{ training_pathways.combinations|length }} combinations</button>{% endif %}
+        {% if training_pathways.other_count %}<p class="pathway-other">{{ training_pathways.other_count }} beneficiaries are spread across the less common combinations below.</p>{% endif %}
+      </section>
+      <section class="training-count-section">
+        <div class="pathway-section-heading"><div><h3>Number of trainings received</h3><p>Each beneficiary appears once.</p></div></div>
+        <div class="training-count-bars">{% for item in training_pathways.distribution %}<div class="training-count-row"><span>{{ item.number }}</span><div><i style="width: {{ item.width }}%"></i></div><strong>{{ item.count }}<small>{{ item.percent }}%</small></strong></div>{% endfor %}</div>
+        <div class="training-count-axis"><span>0 trainings</span><span>{{ training_pathways.topics|length }} trainings</span></div>
+      </section>
+    </div>
+  </article>{% endif %}
+
   <article class="panel panel-topics">
     <div class="panel-heading"><div><p class="eyebrow">Coverage and action</p><h2>Progress by topic</h2><p>Detailed performance across every training topic in the selected scope.</p></div><span class="badge">{{ topics|length }} topics</span></div>
     <div class="table-wrap"><table class="data-table topic-table">
