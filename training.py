@@ -124,6 +124,7 @@ def training_topic_status(raw: dict[str, Any], topic: str, as_of: date | None = 
     received = any(training_present for _, _, _, training_present, _, _ in cycles)
     confirmed = any(score is not None and score >= threshold for _, _, score, _, _, _ in cycles)
     last_activity = max(activity_dates).isoformat() if activity_dates else None
+    next_followup_date = None
 
     if not received:
         code = "CT"
@@ -137,7 +138,9 @@ def training_topic_status(raw: dict[str, Any], topic: str, as_of: date | None = 
                 if not training:
                     code = "REVIEW"
                 else:
-                    code = "WAIT" if as_of < add_months(training, months) else "FU"
+                    eligible_on = add_months(training, months)
+                    next_followup_date = eligible_on.isoformat()
+                    code = "WAIT" if as_of < eligible_on else "FU"
                 break
             if score is None:
                 code = "REVIEW"
@@ -152,7 +155,9 @@ def training_topic_status(raw: dict[str, Any], topic: str, as_of: date | None = 
                 if not followup:
                     code = "REVIEW"
                 else:
-                    code = "WAIT" if as_of < add_months(followup, months_until_followup) else "FU"
+                    eligible_on = add_months(followup, months_until_followup)
+                    next_followup_date = eligible_on.isoformat()
+                    code = "WAIT" if as_of < eligible_on else "FU"
                 break
             if next_action == "none":
                 code = "COMPLETED"
@@ -172,6 +177,7 @@ def training_topic_status(raw: dict[str, Any], topic: str, as_of: date | None = 
         "followup_needed": int(code == "FU"),
         "retraining_needed": int(code in {"CT", "RT"}),
         "last_activity_date": last_activity,
+        "next_followup_date": next_followup_date,
     }
 
 

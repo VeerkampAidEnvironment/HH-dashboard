@@ -70,6 +70,16 @@ class ApplicationTest(unittest.TestCase):
         self.assertIn(b'/static/css/app.css?v=', response.data)
         self.assertIn(b'/static/js/app.js?v=', response.data)
 
+    def test_cbf_cards_show_three_beneficiary_progress_rates(self):
+        response = self.client.get("/cbfs")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"At least one training", response.data)
+        self.assertIn(b"Trained in all topics", response.data)
+        self.assertIn(b"Confirmed adoption", response.data)
+        self.assertIn(b'aria-label="People with at least one training"', response.data)
+        self.assertIn(b'aria-label="People trained in all topics"', response.data)
+        self.assertIn(b'aria-label="People with confirmed adoption"', response.data)
+
     def test_bulk_upload_requires_an_excel_workbook(self):
         response = self.client.post(
             "/bulk-upload",
@@ -190,6 +200,9 @@ class ApplicationTest(unittest.TestCase):
         self.assertIn(b"Absences", response.data)
         self.assertNotIn(b"Recording coverage", response.data)
         self.assertNotIn(b"Training needed", response.data)
+        self.assertIn(b"data-dashboard-group-multiselect", response.data)
+        self.assertIn(b"All care groups", response.data)
+        self.assertIn(b"All schools", response.data)
         with self.app.app_context():
             from db import get_db, get_setting
 
@@ -198,18 +211,68 @@ class ApplicationTest(unittest.TestCase):
             self.assertEqual(len(modules["School clubs - Theme 4"]), 6)
             self.assertEqual(len(modules["School clubs - Theme 7"]), 3)
 
+    def test_fh_dashboard_group_filter_accepts_multiple_values(self):
+        with self.app.app_context():
+            from db import get_db
+
+            groups = [row[0] for row in get_db().execute(
+                "SELECT DISTINCT group_name FROM records WHERE dataset='care' "
+                "AND archived_at IS NULL AND TRIM(COALESCE(group_name,''))<>'' ORDER BY group_name LIMIT 2"
+            ).fetchall()]
+            expected = get_db().execute(
+                "SELECT COUNT(*) FROM records WHERE dataset='care' AND archived_at IS NULL "
+                "AND group_name IN (?, ?)", groups,
+            ).fetchone()[0]
+        response = self.client.get("/dashboard", query_string={"dataset": "care", "group": "|".join(groups)})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(f"{expected} FH participants".encode(), response.data)
+        self.assertIn(b"2 selected", response.data)
+
     def test_ae_dashboard_has_interactive_age_gender_breakdowns(self):
         response = self.client.get("/dashboard?dataset=training")
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'<details class="dashboard-filter-details">', response.data)
         self.assertNotIn(b'<details class="dashboard-filter-details" open>', response.data)
         self.assertIn(b"dashboard-primary-controls", response.data)
-        self.assertIn(b'<select name="topic">', response.data)
+        self.assertIn(b'data-dashboard-topic-multiselect', response.data)
         self.assertIn(b"All training types", response.data)
         self.assertIn(b"data-demographic-explorer", response.data)
         self.assertIn(b"Age by sex", response.data)
         self.assertIn(b"Sex by age", response.data)
         self.assertIn(b"Age distribution within each sex", response.data)
+        self.assertIn(b"data-dashboard-cbf-multiselect", response.data)
+        self.assertIn(b"data-dashboard-topic-multiselect", response.data)
+        self.assertIn(b"Select all", response.data)
+
+    def test_ae_dashboard_training_type_filter_accepts_multiple_values(self):
+        from training import TRAINING_TOPICS
+
+        selected = TRAINING_TOPICS[:2]
+        response = self.client.get("/dashboard", query_string={
+            "dataset": "training", "topic": "|".join(selected),
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"2 training types selected", response.data)
+        self.assertIn(selected[0].encode(), response.data)
+        self.assertIn(selected[1].encode(), response.data)
+
+    def test_dashboard_cbf_filter_accepts_multiple_values(self):
+        with self.app.app_context():
+            from db import get_db
+
+            cbfs = [row[0] for row in get_db().execute(
+                """SELECT DISTINCT cbf_name FROM records WHERE dataset='training'
+                   AND TRIM(cbf_name)<>'' ORDER BY cbf_name LIMIT 2"""
+            ).fetchall()]
+            expected = get_db().execute(
+                """SELECT COUNT(*) FROM records WHERE dataset='training' AND archived_at IS NULL
+                   AND LOWER(COALESCE(record_status,'')) NOT LIKE '%drop%'
+                   AND cbf_name IN (?, ?)""", cbfs,
+            ).fetchone()[0]
+        response = self.client.get("/dashboard", query_string={"dataset": "training", "cbf": "|".join(cbfs)})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(f"Showing {expected} source records".encode(), response.data)
+        self.assertIn(b"2 CBFs selected", response.data)
 
     def test_testing_environment_isolated_from_live_database(self):
         with self.app.app_context():
@@ -294,7 +357,9 @@ class ApplicationTest(unittest.TestCase):
             "/dashboard", query_string={"dataset": "training", "topic": topic}
         )
         self.assertEqual(response.status_code, 200)
-        self.assertIn(f'<option value="{topic}" selected>'.encode(), response.data)
+        self.assertIn(
+            f'value="{topic}" data-dashboard-topic-option checked'.encode(), response.data
+        )
 
         with self.app.app_context():
             from app import build_dashboard_data
@@ -877,8 +942,34 @@ class ApplicationTest(unittest.TestCase):
             f"Follow up 1 score - {topic}": 55,
             f"Follow up 1 next action - {topic}": "followup_1",
         }
-        self.assertEqual(training_topic_status(raw, topic, as_of=date(2026, 4, 30))["status_code"], "WAIT")
+        waiting = training_topic_status(raw, topic, as_of=date(2026, 4, 30))
+        self.assertEqual(waiting["status_code"], "WAIT")
+        self.assertEqual(waiting["next_followup_date"], "2026-05-01")
         self.assertEqual(training_topic_status(raw, topic, as_of=date(2026, 5, 1))["status_code"], "FU")
+
+    def test_cbf_priorities_rank_due_work_and_highlight_upcoming_date(self):
+        from app import build_priorities
+
+        topic = "Financial Literacy"
+        records = [
+            {"id": 1, "name": "Upcoming Person", "uid": "ARF-1", "group_name": "Group A",
+             "record_status": "", "raw_data": json.dumps({f"Training 1 - {topic}": "2026-01-15"})},
+            {"id": 2, "name": "Due Person", "uid": "ARF-2", "group_name": "Group A",
+             "record_status": "", "raw_data": "{}"},
+        ]
+        statuses = {
+            1: [{"topic": topic, "status_code": "WAIT", "followup_needed": 0, "retraining_needed": 0}],
+            2: [
+                {"topic": "Topic 1", "status_code": "FU", "followup_needed": 1, "retraining_needed": 0},
+                {"topic": "Topic 2", "status_code": "FU", "followup_needed": 1, "retraining_needed": 0},
+            ],
+        }
+        priorities = build_priorities(records, statuses, as_of=date(2026, 4, 10))
+        self.assertEqual([item["name"] for item in priorities], ["Due Person", "Upcoming Person"])
+        self.assertEqual(priorities[0]["followup"], 2)
+        self.assertEqual(priorities[1]["priority_state"], "upcoming")
+        self.assertEqual(priorities[1]["next_followup_date"], "2026-04-15")
+        self.assertEqual(priorities[1]["days_until_followup"], 5)
 
     def test_identity_review_exposes_full_populated_profiles(self):
         response = self.client.get("/matches?status=pending")

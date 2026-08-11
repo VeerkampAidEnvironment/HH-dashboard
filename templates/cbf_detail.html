@@ -24,10 +24,12 @@
     <tbody>{% for item in topics %}<tr><td><strong>{{ item.topic }}</strong></td><td>{{ item.followup }}</td><td>{{ item.retraining }}</td><td>{{ item.trained }}</td><td>{{ item.confirmed }}</td><td>{{ item.rate }}%</td></tr>{% endfor %}</tbody></table></div>
   </article>
   <article class="panel"><div class="panel-heading"><div><p class="eyebrow">Mapped groups</p><h2>Beneficiary groups</h2></div></div><ul class="clean-list">{% for group in groups %}<li>{{ group }}</li>{% endfor %}</ul></article>
-  <article class="panel panel-wide"><div class="panel-heading"><div><p class="eyebrow">Action list</p><h2>Beneficiary priorities</h2></div><span class="badge">{{ priorities|length }} people</span></div>
-    <div class="table-wrap"><table class="data-table"><thead><tr><th>Beneficiary</th><th>Beneficiary ID</th><th>Group</th><th>Follow-ups</th><th>Training needs</th></tr></thead><tbody>
-      {% for item in priorities %}<tr><td><a href="{{ url_for('record_detail', record_id=item.id) }}"><strong>{{ item.name }}</strong></a></td><td>{{ item.uid }}</td><td>{{ item.group_name }}</td><td><span class="status-pill warning">{{ item.followup }}</span></td><td><span class="status-pill danger">{{ item.retraining }}</span></td></tr>
-      {% else %}<tr><td colspan="5" class="empty-cell">No current action needs.</td></tr>{% endfor %}
+  <article class="panel panel-wide cbf-priority-panel"><div class="panel-heading"><div><p class="eyebrow">Action list</p><h2>Beneficiary priorities</h2><p>Due follow-ups are ranked by workload. Upcoming follow-ups are shown up to 30 days ahead and must wait until the highlighted date.</p></div><span class="badge">{{ priorities|length }} people</span></div>
+    <div class="table-wrap"><table class="data-table cbf-priority-table"><thead><tr><th>Priority</th><th>Beneficiary</th><th>Beneficiary ID</th><th>Group</th><th>Follow-ups</th><th>Training needs</th></tr></thead><tbody>
+      {% for item in priorities %}<tr class="priority-row priority-{{ item.priority_state }}">
+        <td>{% if item.priority_state == 'due' %}<span class="priority-label due">Due now</span>{% elif item.priority_state == 'upcoming' %}<div class="upcoming-followup"><span>Do not follow up yet</span><strong>{{ item.next_followup_display }}</strong><small>Available in {{ item.days_until_followup }} day{{ '' if item.days_until_followup == 1 else 's' }}</small></div>{% else %}<span class="priority-label training">Training action</span>{% endif %}</td>
+        <td><a href="{{ url_for('record_detail', record_id=item.id) }}"><strong>{{ item.name }}</strong></a></td><td>{{ item.uid }}</td><td>{{ item.group_name }}</td><td>{% if item.followup %}<span class="status-pill warning">{{ item.followup }} due</span>{% elif item.upcoming_followups %}<span class="status-pill waiting">{{ item.upcoming_followups }} upcoming</span>{% else %}<span class="muted">—</span>{% endif %}</td><td><span class="status-pill danger">{{ item.retraining }}</span></td></tr>
+      {% else %}<tr><td colspan="6" class="empty-cell">No current or upcoming action needs.</td></tr>{% endfor %}
     </tbody></table></div>
   </article>
 </section>

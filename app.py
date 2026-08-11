@@ -12,7 +12,7 @@ import secrets
 import sqlite3
 import zipfile
 from collections import Counter, defaultdict
-from datetime import date
+from datetime import date, timedelta
 from functools import wraps
 from io import BytesIO
 from pathlib import Path
@@ -333,6 +333,14 @@ def create_app(test_config=None):
                       COUNT(ts.id) AS topic_count,
                       COALESCE(SUM(ts.training_received), 0) AS topics_received,
                       COALESCE(SUM(ts.confirmed_trained), 0) AS topics_confirmed,
+                      COUNT(DISTINCT CASE WHEN ts.training_received=1 THEN r.farmer_id END) AS trained_people,
+                      COUNT(DISTINCT CASE WHEN ts.confirmed_trained=1 THEN r.farmer_id END) AS adoption_people,
+                      COUNT(DISTINCT CASE WHEN NOT EXISTS (
+                          SELECT 1 FROM topic_statuses missing
+                          WHERE missing.record_id=r.id AND missing.training_received=0
+                      ) AND EXISTS (
+                          SELECT 1 FROM topic_statuses present WHERE present.record_id=r.id
+                      ) THEN r.farmer_id END) AS fully_trained_people,
                       COUNT(DISTINCT CASE WHEN ts.followup_needed=1 THEN r.id END) AS followup_people,
                       COALESCE(SUM(ts.followup_needed), 0) AS followup_actions,
                       COUNT(DISTINCT CASE WHEN ts.retraining_needed=1 THEN r.id END) AS training_need_people
@@ -343,8 +351,10 @@ def create_app(test_config=None):
         cbfs = []
         for row in rows:
             cbf = dict(row)
-            cbf["progress_rate"] = round(100 * cbf["topics_received"] / cbf["topic_count"]) if cbf["topic_count"] else 0
-            cbf["adoption_rate"] = round(100 * cbf["topics_confirmed"] / cbf["topic_count"]) if cbf["topic_count"] else 0
+            denominator = cbf["farmer_count"]
+            cbf["progress_rate"] = round(100 * cbf["trained_people"] / denominator) if denominator else 0
+            cbf["fully_trained_rate"] = round(100 * cbf["fully_trained_people"] / denominator) if denominator else 0
+            cbf["adoption_rate"] = round(100 * cbf["adoption_people"] / denominator) if denominator else 0
             cbf["urgency_score"] = cbf["followup_actions"] / cbf["participant_count"] if cbf["participant_count"] else 0
             if cbf["followup_people"] == 0:
                 cbf.update(urgency="clear", urgency_label="No follow-ups due")
@@ -1607,6 +1617,10 @@ def read_dashboard_filters(values) -> dict[str, str]:
     return filters
 
 
+def selected_filter_values(filters: dict[str, str], key: str) -> list[str]:
+    return [value.strip() for value in str(filters.get(key, "")).split("|") if value.strip()]
+
+
 def _record_query(dataset: str, filters: dict[str, str]):
     where = ["archived_at IS NULL"]
     params: list = []
@@ -1623,16 +1637,18 @@ def _record_query(dataset: str, filters: dict[str, str]):
     if dataset == "training" and filters.get("dropouts", "exclude") != "include":
         where.append("LOWER(COALESCE(record_status,'')) NOT LIKE '%drop%'")
     for filter_key, column in (("gender", "sex"), ("age", "age_group"), ("cbf", "cbf_name"), ("group", "group_name")):
-        if not filters.get(filter_key):
+        selected = selected_filter_values(filters, filter_key)
+        if not selected:
             continue
+        placeholders = ",".join("?" for _ in selected)
         if dataset == "combined":
             where.append(
                 f"EXISTS (SELECT 1 FROM records rf WHERE rf.farmer_id=r.farmer_id "
-                f"AND rf.archived_at IS NULL AND rf.{column}=?)"
+                f"AND rf.archived_at IS NULL AND rf.{column} IN ({placeholders}))"
             )
         else:
-            where.append(f"{column}=?")
-        params.append(filters[filter_key])
+            where.append(f"{column} IN ({placeholders})")
+        params.extend(selected)
     return " AND ".join(where), params
 
 
@@ -1663,9 +1679,11 @@ def build_interaction_data(connection, filters: dict[str, str]):
     ]
     params = []
     for key, column in (("gender", "t.sex"), ("age", "t.age_group"), ("cbf", "t.cbf_name"), ("group", "t.group_name")):
-        if filters.get(key):
-            where.append(f"{column}=?")
-            params.append(filters[key])
+        selected = selected_filter_values(filters, key)
+        if selected:
+            placeholders = ",".join("?" for _ in selected)
+            where.append(f"{column} IN ({placeholders})")
+            params.extend(selected)
     pairs = [dict(row) for row in connection.execute(
         f"""SELECT m.id AS match_id, m.confidence,
                    t.id AS training_id, t.name, t.sex, t.age_group, t.group_name, t.cbf_name,
@@ -1809,10 +1827,14 @@ def build_dashboard_data(connection, dataset: str, filters: dict[str, str]):
         params,
     ).fetchall())
     topic_filter = filters.get("topic", "") if dataset == "training" else ""
-    if topic_filter not in TRAINING_TOPICS:
+    selected_topics = [topic for topic in selected_filter_values(filters, "topic") if topic in TRAINING_TOPICS]
+    if topic_filter == "__none__":
+        selected_topics = []
+        statuses = []
+    elif selected_topics:
+        statuses = [status for status in statuses if status["topic"] in selected_topics]
+    elif topic_filter:
         topic_filter = ""
-    if topic_filter:
-        statuses = [status for status in statuses if status["topic"] == topic_filter]
     status_by_record = defaultdict(list)
     for status in statuses:
         status_by_record[status["record_id"]].append(status)
@@ -1996,7 +2018,7 @@ def build_dashboard_data(connection, dataset: str, filters: dict[str, str]):
         activity_filter_options["ages"].add(age)
         activity_filter_options["genders"].add(gender)
         activity_filter_options["cbfs"].add(cbf)
-        for topic in ([topic_filter] if topic_filter else TRAINING_TOPICS):
+        for topic in (selected_topics if topic_filter else TRAINING_TOPICS):
             for cycle in range(1, 4):
                 for event_type, field_prefix in (("ct", "Training"), ("fu", "Follow up")):
                     event_date = parse_date(raw.get(f"{field_prefix} {cycle} - {topic}"))
@@ -2018,7 +2040,7 @@ def build_dashboard_data(connection, dataset: str, filters: dict[str, str]):
     activity_filter_options = {
         key: sorted(values) for key, values in activity_filter_options.items()
     }
-    activity_filter_options["topics"] = [topic_filter] if topic_filter else list(TRAINING_TOPICS)
+    activity_filter_options["topics"] = selected_topics if topic_filter else list(TRAINING_TOPICS)
 
     options = {
         "genders": [row[0] for row in connection.execute(
@@ -2057,9 +2079,11 @@ def build_fh_dashboard_data(connection, filters: dict[str, str]):
     where = ["r.dataset='care'", "r.archived_at IS NULL"]
     params = []
     for key, column in (("gender", "r.sex"), ("age", "r.age_group"), ("group", "r.group_name")):
-        if filters.get(key):
-            where.append(f"{column}=?")
-            params.append(filters[key])
+        selected = selected_filter_values(filters, key)
+        if selected:
+            placeholders = ",".join("?" for _ in selected)
+            where.append(f"{column} IN ({placeholders})")
+            params.extend(selected)
     if filters.get("category"):
         where.append("json_extract(r.raw_data, '$.Category')=?")
         params.append(filters["category"])
@@ -2220,6 +2244,13 @@ def build_fh_dashboard_data(connection, filters: dict[str, str]):
     category_counts = Counter(record["category"] for record in records)
     gender_counts = Counter(record["sex"] or "Not recorded" for record in records)
     base_where = "dataset='care' AND archived_at IS NULL"
+    group_rows = connection.execute(
+        f"""SELECT group_name,
+                    MAX(CASE WHEN LOWER(TRIM(COALESCE(json_extract(raw_data, '$.Category'), '')))
+                                      IN ('learner', 'teacher') THEN 1 ELSE 0 END) AS is_school
+             FROM records WHERE {base_where} AND TRIM(COALESCE(group_name,''))<>''
+             GROUP BY group_name ORDER BY group_name"""
+    ).fetchall()
     options = {
         "genders": [row[0] for row in connection.execute(
             f"SELECT DISTINCT sex FROM records WHERE {base_where} AND TRIM(COALESCE(sex,''))<>'' ORDER BY sex"
@@ -2227,9 +2258,9 @@ def build_fh_dashboard_data(connection, filters: dict[str, str]):
         "ages": [row[0] for row in connection.execute(
             f"SELECT DISTINCT age_group FROM records WHERE {base_where} AND TRIM(COALESCE(age_group,''))<>'' ORDER BY age_group"
         )],
-        "groups": [row[0] for row in connection.execute(
-            f"SELECT DISTINCT group_name FROM records WHERE {base_where} AND TRIM(COALESCE(group_name,''))<>'' ORDER BY group_name"
-        )],
+        "groups": [row[0] for row in group_rows],
+        "care_groups": [row[0] for row in group_rows if not row[1]],
+        "schools": [row[0] for row in group_rows if row[1]],
         "categories": [row[0] for row in connection.execute(
             f"SELECT DISTINCT json_extract(raw_data, '$.Category') FROM records WHERE {base_where} "
             "AND TRIM(COALESCE(json_extract(raw_data, '$.Category'),''))<>'' ORDER BY 1"
@@ -2251,13 +2282,18 @@ def build_fh_dashboard_data(connection, filters: dict[str, str]):
 def describe_filters(dataset: str, filters: dict[str, str]) -> list[str]:
     descriptions = [f"Dataset: {DATASET_LABELS[dataset]}"]
     labels = {"gender": "Gender", "age": "Age group", "cbf": "CBF", "group": "Group", "category": "Category", "topic": "Training type", "date_from": "From", "date_to": "To", "status": "Status"}
-    descriptions.extend(f"{labels[key]}: {value}" for key, value in filters.items() if value and key in labels)
+    descriptions.extend(
+        f"{labels[key]}: {', '.join(selected_filter_values(filters, key))}"
+        for key, value in filters.items() if value and key in labels
+    )
     if dataset == "training":
         descriptions.append("Dropouts: Included" if filters.get("dropouts") == "include" else "Dropouts: Excluded")
     return descriptions
 
 
-def build_priorities(records, status_by_record):
+def build_priorities(records, status_by_record, as_of: date | None = None):
+    as_of = as_of or date.today()
+    soon_cutoff = as_of + timedelta(days=30)
     priorities = []
     for record in records:
         if "drop" in (record["record_status"] or "").lower():
@@ -2265,13 +2301,34 @@ def build_priorities(records, status_by_record):
         statuses = status_by_record.get(record["id"], [])
         followup = sum(item["followup_needed"] for item in statuses)
         retraining = sum(item["retraining_needed"] for item in statuses)
-        if followup or retraining:
+        raw = json.loads(record["raw_data"])
+        upcoming_dates = []
+        for item in statuses:
+            if item["status_code"] != "WAIT":
+                continue
+            eligible_value = training_topic_status(raw, item["topic"], as_of=as_of).get("next_followup_date")
+            eligible_on = parse_date(eligible_value)
+            if eligible_on and as_of < eligible_on <= soon_cutoff:
+                upcoming_dates.append(eligible_on)
+        next_followup = min(upcoming_dates) if upcoming_dates else None
+        if followup or retraining or next_followup:
             priorities.append({
                 "id": record["id"], "name": record["name"], "uid": record["uid"],
                 "group_name": record["group_name"], "followup": followup, "retraining": retraining,
-                "priority": followup * 2 + retraining,
+                "upcoming_followups": len(upcoming_dates),
+                "next_followup_date": next_followup.isoformat() if next_followup else None,
+                "next_followup_display": next_followup.strftime("%d %b %Y") if next_followup else None,
+                "days_until_followup": (next_followup - as_of).days if next_followup else None,
+                "priority_state": "due" if followup else "upcoming" if next_followup else "training",
             })
-    return sorted(priorities, key=lambda item: (-item["priority"], item["name"]))
+    state_order = {"due": 0, "upcoming": 1, "training": 2}
+    return sorted(priorities, key=lambda item: (
+        state_order[item["priority_state"]],
+        -item["followup"],
+        item["next_followup_date"] or "9999-12-31",
+        -item["retraining"],
+        item["name"].casefold(),
+    ))
 
 
 def safe_filename(value: str) -> str:

@@ -21,7 +21,23 @@
 <form class="filter-panel fh-filter-panel" method="get">
   <input type="hidden" name="dataset" value="care">
   <label>Programme category<select name="category"><option value="">All categories</option>{% for item in options.categories %}<option {{ 'selected' if filters.category == item }}>{{ item }}</option>{% endfor %}</select></label>
-  <label>Group or school<select name="group" data-enhanced-select data-select-label="Group or school" data-search-placeholder="Search groups and schools"><option value="">All groups and schools</option>{% for item in options.groups %}<option {{ 'selected' if filters.group == item }}>{{ item }}</option>{% endfor %}</select></label>
+  {% set no_groups_selected = filters.group == '__none__' %}
+  {% set selected_groups = filters.group.split('|') if filters.group and not no_groups_selected else [] %}
+  <div class="dashboard-filter-multiselect fh-group-multiselect"><span>Group or school</span><details data-dashboard-group-multiselect>
+    <summary data-dashboard-group-summary>{% if no_groups_selected %}No groups or schools selected{% elif not selected_groups %}All groups and schools{% elif selected_groups|length == 1 %}{{ selected_groups[0] }}{% else %}{{ selected_groups|length }} selected{% endif %}</summary>
+    <div class="dashboard-filter-menu dashboard-group-menu">
+      <label class="dashboard-select-all"><input type="checkbox" data-dashboard-group-all {{ 'checked' if not filters.group }}> <strong>Select all groups and schools</strong></label>
+      <section class="dashboard-filter-section" data-dashboard-group-section>
+        <label class="dashboard-section-all"><input type="checkbox" data-dashboard-section-all> <strong>All care groups</strong></label>
+        <div class="dashboard-filter-options">{% for item in options.care_groups %}<label><input type="checkbox" value="{{ item }}" data-dashboard-group-option {{ 'checked' if not filters.group or item in selected_groups }}> <span>{{ item }}</span></label>{% endfor %}</div>
+      </section>
+      <section class="dashboard-filter-section" data-dashboard-group-section>
+        <label class="dashboard-section-all"><input type="checkbox" data-dashboard-section-all> <strong>All schools</strong></label>
+        <div class="dashboard-filter-options">{% for item in options.schools %}<label><input type="checkbox" value="{{ item }}" data-dashboard-group-option {{ 'checked' if not filters.group or item in selected_groups }}> <span>{{ item }}</span></label>{% endfor %}</div>
+      </section>
+    </div>
+    <input type="hidden" name="group" value="{{ filters.group }}" data-dashboard-group-value>
+  </details></div>
   <label>Gender<select name="gender"><option value="">All</option>{% for item in options.genders %}<option {{ 'selected' if filters.gender == item }}>{{ item }}</option>{% endfor %}</select></label>
   <label>Age group<select name="age"><option value="">All</option>{% for item in options.ages %}<option {{ 'selected' if filters.age == item }}>{{ item }}</option>{% endfor %}</select></label>
   <label>Participation status<select name="status"><option value="">All statuses</option>{% for value, label in [('active','Active'),('dropped','Dropped'),('reached','Attended at least once'),('module_completed','Completed a module'),('in_progress','Module in progress'),('not_started','No attendance recorded')] %}<option value="{{ value }}" {{ 'selected' if filters.status == value }}>{{ label }}</option>{% endfor %}</select></label>

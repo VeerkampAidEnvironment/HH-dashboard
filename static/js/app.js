@@ -19,6 +19,90 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
+  document.querySelectorAll("[data-dashboard-cbf-multiselect]").forEach((control) => {
+    const allBox = control.querySelector("[data-dashboard-cbf-all]");
+    const boxes = Array.from(control.querySelectorAll("[data-dashboard-cbf-option]"));
+    const hidden = control.querySelector("[data-dashboard-cbf-value]");
+    const summary = control.querySelector("[data-dashboard-cbf-summary]");
+    const update = () => {
+      const selected = boxes.filter((box) => box.checked);
+      const allSelected = boxes.length > 0 && selected.length === boxes.length;
+      if (allBox) allBox.checked = allSelected;
+      if (hidden) {
+        hidden.value = allSelected
+          ? ""
+          : (selected.length ? selected.map((box) => box.value).join("|") : "__none__");
+      }
+      if (summary) summary.textContent = allSelected ? "All CBFs" : selected.length === 0
+        ? "No CBFs selected" : selected.length === 1 ? selected[0].value : `${selected.length} CBFs selected`;
+    };
+    allBox?.addEventListener("change", () => {
+      boxes.forEach((box) => { box.checked = allBox.checked; });
+      update();
+    });
+    boxes.forEach((box) => box.addEventListener("change", update));
+    update();
+  });
+
+  document.querySelectorAll("[data-dashboard-topic-multiselect]").forEach((control) => {
+    const allBox = control.querySelector("[data-dashboard-topic-all]");
+    const boxes = Array.from(control.querySelectorAll("[data-dashboard-topic-option]"));
+    const hidden = control.querySelector("[data-dashboard-topic-value]");
+    const summary = control.querySelector("[data-dashboard-topic-summary]");
+    const update = () => {
+      const selected = boxes.filter((box) => box.checked);
+      const allSelected = boxes.length > 0 && selected.length === boxes.length;
+      if (allBox) allBox.checked = allSelected;
+      if (hidden) hidden.value = allSelected ? "" : selected.length
+        ? selected.map((box) => box.value).join("|") : "__none__";
+      if (summary) summary.textContent = allSelected ? "All training types" : selected.length === 0
+        ? "No training types selected" : selected.length === 1 ? selected[0].value
+          : `${selected.length} training types selected`;
+    };
+    allBox?.addEventListener("change", () => {
+      boxes.forEach((box) => { box.checked = allBox.checked; });
+      update();
+    });
+    boxes.forEach((box) => box.addEventListener("change", update));
+    update();
+  });
+
+  document.querySelectorAll("[data-dashboard-group-multiselect]").forEach((control) => {
+    const allBox = control.querySelector("[data-dashboard-group-all]");
+    const boxes = Array.from(control.querySelectorAll("[data-dashboard-group-option]"));
+    const hidden = control.querySelector("[data-dashboard-group-value]");
+    const summary = control.querySelector("[data-dashboard-group-summary]");
+    const sections = Array.from(control.querySelectorAll("[data-dashboard-group-section]"));
+    const update = () => {
+      const selected = boxes.filter((box) => box.checked);
+      const allSelected = boxes.length > 0 && selected.length === boxes.length;
+      if (allBox) allBox.checked = allSelected;
+      sections.forEach((section) => {
+        const sectionAll = section.querySelector("[data-dashboard-section-all]");
+        const sectionBoxes = Array.from(section.querySelectorAll("[data-dashboard-group-option]"));
+        if (sectionAll) sectionAll.checked = sectionBoxes.length > 0 && sectionBoxes.every((box) => box.checked);
+      });
+      if (hidden) hidden.value = allSelected ? "" : selected.length
+        ? selected.map((box) => box.value).join("|") : "__none__";
+      if (summary) summary.textContent = allSelected ? "All groups and schools" : selected.length === 0
+        ? "No groups or schools selected" : selected.length === 1 ? selected[0].value : `${selected.length} selected`;
+    };
+    allBox?.addEventListener("change", () => {
+      boxes.forEach((box) => { box.checked = allBox.checked; });
+      update();
+    });
+    sections.forEach((section) => {
+      const sectionAll = section.querySelector("[data-dashboard-section-all]");
+      const sectionBoxes = Array.from(section.querySelectorAll("[data-dashboard-group-option]"));
+      sectionAll?.addEventListener("change", () => {
+        sectionBoxes.forEach((box) => { box.checked = sectionAll.checked; });
+        update();
+      });
+    });
+    boxes.forEach((box) => box.addEventListener("change", update));
+    update();
+  });
+
   document.querySelectorAll("form[data-auto-submit]").forEach((form) => {
     form.querySelectorAll("[data-submit-on-change]").forEach((control) => {
       control.addEventListener("change", () => {

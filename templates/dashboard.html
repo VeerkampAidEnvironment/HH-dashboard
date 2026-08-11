@@ -40,8 +40,26 @@
   <input type="hidden" name="dropouts" value="{{ filters.dropouts }}">
   <label>Gender<select name="gender"><option value="">All</option>{% for item in options.genders %}<option {{ 'selected' if filters.gender == item }}>{{ item }}</option>{% endfor %}</select></label>
   <label>Age group<select name="age"><option value="">All</option>{% for item in options.ages %}<option {{ 'selected' if filters.age == item }}>{{ item }}</option>{% endfor %}</select></label>
-  <label>CBF<select name="cbf"><option value="">All CBFs</option>{% for item in options.cbfs %}<option {{ 'selected' if filters.cbf == item }}>{{ item }}</option>{% endfor %}</select></label>
-  <label>Training type<select name="topic"><option value="">All training types</option>{% for item in options.topics %}<option value="{{ item }}" {{ 'selected' if filters.topic == item }}>{{ item }}</option>{% endfor %}</select></label>
+  {% set no_cbfs_selected = filters.cbf == '__none__' %}
+  {% set selected_cbfs = filters.cbf.split('|') if filters.cbf and not no_cbfs_selected else [] %}
+  <div class="dashboard-filter-multiselect"><span>CBF</span><details data-dashboard-cbf-multiselect>
+    <summary data-dashboard-cbf-summary>{% if no_cbfs_selected %}No CBFs selected{% elif not selected_cbfs %}All CBFs{% elif selected_cbfs|length == 1 %}{{ selected_cbfs[0] }}{% else %}{{ selected_cbfs|length }} CBFs selected{% endif %}</summary>
+    <div class="dashboard-filter-menu">
+      <label class="dashboard-select-all"><input type="checkbox" data-dashboard-cbf-all {{ 'checked' if not filters.cbf }}> <strong>Select all</strong></label>
+      <div class="dashboard-filter-options">{% for item in options.cbfs %}<label><input type="checkbox" value="{{ item }}" data-dashboard-cbf-option {{ 'checked' if not filters.cbf or item in selected_cbfs }}> <span>{{ item }}</span></label>{% endfor %}</div>
+    </div>
+    <input type="hidden" name="cbf" value="{{ filters.cbf }}" data-dashboard-cbf-value>
+  </details></div>
+  {% set no_topics_selected = filters.topic == '__none__' %}
+  {% set selected_topics = filters.topic.split('|') if filters.topic and not no_topics_selected else [] %}
+  <div class="dashboard-filter-multiselect"><span>Training type</span><details data-dashboard-topic-multiselect>
+    <summary data-dashboard-topic-summary>{% if no_topics_selected %}No training types selected{% elif not selected_topics %}All training types{% elif selected_topics|length == 1 %}{{ selected_topics[0] }}{% else %}{{ selected_topics|length }} training types selected{% endif %}</summary>
+    <div class="dashboard-filter-menu">
+      <label class="dashboard-select-all"><input type="checkbox" data-dashboard-topic-all {{ 'checked' if not filters.topic }}> <strong>Select all</strong></label>
+      <div class="dashboard-filter-options">{% for item in options.topics %}<label><input type="checkbox" value="{{ item }}" data-dashboard-topic-option {{ 'checked' if not filters.topic or item in selected_topics }}> <span>{{ item }}</span></label>{% endfor %}</div>
+    </div>
+    <input type="hidden" name="topic" value="{{ filters.topic }}" data-dashboard-topic-value>
+  </details></div>
   <label>From<input type="date" name="date_from" value="{{ filters.date_from }}"></label>
   <label>To<input type="date" name="date_to" value="{{ filters.date_to }}"></label>
   <label>Status<select name="status">
