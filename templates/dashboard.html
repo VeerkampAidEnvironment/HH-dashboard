@@ -107,6 +107,12 @@
       <label class="timeline-select-control"><span>Training type</span><select data-activity-topic><option value="all">All training types</option>{% for value in activity_filter_options.topics %}<option value="{{ value }}">{{ value }}</option>{% endfor %}</select></label>
       <div class="timeline-cbf-control"><span>CBF</span><details data-cbf-multiselect><summary data-cbf-summary>All CBFs</summary><div class="timeline-cbf-menu"><div class="timeline-cbf-menu-head"><strong>Select one or more</strong><button type="button" data-cbf-clear>Clear</button></div>{% for value in activity_filter_options.cbfs %}<label><input type="checkbox" value="{{ value }}"> <span>{{ value }}</span></label>{% endfor %}</div></details></div>
       <button class="timeline-reset" type="button" data-activity-reset>Reset</button>
+      <div class="timeline-month-range">
+        <span>Time period</span>
+        <label><small>Start month</small><select data-activity-month-start {{ 'disabled' if not activity_timeline.months }}>{% for month in activity_timeline.months %}<option value="{{ month }}" {{ 'selected' if loop.first }}>{{ month }}</option>{% endfor %}</select></label>
+        <span class="timeline-range-arrow" aria-hidden="true">to</span>
+        <label><small>End month</small><select data-activity-month-end {{ 'disabled' if not activity_timeline.months }}>{% for month in activity_timeline.months %}<option value="{{ month }}" {{ 'selected' if loop.last }}>{{ month }}</option>{% endfor %}</select></label>
+      </div>
     </div>
     <div class="timeline-view-control"><span>Chart view</span><div class="timeline-segments" data-activity-stack-mode>
       <button type="button" class="active" data-value="total">Total</button><button type="button" data-value="activity">Activity</button><button type="button" data-value="gender">Gender</button><button type="button" data-value="age">Age</button><button type="button" data-value="topic">Training type</button><button type="button" data-value="cbf">CBF</button>
@@ -183,8 +189,8 @@
         {% if training_pathways.other_count %}<p class="pathway-other">{{ training_pathways.other_count }} beneficiaries are spread across the less common combinations below.</p>{% endif %}
       </section>
       <section class="training-count-section">
-        <div class="pathway-section-heading"><div><h3>Number of trainings received</h3><p>Each beneficiary appears once.</p></div></div>
-        <div class="training-count-bars">{% for item in training_pathways.distribution %}<div class="training-count-row"><span>{{ item.number }}</span><div><i style="width: {{ item.width }}%"></i></div><strong>{{ item.count }}<small>{{ item.percent }}%</small></strong></div>{% endfor %}</div>
+        <div class="pathway-section-heading"><div><h3>Number of trainings received</h3><p>Exact count, with the cumulative total who received at least that many beside it.</p></div></div>
+        <div class="training-count-bars">{% for item in training_pathways.distribution %}<div class="training-count-row"><span>{{ item.number }}</span><div><i style="width: {{ item.width }}%"></i></div><strong><span>{{ item.count }}<small>{{ item.percent }}%</small></span><em>≥{{ item.number }}: {{ item.cumulative_count }}</em></strong></div>{% endfor %}</div>
         <div class="training-count-axis"><span>0 trainings</span><span>{{ training_pathways.topics|length }} trainings</span></div>
       </section>
     </div>
@@ -202,5 +208,26 @@
       </tr>{% else %}<tr><td colspan="7" class="empty-cell">No records match the current filters.</td></tr>{% endfor %}</tbody>
     </table></div>
   </article>
+
+  {% if dataset == 'training' %}<article class="panel panel-momentum" data-momentum-explorer>
+    <div class="panel-heading"><div><p class="eyebrow">Programme momentum</p><h2>How implementation is moving</h2><p>Monthly programme reach, delivery, follow-up and newly confirmed adoption within the selected dashboard filters.</p></div><span class="badge" data-momentum-period>Last {{ momentum_chart.months|length }} months</span></div>
+    {% if momentum_chart.months %}
+    <div class="momentum-range-controls">
+      <span>Time period</span>
+      <label><small>Start month</small><select data-momentum-month-start>{% for month in momentum_chart.months %}<option value="{{ month.key }}" {{ 'selected' if loop.first }}>{{ month.label }}</option>{% endfor %}</select></label>
+      <span class="timeline-range-arrow" aria-hidden="true">to</span>
+      <label><small>End month</small><select data-momentum-month-end>{% for month in momentum_chart.months %}<option value="{{ month.key }}" {{ 'selected' if loop.last }}>{{ month.label }}</option>{% endfor %}</select></label>
+      <button type="button" data-momentum-reset>Reset range</button>
+    </div>
+    <div class="momentum-small-multiples" data-momentum-chart>{% set month_total = momentum_chart.months|length %}{% for series in momentum_chart.series %}{% set show_months = loop.last %}<section class="momentum-series-row"><header><span><i style="background: {{ series.color }}"></i>{{ series.label }}</span><p>{{ series.description }}</p><strong>{{ series.peak }}<small>monthly peak</small></strong></header><div class="momentum-series-chart"><svg viewBox="0 0 760 {{ 92 if show_months else 68 }}" role="img" aria-label="{{ series.label }} by month, using its own y-axis from 0 to {{ series.scale_max }}">
+      {% for tick in series.ticks %}<g class="momentum-gridline"><line x1="40" y1="{{ tick.y }}" x2="746" y2="{{ tick.y }}"></line><text x="33" y="{{ tick.y + 3 }}">{{ tick.value }}</text></g>{% endfor %}
+      <polyline class="momentum-line" points="{{ series.points }}" fill="none" stroke="{{ series.color }}"></polyline>{% for marker in series.markers %}<circle class="momentum-marker" cx="{{ marker.x }}" cy="{{ marker.y }}" r="3.3" fill="{{ series.color }}"><title>{{ momentum_chart.months[loop.index0].label }} · {{ series.label }}: {{ marker.value }}</title></circle>{% endfor %}
+      {% if show_months %}{% for month in momentum_chart.months %}{% set month_x = 40 + (353 if month_total == 1 else (706 / (month_total - 1) * loop.index0)) %}<text class="momentum-month" x="{{ month_x }}" y="84">{{ month.label }}</text>{% endfor %}{% endif %}
+    </svg></div></section>{% endfor %}</div>
+    <p class="panel-note momentum-note">Each line has its own y-axis so its trend remains visible. “First recorded training” counts a beneficiary once, in the month of their earliest recorded training, because the workbook does not contain registration dates.</p>
+    <details class="momentum-table"><summary>View monthly figures</summary><div class="table-wrap"><table class="data-table"><thead><tr><th>Month</th>{% for series in momentum_chart.series %}<th>{{ series.label }}</th>{% endfor %}</tr></thead><tbody data-momentum-table-body>{% for month in momentum_chart.months %}<tr><td><strong>{{ month.label }}</strong></td>{% set month_index = loop.index0 %}{% for series in momentum_chart.series %}<td>{{ series.values[month_index] }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div></details>
+    <script type="application/json" data-momentum-data>{{ momentum_chart|tojson }}</script>
+    {% else %}<div class="empty-state"><h3>No dated activity</h3><p>No training or follow-up dates match the current dashboard filters.</p></div>{% endif %}
+  </article>{% endif %}
 </section>
 {% endblock %}

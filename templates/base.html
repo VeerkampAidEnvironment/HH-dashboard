@@ -83,6 +83,7 @@
     <span>Data changes are recorded in the audit log</span>
   </footer>
   {% endif %}
+  <script src="{{ url_for('static', filename='vendor/html2canvas.min.js', v=asset_version) }}" defer></script>
   <script src="{{ url_for('static', filename='js/app.js', v=asset_version) }}" defer></script>
   {% block scripts %}{% endblock %}
 </body>

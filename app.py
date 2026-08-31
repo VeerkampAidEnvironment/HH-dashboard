@@ -15,7 +15,9 @@ from collections import Counter, defaultdict
 from datetime import date, timedelta
 from functools import wraps
 from io import BytesIO
+from itertools import combinations
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 from flask import (
@@ -46,8 +48,18 @@ from db import (
     utc_now,
 )
 from questionnaire import NEXT_ACTION_OPTIONS, QUESTIONNAIRE_VERSION, questionnaire_for_topic
+from followup_survey import (
+    SURVEY_VERSION,
+    all_questions_for_topics,
+    build_survey,
+    question_is_active,
+    received_training_topics,
+    score_survey,
+    validate_answers,
+)
 from training import (
     TRAINING_TOPICS,
+    adoption_threshold,
     care_module_fields,
     care_module_status,
     parse_date,
@@ -502,10 +514,11 @@ def create_app(test_config=None):
         schema = get_schema(connection, record["dataset"])
         sections = group_raw_fields(schema, raw)
         followup_history = []
+        followup_assessments = []
         if record["dataset"] == "training":
             next_action_labels = {item["value"]: item["label"] for item in NEXT_ACTION_OPTIONS}
             response_rows = connection.execute(
-                """SELECT fr.*, e.event_date, e.created_by, e.latitude, e.longitude,
+                """SELECT fr.*, e.id AS event_id, e.event_date, e.created_by, e.latitude, e.longitude,
                           e.location_accuracy_m, e.location_captured_at
                    FROM followup_responses fr
                    JOIN field_event_entries fee ON fee.id=fr.event_entry_id
@@ -529,9 +542,25 @@ def create_app(test_config=None):
                     response["next_action"], response["next_action"]
                 )
                 followup_history.append(response)
+            assessment_rows = connection.execute(
+                """SELECT fa.*, e.event_date, e.created_by
+                   FROM followup_assessments fa JOIN field_events e ON e.id=fa.event_id
+                   WHERE fa.record_id=? ORDER BY e.event_date DESC, fa.id DESC""",
+                (record_id,),
+            ).fetchall()
+            for assessment_row in assessment_rows:
+                assessment = dict(assessment_row)
+                assessment["summary"] = json.loads(assessment["summary"])
+                assessment["packages"] = [dict(row) for row in connection.execute(
+                    """SELECT * FROM followup_package_results
+                       WHERE assessment_id=? ORDER BY package_title""",
+                    (assessment["id"],),
+                ).fetchall()]
+                followup_assessments.append(assessment)
         return render_template(
             "record_detail.html", record=record, statuses=statuses, related=related,
             raw=raw, sections=sections, followup_history=followup_history,
+            followup_assessments=followup_assessments,
         )
 
     @app.route("/records/new", methods=["GET", "POST"])
@@ -615,6 +644,8 @@ def create_app(test_config=None):
     @app.get("/matches")
     def matches():
         connection = get_db()
+        if request.args.get("view") == "duplicates":
+            return duplicate_review_page(connection)
         match_status = request.args.get("status", "pending")
         if match_status not in {"pending", "confirmed", "rejected", "all"}:
             match_status = "pending"
@@ -628,7 +659,11 @@ def create_app(test_config=None):
             f"CASE WHEN m.status='confirmed' AND NOT {manual_confirmation} "
             "THEN 'pending' ELSE m.status END"
         )
-        where = "" if match_status == "all" else f"WHERE ({effective_status})=?"
+        active_records = (
+            "EXISTS (SELECT 1 FROM records ar WHERE ar.id=m.training_record_id AND ar.archived_at IS NULL) "
+            "AND EXISTS (SELECT 1 FROM records ar WHERE ar.id=m.care_record_id AND ar.archived_at IS NULL)"
+        )
+        where = f"WHERE {active_records}" if match_status == "all" else f"WHERE {active_records} AND ({effective_status})=?"
         params = [] if match_status == "all" else [match_status]
         total = connection.execute(f"SELECT COUNT(*) FROM matches m {where}", params).fetchone()[0]
         rows = connection.execute(
@@ -668,6 +703,280 @@ def create_app(test_config=None):
             "matches.html", matches=match_rows, match_status=match_status, total=total,
             page=page, pages=max(1, (total + page_size - 1) // page_size),
         )
+
+    @app.post("/duplicates/<int:record_a_id>/<int:record_b_id>/<decision>")
+    def duplicate_decision(record_a_id, record_b_id, decision):
+        if decision not in {"merge", "reject"}:
+            abort(404)
+        connection = get_db()
+        record_ids = sorted((record_a_id, record_b_id))
+        rows = connection.execute(
+            "SELECT r.*, f.uid FROM records r JOIN farmers f ON f.id=r.farmer_id WHERE r.id IN (?, ?)",
+            record_ids,
+        ).fetchall()
+        if len(rows) != 2:
+            abort(404)
+        by_id = {row["id"]: row for row in rows}
+        left, right = by_id[record_ids[0]], by_id[record_ids[1]]
+        if left["dataset"] != right["dataset"] or normalized_person_name(left["name"]) != normalized_person_name(right["name"]):
+            abort(400, "These records are not a valid duplicate-name pair.")
+        existing_review = connection.execute(
+            "SELECT 1 FROM duplicate_reviews WHERE record_a_id=? AND record_b_id=?", record_ids
+        ).fetchone()
+        if existing_review:
+            abort(400, "This duplicate pair has already been reviewed.")
+        if decision == "reject":
+            connection.execute(
+                "INSERT INTO duplicate_reviews(record_a_id, record_b_id, status, reviewed_at) VALUES(?, ?, 'rejected', ?)",
+                (*record_ids, utc_now()),
+            )
+            log_audit(
+                connection, session["username"], "reject_duplicate", "duplicate", None,
+                f"Kept same-name records separate: {left['name']}",
+                {"record_ids": record_ids},
+            )
+            connection.commit()
+            flash("The records will remain separate and this pair will no longer be suggested.", "success")
+            return redirect(url_for("matches", view="duplicates"))
+
+        survivor_id = request.form.get("survivor_id", type=int)
+        if survivor_id not in record_ids:
+            flash("Choose which record should remain active.", "error")
+            return redirect(url_for("matches", view="duplicates"))
+        donor_id = record_ids[1] if survivor_id == record_ids[0] else record_ids[0]
+        survivor, donor = by_id[survivor_id], by_id[donor_id]
+        survivor_raw = json.loads(survivor["raw_data"])
+        donor_raw = json.loads(donor["raw_data"])
+        conflicts = duplicate_conflicts(connection, survivor, donor)
+        merged_raw = dict(survivor_raw)
+        for key, value in donor_raw.items():
+            if not populated_value(merged_raw.get(key)) and populated_value(value):
+                merged_raw[key] = value
+        for index, conflict in enumerate(conflicts):
+            selected_id = request.form.get(f"choice__{index}", type=int)
+            if conflict["key"] == "__cbf_name__":
+                continue
+            if selected_id == donor_id:
+                merged_raw[conflict["key"]] = conflict["right"]
+            elif selected_id == survivor_id:
+                merged_raw[conflict["key"]] = conflict["left"]
+
+        activity_added = 0
+        if survivor["dataset"] == "training":
+            merged_raw, activity_added, overflow_topics = merge_training_histories(survivor_raw, donor_raw, merged_raw)
+            if overflow_topics:
+                flash(
+                    "These records contain more than three distinct training cycles for: "
+                    + ", ".join(overflow_topics) + ". Review the records manually before merging.",
+                    "error",
+                )
+                return redirect(url_for("matches", view="duplicates"))
+
+        selected_cbf = survivor["cbf_name"] or donor["cbf_name"] or ""
+        cbf_conflict = next((item for item in conflicts if item["key"] == "__cbf_name__"), None)
+        if cbf_conflict:
+            cbf_index = conflicts.index(cbf_conflict)
+            selected_cbf_id = request.form.get(f"choice__{cbf_index}", type=int)
+            selected_cbf = donor["cbf_name"] if selected_cbf_id == donor_id else survivor["cbf_name"]
+        core = canonical_fields(connection, survivor["dataset"], merged_raw, selected_cbf)
+        timestamp = utc_now()
+        connection.execute(
+            """UPDATE records SET name=?, sex=?, age_value=?, age_group=?, phone=?, village=?, parish=?,
+                      subcounty=?, district=?, group_name=?, cbf_name=?, record_status=?, raw_data=?, updated_at=?
+               WHERE id=?""",
+            (
+                core["name"], core["sex"], core["age_value"], core["age_group"], core["phone"],
+                core["village"], core["parish"], core["subcounty"], core["district"], core["group_name"],
+                core["cbf_name"], core["record_status"], json.dumps(merged_raw, ensure_ascii=False), timestamp,
+                survivor_id,
+            ),
+        )
+        rebuild_statuses(connection, survivor_id, survivor["dataset"], merged_raw)
+        connection.execute(
+            "UPDATE records SET farmer_id=?, archived_at=?, updated_at=? WHERE id=?",
+            (survivor["farmer_id"], timestamp, timestamp, donor_id),
+        )
+        connection.execute(
+            "UPDATE records SET farmer_id=? WHERE farmer_id=? AND id<>?",
+            (survivor["farmer_id"], donor["farmer_id"], donor_id),
+        )
+        reassign_duplicate_event_history(connection, donor_id, survivor_id)
+        connection.execute(
+            "DELETE FROM farmers WHERE id=? AND NOT EXISTS(SELECT 1 FROM records WHERE farmer_id=?)",
+            (donor["farmer_id"], donor["farmer_id"]),
+        )
+        connection.execute(
+            """INSERT INTO duplicate_reviews(
+                   record_a_id, record_b_id, survivor_record_id, status, reviewed_at
+               ) VALUES(?, ?, ?, 'merged', ?)""",
+            (*record_ids, survivor_id, timestamp),
+        )
+        log_audit(
+            connection, session["username"], "merge_duplicate", "record", survivor_id,
+            f"Merged duplicate record for {core['name']}",
+            {
+                "survivor_record_id": survivor_id,
+                "archived_record_id": donor_id,
+                "training_or_attendance_values_added": activity_added,
+                "resolved_fields": [item["label"] for item in conflicts],
+            },
+        )
+        connection.commit()
+        flash("The duplicate was merged. Training history was combined and the other record was archived.", "success")
+        return redirect(url_for("matches", view="duplicates", status="merged"))
+
+    @app.post("/duplicates/group/<decision>")
+    def duplicate_group_decision(decision):
+        if decision not in {"merge", "reject"}:
+            abort(404)
+        connection = get_db()
+        try:
+            record_ids = sorted({int(value) for value in request.form.getlist("record_ids")})
+        except ValueError:
+            record_ids = []
+        if len(record_ids) < 2:
+            flash("This duplicate-name group no longer contains enough records to review.", "error")
+            return redirect(url_for("matches", view="duplicates"))
+        placeholders = ",".join("?" for _ in record_ids)
+        rows = connection.execute(
+            f"SELECT r.*, f.uid FROM records r JOIN farmers f ON f.id=r.farmer_id WHERE r.id IN ({placeholders})",
+            record_ids,
+        ).fetchall()
+        by_id = {row["id"]: row for row in rows}
+        if len(rows) != len(record_ids):
+            abort(404)
+        datasets = {row["dataset"] for row in rows}
+        names = {normalized_person_name(row["name"]) for row in rows}
+        if len(datasets) != 1 or len(names) != 1:
+            abort(400, "These records are not one valid duplicate-name group.")
+        if decision == "reject":
+            for left_id, right_id in combinations(record_ids, 2):
+                connection.execute(
+                    """INSERT INTO duplicate_reviews(record_a_id, record_b_id, status, reviewed_at)
+                       VALUES(?, ?, 'rejected', ?)
+                       ON CONFLICT(record_a_id, record_b_id) DO UPDATE SET
+                           survivor_record_id=NULL, status='rejected', reviewed_at=excluded.reviewed_at""",
+                    (left_id, right_id, utc_now()),
+                )
+            log_audit(
+                connection, session["username"], "reject_duplicate_group", "duplicate", None,
+                f"Kept {len(record_ids)} same-name records separate: {rows[0]['name']}",
+                {"record_ids": record_ids},
+            )
+            connection.commit()
+            flash("These same-name records will remain separate and will not be suggested again.", "success")
+            return redirect(url_for("matches", view="duplicates"))
+
+        try:
+            merge_ids = sorted({int(value) for value in request.form.getlist("merge_ids")})
+        except ValueError:
+            merge_ids = []
+        survivor_id = request.form.get("survivor_id", type=int)
+        if len(merge_ids) < 2 or any(record_id not in by_id for record_id in merge_ids) or survivor_id not in merge_ids:
+            flash("Select at least two records to merge and choose one of them as the survivor.", "error")
+            return redirect(url_for("matches", view="duplicates"))
+        selected_rows = [by_id[record_id] for record_id in merge_ids]
+        survivor = by_id[survivor_id]
+        conflicts = duplicate_group_conflicts(connection, rows)
+        merged_raw = json.loads(survivor["raw_data"])
+        for record in selected_rows:
+            record_raw = json.loads(record["raw_data"])
+            for key, value in record_raw.items():
+                if not populated_value(merged_raw.get(key)) and populated_value(value):
+                    merged_raw[key] = value
+        for index, conflict in enumerate(conflicts):
+            selected_source_id = request.form.get(f"choice__{index}", type=int)
+            if conflict["key"] == "__cbf_name__" or selected_source_id not in merge_ids:
+                continue
+            selected_value = next(
+                (option["value"] for option in conflict["options"] if option["record_id"] == selected_source_id),
+                None,
+            )
+            if selected_value is not None:
+                merged_raw[conflict["key"]] = selected_value
+
+        activity_added = 0
+        if survivor["dataset"] == "training":
+            accumulated_raw = json.loads(survivor["raw_data"])
+            overflow_topics = []
+            for record in selected_rows:
+                if record["id"] == survivor_id:
+                    continue
+                accumulated_raw, added, overflow = merge_training_histories(
+                    accumulated_raw, json.loads(record["raw_data"]), merged_raw
+                )
+                merged_raw = accumulated_raw
+                activity_added += added
+                overflow_topics.extend(overflow)
+            if overflow_topics:
+                flash(
+                    "These records contain more than three distinct training cycles for: "
+                    + ", ".join(sorted(set(overflow_topics))) + ". Review them manually before merging.",
+                    "error",
+                )
+                return redirect(url_for("matches", view="duplicates"))
+
+        selected_cbf = survivor["cbf_name"] or ""
+        cbf_conflict = next((item for item in conflicts if item["key"] == "__cbf_name__"), None)
+        if cbf_conflict:
+            cbf_index = conflicts.index(cbf_conflict)
+            selected_cbf_id = request.form.get(f"choice__{cbf_index}", type=int)
+            if selected_cbf_id in merge_ids:
+                selected_cbf = by_id[selected_cbf_id]["cbf_name"]
+        if not selected_cbf:
+            selected_cbf = next((record["cbf_name"] for record in selected_rows if record["cbf_name"]), "")
+        core = canonical_fields(connection, survivor["dataset"], merged_raw, selected_cbf)
+        timestamp = utc_now()
+        connection.execute(
+            """UPDATE records SET name=?, sex=?, age_value=?, age_group=?, phone=?, village=?, parish=?,
+                      subcounty=?, district=?, group_name=?, cbf_name=?, record_status=?, raw_data=?, updated_at=?
+               WHERE id=?""",
+            (
+                core["name"], core["sex"], core["age_value"], core["age_group"], core["phone"],
+                core["village"], core["parish"], core["subcounty"], core["district"], core["group_name"],
+                core["cbf_name"], core["record_status"], json.dumps(merged_raw, ensure_ascii=False), timestamp,
+                survivor_id,
+            ),
+        )
+        rebuild_statuses(connection, survivor_id, survivor["dataset"], merged_raw)
+        donor_ids = [record_id for record_id in merge_ids if record_id != survivor_id]
+        for donor_id in donor_ids:
+            donor = by_id[donor_id]
+            connection.execute(
+                "UPDATE records SET farmer_id=?, archived_at=?, updated_at=? WHERE id=?",
+                (survivor["farmer_id"], timestamp, timestamp, donor_id),
+            )
+            connection.execute(
+                "UPDATE records SET farmer_id=? WHERE farmer_id=? AND id<>?",
+                (survivor["farmer_id"], donor["farmer_id"], donor_id),
+            )
+            reassign_duplicate_event_history(connection, donor_id, survivor_id)
+            connection.execute(
+                "DELETE FROM farmers WHERE id=? AND NOT EXISTS(SELECT 1 FROM records WHERE farmer_id=?)",
+                (donor["farmer_id"], donor["farmer_id"]),
+            )
+            pair_ids = sorted((survivor_id, donor_id))
+            connection.execute(
+                """INSERT INTO duplicate_reviews(
+                       record_a_id, record_b_id, survivor_record_id, status, reviewed_at
+                   ) VALUES(?, ?, ?, 'merged', ?)
+                   ON CONFLICT(record_a_id, record_b_id) DO UPDATE SET
+                       survivor_record_id=excluded.survivor_record_id, status='merged', reviewed_at=excluded.reviewed_at""",
+                (*pair_ids, survivor_id, timestamp),
+            )
+        log_audit(
+            connection, session["username"], "merge_duplicate_group", "record", survivor_id,
+            f"Merged {len(merge_ids)} duplicate records for {core['name']}",
+            {"survivor_record_id": survivor_id, "archived_record_ids": donor_ids,
+             "training_or_attendance_values_added": activity_added},
+        )
+        connection.commit()
+        remaining = len(record_ids) - len(merge_ids)
+        message = f"Merged {len(merge_ids)} records and archived {len(donor_ids)} duplicates."
+        if remaining:
+            message += f" {remaining} same-name record remains for separate review."
+        flash(message, "success")
+        return redirect(url_for("matches", view="duplicates", status="merged"))
 
     @app.post("/matches/<int:match_id>/<decision>")
     def match_decision(match_id, decision):
@@ -932,6 +1241,8 @@ def create_app(test_config=None):
         groups = []
         followup_farmers = []
         followup_topics = []
+        followup_survey = None
+        selected_followup_record = None
         selected_group = request.values.get("group", "").strip()
         selected_record_id = request.values.get("record_id", type=int)
         selected_event_date = valid_iso_date(request.values.get("event_date", "")) or ""
@@ -978,15 +1289,27 @@ def create_app(test_config=None):
             ).fetchall()
             eligible_followup_ids = {row["id"] for row in followup_farmers}
             if selected_record_id in eligible_followup_ids:
+                selected_followup_record = connection.execute(
+                    """SELECT r.*, f.uid FROM records r JOIN farmers f ON f.id=r.farmer_id
+                       WHERE r.id=? AND r.dataset='training' AND r.archived_at IS NULL""",
+                    (selected_record_id,),
+                ).fetchone()
                 followup_rows = connection.execute(
                     """SELECT topic, status_label, last_activity_date FROM topic_statuses
                        WHERE record_id=? AND status_code='FU' ORDER BY topic""",
                     (selected_record_id,),
                 ).fetchall()
                 followup_topics = [
-                    {**dict(row), "questionnaire": questionnaire_for_topic(row["topic"])}
+                    dict(row)
                     for row in followup_rows
                 ]
+                raw = json.loads(selected_followup_record["raw_data"])
+                due_topics = [row["topic"] for row in followup_rows]
+                followup_survey = build_survey(
+                    due_topics,
+                    followup_profile(selected_followup_record, raw),
+                    training_history=received_training_topics(raw),
+                )
             else:
                 selected_record_id = None
 
@@ -1000,6 +1323,7 @@ def create_app(test_config=None):
             central_eligibility=central_eligibility, topics=TRAINING_TOPICS,
             groups=groups, selected_group=selected_group, followup_farmers=followup_farmers,
             selected_record_id=selected_record_id, followup_topics=followup_topics,
+            followup_survey=followup_survey, selected_followup_record=selected_followup_record,
             history=history, today=date.today().isoformat(), selected_event_date=selected_event_date,
             venues=venues, selected_venue=selected_venue, new_venue=new_venue,
         )
@@ -1142,6 +1466,24 @@ def valid_iso_date(value: str) -> str | None:
         return None
 
 
+def followup_profile(record, raw: dict) -> dict[str, str]:
+    """Build the editable Section A snapshot from canonical and workbook fields."""
+    pwd_value = str(raw.get("PWD (Y/N)") or "").strip().casefold()
+    pwd = "yes" if pwd_value in {"y", "yes", "1", "true"} else "no" if pwd_value else ""
+    return {
+        "district": record["district"] or "",
+        "subcounty": record["subcounty"] or "",
+        "village": record["village"] or "",
+        "beneficiary_type": str(raw.get("Benefiary Type") or raw.get("Beneficiary Type") or "").strip(),
+        "phone": record["phone"] or "",
+        "sex": record["sex"] or "",
+        "pwd": pwd,
+        "age_group": record["age_group"] or record["age_value"] or "",
+        "group": record["group_name"] or "",
+        "education": str(raw.get("Level of education completed") or "").strip(),
+    }
+
+
 def available_ae_cbfs(connection) -> list[str]:
     return [row[0] for row in connection.execute(
         """SELECT DISTINCT cbf_name FROM records
@@ -1166,7 +1508,7 @@ def field_app_cbf(connection, requested_cbf: str) -> str:
 
 def build_field_app_package(connection, cbf_name: str) -> dict:
     records = connection.execute(
-        """SELECT r.id, r.name, r.group_name, r.village, r.updated_at, f.uid
+        """SELECT r.*, f.uid
            FROM records r JOIN farmers f ON f.id=r.farmer_id
            WHERE r.dataset='training' AND r.archived_at IS NULL AND r.cbf_name=?
            ORDER BY r.group_name COLLATE NOCASE, r.name COLLATE NOCASE""",
@@ -1194,6 +1536,7 @@ def build_field_app_package(connection, cbf_name: str) -> dict:
     followup_entries = 0
     for row in records:
         statuses = statuses_by_record[row["id"]]
+        raw = json.loads(row["raw_data"])
         ct_topics = [item["topic"] for item in statuses if item["code"] in {"CT", "RT"}]
         followup_topics = [item for item in statuses if item["code"] == "FU"]
         ct_entries += len(ct_topics)
@@ -1207,6 +1550,8 @@ def build_field_app_package(connection, cbf_name: str) -> dict:
             "updatedAt": row["updated_at"],
             "ctTopics": ct_topics,
             "followupTopics": followup_topics,
+            "trainingHistory": received_training_topics(raw),
+            "profile": followup_profile(row, raw),
         })
     venue_rows = connection.execute(
         """SELECT location AS venue FROM field_events
@@ -1219,14 +1564,15 @@ def build_field_app_package(connection, cbf_name: str) -> dict:
         (cbf_name,),
     ).fetchall()
     return {
-        "version": 1,
-        "questionnaireVersion": QUESTIONNAIRE_VERSION,
+        "version": 2,
+        "questionnaireVersion": SURVEY_VERSION,
         "preparedAt": utc_now(),
         "cbf": cbf_name,
         "topics": list(TRAINING_TOPICS),
         "questionnaires": {
             topic: questionnaire_for_topic(topic) for topic in TRAINING_TOPICS
         },
+        "survey": build_survey(TRAINING_TOPICS),
         "groups": sorted(
             {row["group_name"] for row in records if row["group_name"]}, key=str.casefold
         ),
@@ -1280,29 +1626,51 @@ def synchronize_field_submission(connection, cbf_name: str, submission, username
             pairs.extend((f"attendee__{index}", record_id) for record_id in record_ids)
         save_function = save_centralized_training
     elif submission_type == "followup":
-        responses = submission.get("responses")
         try:
             record_id = int(submission.get("recordId"))
         except (TypeError, ValueError):
             record_id = 0
-        if record_id <= 0 or not isinstance(responses, list) or not responses or len(responses) > len(TRAINING_TOPICS):
-            return {"id": submission_id, "status": "rejected", "message": "Complete at least one valid follow-up topic."}
-        pairs.extend((("record_id", str(record_id)), ("topic_count", str(len(responses)))))
-        for index, response_entry in enumerate(responses):
-            if not isinstance(response_entry, dict):
-                return {"id": submission_id, "status": "rejected", "message": "A follow-up response is invalid."}
-            topic = str(response_entry.get("topic") or "")
-            answers = response_entry.get("answers")
-            if topic not in TRAINING_TOPICS or not isinstance(answers, dict):
-                return {"id": submission_id, "status": "rejected", "message": "A follow-up topic or answer is invalid."}
-            pairs.append((f"topic__{index}", topic))
-            for question in questionnaire_for_topic(topic)["questions"]:
-                value = answers.get(question["id"], "")
-                field_name = f"answer__{index}__{question['id']}"
+        survey_answers = submission.get("answers")
+        survey_topics = submission.get("topics")
+        if isinstance(survey_answers, dict):
+            if (
+                record_id <= 0 or not isinstance(survey_topics, list) or not survey_topics
+                or len(survey_topics) > len(TRAINING_TOPICS)
+                or any(topic not in TRAINING_TOPICS for topic in survey_topics)
+            ):
+                return {"id": submission_id, "status": "rejected", "message": "Complete at least one valid follow-up training type."}
+            pairs.extend((("record_id", str(record_id)), ("topic_count", str(len(survey_topics))),
+                          ("survey_version", SURVEY_VERSION)))
+            for index, topic in enumerate(survey_topics):
+                pairs.append((f"topic__{index}", topic))
+            for question in all_questions_for_topics(survey_topics):
+                value = survey_answers.get(question["id"], "")
+                field_name = f"survey_answer__{question['id']}"
                 if isinstance(value, list):
                     pairs.extend((field_name, str(item)) for item in value)
                 elif value is not None:
                     pairs.append((field_name, str(value)))
+        else:
+            # Backward compatibility for tablets prepared with the former topic forms.
+            responses = submission.get("responses")
+            if record_id <= 0 or not isinstance(responses, list) or not responses or len(responses) > len(TRAINING_TOPICS):
+                return {"id": submission_id, "status": "rejected", "message": "Complete at least one valid follow-up topic."}
+            pairs.extend((("record_id", str(record_id)), ("topic_count", str(len(responses)))))
+            for index, response_entry in enumerate(responses):
+                if not isinstance(response_entry, dict):
+                    return {"id": submission_id, "status": "rejected", "message": "A follow-up response is invalid."}
+                topic = str(response_entry.get("topic") or "")
+                answers = response_entry.get("answers")
+                if topic not in TRAINING_TOPICS or not isinstance(answers, dict):
+                    return {"id": submission_id, "status": "rejected", "message": "A follow-up topic or answer is invalid."}
+                pairs.append((f"topic__{index}", topic))
+                for question in questionnaire_for_topic(topic)["questions"]:
+                    value = answers.get(question["id"], "")
+                    field_name = f"answer__{index}__{question['id']}"
+                    if isinstance(value, list):
+                        pairs.extend((field_name, str(item)) for item in value)
+                    elif value is not None:
+                        pairs.append((field_name, str(value)))
         geo_location = submission.get("geoLocation")
         if geo_location is not None:
             if not isinstance(geo_location, dict):
@@ -1450,6 +1818,17 @@ def save_followup(
     latitude: float | None = None, longitude: float | None = None,
     location_accuracy_m: float | None = None, location_captured_at: str | None = None,
 ):
+    if values.get("survey_version", "").strip():
+        return save_scored_followup(
+            connection, cbf_name, values, username,
+            client_submission_id=client_submission_id,
+            device_id=device_id,
+            client_created_at=client_created_at,
+            latitude=latitude,
+            longitude=longitude,
+            location_accuracy_m=location_accuracy_m,
+            location_captured_at=location_captured_at,
+        )
     event_date = valid_iso_date(values.get("event_date", ""))
     record_id = values.get("record_id", type=int)
     if not event_date:
@@ -1589,6 +1968,212 @@ def save_followup(
     )
     connection.commit()
     return True, f"Follow-up saved for {record['name']}."
+
+
+def save_scored_followup(
+    connection, cbf_name: str, values, username: str, *,
+    client_submission_id: str | None = None, device_id: str | None = None,
+    client_created_at: str | None = None,
+    latitude: float | None = None, longitude: float | None = None,
+    location_accuracy_m: float | None = None, location_captured_at: str | None = None,
+):
+    """Validate, score and persist the adaptive follow-up survey."""
+    event_date = valid_iso_date(values.get("event_date", ""))
+    record_id = values.get("record_id", type=int)
+    if not event_date:
+        return False, "Enter a valid follow-up date."
+    record = connection.execute(
+        """SELECT r.*, f.uid FROM records r JOIN farmers f ON f.id=r.farmer_id
+           WHERE r.id=? AND r.dataset='training' AND r.archived_at IS NULL AND r.cbf_name=?""",
+        (record_id, cbf_name),
+    ).fetchone() if record_id else None
+    if not record:
+        return False, "Select a beneficiary belonging to this CBF."
+
+    topic_count = min(max(values.get("topic_count", 0, type=int), 0), len(TRAINING_TOPICS))
+    topics = []
+    for index in range(topic_count):
+        topic = values.get(f"topic__{index}", "")
+        if topic not in TRAINING_TOPICS or topic in topics:
+            return False, "One of the submitted training types is invalid."
+        topics.append(topic)
+    if not topics:
+        return False, "No applicable training type was included in this follow-up."
+
+    due_topics = {
+        row["topic"] for row in connection.execute(
+            "SELECT topic FROM topic_statuses WHERE record_id=? AND status_code='FU'",
+            (record_id,),
+        ).fetchall()
+    }
+    if any(topic not in due_topics for topic in topics):
+        return False, "One or more training types are no longer due. Reload the survey and try again."
+
+    answers: dict[str, Any] = {}
+    answer_records: dict[str, dict[str, Any]] = {}
+    seen_questions = set()
+    for item in all_questions_for_topics(topics):
+        if item["id"] in seen_questions or item["type"] == "training_list":
+            continue
+        seen_questions.add(item["id"])
+        field_name = f"survey_answer__{item['id']}"
+        if item["type"] == "multi":
+            answer: Any = [value.strip() for value in values.getlist(field_name) if value.strip()]
+        else:
+            answer = values.get(field_name, "").strip()
+        if item["type"] == "number" and answer:
+            answer = parse_number(answer)
+        answers[item["id"]] = answer
+        if question_is_active(item, answers):
+            answer_records[item["id"]] = {
+                "source_id": item["source_id"],
+                "question": item["label"],
+                "answer": answer,
+            }
+
+    validation_error = validate_answers(answers, topics)
+    if validation_error:
+        return False, validation_error
+    results = score_survey(answers, topics)
+    if any(topic not in results["trainings"] for topic in topics):
+        return False, "A result could not be calculated for one of the applicable training types."
+
+    raw = json.loads(record["raw_data"])
+    cycles: dict[str, int] = {}
+    for topic in topics:
+        cycle = next((number for number in range(1, 4)
+                      if raw.get(f"Training {number} - {topic}") not in {None, ""}
+                      and raw.get(f"Follow up {number} - {topic}") in {None, ""}), None)
+        if cycle is None:
+            cycle = next((number for number in range(3, 0, -1)
+                          if raw.get(f"Training {number} - {topic}") not in {None, ""}), None)
+        if cycle is None:
+            return False, f"No training cycle was found for {topic}."
+        cycles[topic] = cycle
+
+    cursor = connection.execute(
+        """INSERT INTO field_events(
+               event_type, cbf_name, event_date, location, created_by, created_at,
+               client_submission_id, device_id, client_created_at,
+               latitude, longitude, location_accuracy_m, location_captured_at
+           ) VALUES('followup', ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (cbf_name, event_date, username, utc_now(), client_submission_id, device_id,
+         client_created_at, latitude, longitude, location_accuracy_m, location_captured_at),
+    )
+    event_id = cursor.lastrowid
+    created_at = utc_now()
+    profile = followup_profile(record, raw)
+    for key, answer_id in {
+        "district": "a4_district", "subcounty": "a5_subcounty", "village": "a6_village",
+        "beneficiary_type": "a8_beneficiary_type", "phone": "a8_contact", "sex": "a8_gender",
+        "pwd": "a8_pwd", "age_group": "a8_age_group", "group": "a8_group",
+        "education": "a9_education",
+    }.items():
+        if answers.get(answer_id) not in {None, ""}:
+            profile[key] = str(answers[answer_id])
+    profile.update({
+        "household_total": answers.get("a10_total"),
+        "household_male": answers.get("a10_male"),
+        "household_female": answers.get("a10_female"),
+        "training_history": received_training_topics(raw),
+    })
+
+    household = results.get("household_outcome") or {}
+    breadth = results.get("breadth") or {}
+    rvo = results.get("rvo") or {}
+    assessment_cursor = connection.execute(
+        """INSERT INTO followup_assessments(
+               event_id, record_id, questionnaire_version, rvo_passed, rvo_practice_count,
+               project_passed, household_outcome, breadth_achieved, breadth_total, depth,
+               profile_snapshot, summary, consent, created_at
+           ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            event_id, record_id, SURVEY_VERSION,
+            int(rvo["passed"]) if rvo else None, rvo.get("count"),
+            int(results["project_passed"]) if results.get("project_passed") is not None else None,
+            household.get("code"), breadth.get("achieved"), breadth.get("total"), results.get("depth"),
+            json.dumps(profile, ensure_ascii=False), json.dumps(results, ensure_ascii=False),
+            int(answers.get("consent") == "yes"), created_at,
+        ),
+    )
+    assessment_id = assessment_cursor.lastrowid
+
+    for package in results["packages"].values():
+        connection.execute(
+            """INSERT INTO followup_package_results(
+                   assessment_id, package_key, package_title, points_earned, points_available,
+                   score, result_status, critical_failed, recommendation
+               ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                assessment_id, package["key"], package["title"], package["points_earned"],
+                package["points_available"], package["score"], package["status"],
+                int(package["critical_failed"]), ", ".join(package["recommendations"]),
+            ),
+        )
+
+    answers_payload = json.dumps(answer_records, ensure_ascii=False)
+    for topic in topics:
+        result = results["trainings"][topic]
+        cycle = cycles[topic]
+        raw[f"Follow up {cycle} - {topic}"] = event_date
+        raw[f"Follow up {cycle} score - {topic}"] = result["score"]
+        raw[f"Follow up {cycle} next action - {topic}"] = result["next_action"]
+        entry_cursor = connection.execute(
+            "INSERT INTO field_event_entries(event_id, record_id, topic, score) VALUES(?, ?, ?, ?)",
+            (event_id, record_id, topic, result["score"]),
+        )
+        connection.execute(
+            """INSERT INTO followup_responses(
+                   event_entry_id, record_id, topic, training_cycle, questionnaire_version,
+                   answers, adoption_rate, next_action, created_at, result_status,
+                   recommendation, critical_failed, points_earned, points_available
+               ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                entry_cursor.lastrowid, record_id, topic, cycle, SURVEY_VERSION,
+                answers_payload, result["score"], result["next_action"], created_at,
+                result["status"], result["recommendation"], int(result["critical_failed"]),
+                result["points_earned"], result["points_available"],
+            ),
+        )
+
+    raw.update({
+        "DISTRICT": profile["district"], "Sub County": profile["subcounty"],
+        "Village": profile["village"], "Phone Number": profile["phone"],
+        "Sex": profile["sex"], "PWD (Y/N)": profile["pwd"],
+        "Age group": profile["age_group"], "GROUP NAME": profile["group"],
+        "Benefiary Type": profile["beneficiary_type"],
+        "Level of education completed": profile["education"],
+        "Household members - total": profile["household_total"],
+        "Household members - male": profile["household_male"],
+        "Household members - female": profile["household_female"],
+    })
+    connection.execute(
+        """UPDATE records SET district=?, subcounty=?, village=?, phone=?, sex=?, age_group=?,
+                  group_name=?, raw_data=?, updated_at=? WHERE id=?""",
+        (
+            profile["district"], profile["subcounty"], profile["village"], profile["phone"],
+            profile["sex"], profile["age_group"], profile["group"],
+            json.dumps(raw, ensure_ascii=False), utc_now(), record_id,
+        ),
+    )
+    rebuild_statuses(connection, record_id, "training", raw)
+    log_audit(
+        connection, username, "field_entry", "field_event", event_id,
+        f"Recorded scored follow-up for {record['name']}",
+        {
+            "cbf": cbf_name, "date": event_date,
+            "household_outcome": household.get("code"),
+            "breadth": breadth, "depth": results.get("depth"),
+            "training_results": results["trainings"],
+            "location": {
+                "latitude": latitude, "longitude": longitude,
+                "accuracy_m": location_accuracy_m, "captured_at": location_captured_at,
+            } if latitude is not None and longitude is not None else None,
+        },
+    )
+    connection.commit()
+    outcome_text = f" Outcome {household.get('code')} - {household.get('label')}." if household else ""
+    return True, f"Follow-up scored and saved for {record['name']}.{outcome_text}"
 
 
 def csrf_token() -> str:
@@ -2020,6 +2605,16 @@ def build_dashboard_data(connection, dataset: str, filters: dict[str, str]):
                 "count": training_count_distribution[number],
                 "percent": round(training_count_distribution[number] / pathway_total * 100, 1) if pathway_total else 0,
                 "width": round(training_count_distribution[number] / max_training_count * 100),
+                "cumulative_count": sum(
+                    count for training_count, count in training_count_distribution.items()
+                    if training_count >= number
+                ),
+                "cumulative_percent": round(
+                    sum(
+                        count for training_count, count in training_count_distribution.items()
+                        if training_count >= number
+                    ) / pathway_total * 100, 1
+                ) if pathway_total else 0,
             }
             for number in range(len(pathway_topics) + 1)
         ],
@@ -2096,6 +2691,130 @@ def build_dashboard_data(connection, dataset: str, filters: dict[str, str]):
     }
     activity_filter_options["topics"] = selected_topics if topic_filter else list(TRAINING_TOPICS)
 
+    momentum_chart = {"months": [], "series": []}
+    if dataset == "training":
+        momentum_topics = selected_topics if topic_filter else list(TRAINING_TOPICS)
+        momentum_counts = {
+            "active": Counter(),
+            "first_training": Counter(),
+            "training_attendances": Counter(),
+            "followups": Counter(),
+            "adoptions": Counter(),
+        }
+        momentum_month_values = set()
+        momentum_adoption_threshold = adoption_threshold()
+
+        def in_momentum_window(event_date):
+            event_iso = event_date.isoformat()
+            return (not date_from or event_iso >= date_from) and (not date_to or event_iso <= date_to)
+
+        for record in records:
+            raw = json.loads(record["raw_data"])
+            training_dates = []
+            adoption_dates = []
+            active_months = set()
+            for topic in momentum_topics:
+                for cycle in range(1, 4):
+                    training_date = parse_date(raw.get(f"Training {cycle} - {topic}"))
+                    if training_date:
+                        training_dates.append(training_date)
+                        if in_momentum_window(training_date):
+                            month = training_date.isoformat()[:7]
+                            momentum_counts["training_attendances"][month] += 1
+                            active_months.add(month)
+                            momentum_month_values.add(month)
+                    followup_date = parse_date(raw.get(f"Follow up {cycle} - {topic}"))
+                    if followup_date:
+                        if in_momentum_window(followup_date):
+                            month = followup_date.isoformat()[:7]
+                            momentum_counts["followups"][month] += 1
+                            active_months.add(month)
+                            momentum_month_values.add(month)
+                        score = parse_number(raw.get(f"Follow up {cycle} score - {topic}"))
+                        if score is not None and score >= momentum_adoption_threshold:
+                            adoption_dates.append(followup_date)
+            for month in active_months:
+                momentum_counts["active"][month] += 1
+            if training_dates:
+                first_training = min(training_dates)
+                if in_momentum_window(first_training):
+                    month = first_training.isoformat()[:7]
+                    momentum_counts["first_training"][month] += 1
+                    momentum_month_values.add(month)
+            if adoption_dates:
+                first_adoption = min(adoption_dates)
+                if in_momentum_window(first_adoption):
+                    month = first_adoption.isoformat()[:7]
+                    momentum_counts["adoptions"][month] += 1
+                    momentum_month_values.add(month)
+
+        def shift_month(month, offset):
+            year, month_number = (int(part) for part in month.split("-"))
+            month_index = year * 12 + month_number - 1 + offset
+            return f"{month_index // 12:04d}-{month_index % 12 + 1:02d}"
+
+        if momentum_month_values:
+            first_month = min(momentum_month_values)
+            last_month = max(momentum_month_values)
+            limited_first_month = shift_month(last_month, -11)
+            first_month = max(first_month, limited_first_month)
+            momentum_months = []
+            month = first_month
+            while month <= last_month:
+                momentum_months.append(month)
+                month = shift_month(month, 1)
+
+            series_definitions = [
+                ("active", "Active beneficiaries", "Beneficiaries with any dated training or follow-up", "#087880"),
+                ("first_training", "First recorded training", "Beneficiaries in the month of their earliest recorded training", "#77aa2a"),
+                ("training_attendances", "Training attendances", "All recorded training activities", "#1f6fb2"),
+                ("followups", "Follow-ups completed", "All recorded follow-up activities", "#EFB417"),
+                ("adoptions", "New confirmed adoptions", "Beneficiaries first reaching the adoption threshold", "#b04b63"),
+            ]
+            series_values = {
+                key: [momentum_counts[key][month] for month in momentum_months]
+                for key, _label, _description, _color in series_definitions
+            }
+            plot_left, plot_top, plot_width, plot_height = 40, 8, 706, 52
+            month_count = len(momentum_months)
+            momentum_series = []
+            for key, label, description, color in series_definitions:
+                values = series_values[key]
+                peak = max(values, default=0)
+                if peak:
+                    raw_step = peak / 2
+                    magnitude = 10 ** math.floor(math.log10(raw_step)) if raw_step else 1
+                    normalized_step = raw_step / magnitude
+                    step_factor = 1 if normalized_step <= 1 else 2 if normalized_step <= 2 else 5 if normalized_step <= 5 else 10
+                    tick_step = max(1, math.ceil(step_factor * magnitude))
+                    scale_max = tick_step * 2
+                    tick_values = [0, tick_step, scale_max]
+                else:
+                    scale_max, tick_values = 1, [0]
+                points = []
+                markers = []
+                for index, value in enumerate(values):
+                    x = plot_left + (plot_width / (month_count - 1) * index if month_count > 1 else plot_width / 2)
+                    y = plot_top + plot_height - (value / scale_max * plot_height)
+                    points.append(f"{x:.1f},{y:.1f}")
+                    markers.append({"x": round(x, 1), "y": round(y, 1), "value": value})
+                momentum_series.append({
+                    "key": key, "label": label, "description": description, "color": color,
+                    "values": values, "points": " ".join(points), "markers": markers,
+                    "total": sum(values), "peak": peak, "scale_max": scale_max,
+                    "ticks": [
+                        {"value": value, "y": round(plot_top + plot_height - value / scale_max * plot_height, 1)}
+                        for value in tick_values
+                    ],
+                })
+            momentum_chart = {
+                "months": [
+                    {"key": month, "label": date(int(month[:4]), int(month[5:]), 1).strftime("%b %y")}
+                    for month in momentum_months
+                ],
+                "series": momentum_series,
+            }
+
     options = {
         "genders": [row[0] for row in connection.execute(
             "SELECT DISTINCT sex FROM records WHERE archived_at IS NULL AND TRIM(COALESCE(sex,''))<>'' ORDER BY sex"
@@ -2120,6 +2839,7 @@ def build_dashboard_data(connection, dataset: str, filters: dict[str, str]):
         "trend": trend,
         "activity_timeline": {"months": timeline_months, "events": activity_events},
         "activity_filter_options": activity_filter_options,
+        "momentum_chart": momentum_chart,
         "status_distribution": status_distribution,
         "action_topics": action_topics,
         "attention_total": len(attention_ids),
@@ -2344,6 +3064,339 @@ def describe_filters(dataset: str, filters: dict[str, str]) -> list[str]:
     if dataset == "training":
         descriptions.append("Dropouts: Included" if filters.get("dropouts") == "include" else "Dropouts: Excluded")
     return descriptions
+
+
+def normalized_person_name(value: str) -> str:
+    return " ".join("".join(character.lower() if character.isalnum() else " " for character in str(value)).split())
+
+
+def populated_value(value) -> bool:
+    return value is not None and (not isinstance(value, str) or bool(value.strip()))
+
+
+def duplicate_activity_field(dataset: str, key: str) -> bool:
+    if dataset == "training":
+        return key.startswith("Training ") or key.startswith("Follow up ") or key == "Number of Birds Vaccinated"
+    return key.startswith("Care groups - ") or key.startswith("School clubs - ")
+
+
+def duplicate_conflicts(connection, left, right) -> list[dict]:
+    left_raw = json.loads(left["raw_data"])
+    right_raw = json.loads(right["raw_data"])
+    schema = get_schema(connection, left["dataset"])
+    labels = {field.get("key", ""): field.get("label") or field.get("key", "") for field in schema}
+    conflicts = []
+    for key in sorted(set(left_raw) | set(right_raw), key=str.casefold):
+        left_value, right_value = left_raw.get(key), right_raw.get(key)
+        if not populated_value(left_value) or not populated_value(right_value):
+            continue
+        if str(left_value).strip().casefold() == str(right_value).strip().casefold():
+            continue
+        if left["dataset"] == "training" and duplicate_activity_field("training", key):
+            continue
+        conflicts.append({
+            "key": key,
+            "label": labels.get(key, key),
+            "left": left_value,
+            "right": right_value,
+        })
+    if populated_value(left["cbf_name"]) and populated_value(right["cbf_name"]) \
+            and left["cbf_name"].strip().casefold() != right["cbf_name"].strip().casefold():
+        conflicts.append({
+            "key": "__cbf_name__", "label": "Current CBF assignment",
+            "left": left["cbf_name"], "right": right["cbf_name"],
+        })
+    return conflicts
+
+
+def build_duplicate_candidate(connection, left, right) -> dict:
+    schema = get_schema(connection, left["dataset"])
+    left_raw = json.loads(left["raw_data"])
+    right_raw = json.loads(right["raw_data"])
+    return {
+        "left": dict(left),
+        "right": dict(right),
+        "conflicts": duplicate_conflicts(connection, left, right),
+        "left_sections": populated_raw_sections(schema, left_raw),
+        "right_sections": populated_raw_sections(schema, right_raw),
+        "left_activity_count": sum(populated_value(value) for key, value in left_raw.items() if duplicate_activity_field(left["dataset"], key)),
+        "right_activity_count": sum(populated_value(value) for key, value in right_raw.items() if duplicate_activity_field(right["dataset"], key)),
+    }
+
+
+def duplicate_group_conflicts(connection, records) -> list[dict]:
+    schema = get_schema(connection, records[0]["dataset"])
+    labels = {field.get("key", ""): field.get("label") or field.get("key", "") for field in schema}
+    raw_by_id = {record["id"]: json.loads(record["raw_data"]) for record in records}
+    conflicts = []
+    all_keys = set().union(*(raw.keys() for raw in raw_by_id.values()))
+    for key in sorted(all_keys, key=str.casefold):
+        if records[0]["dataset"] == "training" and duplicate_activity_field("training", key):
+            continue
+        options = []
+        seen_values = set()
+        for record in records:
+            value = raw_by_id[record["id"]].get(key)
+            if not populated_value(value):
+                continue
+            normalized = str(value).strip().casefold()
+            if normalized in seen_values:
+                continue
+            seen_values.add(normalized)
+            options.append({"record_id": record["id"], "uid": record["uid"], "value": value})
+        if len(options) > 1:
+            conflicts.append({"key": key, "label": labels.get(key, key), "options": options})
+    cbf_options = []
+    seen_cbfs = set()
+    for record in records:
+        cbf = str(record["cbf_name"] or "").strip()
+        if cbf and cbf.casefold() not in seen_cbfs:
+            seen_cbfs.add(cbf.casefold())
+            cbf_options.append({"record_id": record["id"], "uid": record["uid"], "value": cbf})
+    if len(cbf_options) > 1:
+        conflicts.append({"key": "__cbf_name__", "label": "Current CBF assignment", "options": cbf_options})
+    return conflicts
+
+
+def duplicate_similarity(left, right) -> tuple[int, list[str], list[str]]:
+    weights = {
+        "phone": 25, "sex": 15, "age_group": 15, "age_value": 12,
+        "village": 15, "parish": 10, "subcounty": 8, "district": 7,
+        "cbf_name": 10,
+    }
+    compared_weight = 0
+    matched_weight = 0
+    reasons = []
+    warnings = []
+    reason_labels = {"age_group": "Age group", "age_value": "Age", "cbf_name": "CBF"}
+    for field, weight in weights.items():
+        left_value = str(left[field] or "").strip().casefold()
+        right_value = str(right[field] or "").strip().casefold()
+        if not left_value or not right_value:
+            continue
+        compared_weight += weight
+        if left_value == right_value:
+            matched_weight += weight
+            reasons.append(reason_labels.get(field, field.replace("_", " ").title()))
+    if left["dataset"] == "training":
+        left_raw = json.loads(left["raw_data"])
+        right_raw = json.loads(right["raw_data"])
+        def training_dates(raw):
+            return {
+                topic: {
+                    comparable_activity_value(raw.get(f"Training {cycle} - {topic}"))
+                    for cycle in range(1, 4)
+                    if populated_value(raw.get(f"Training {cycle} - {topic}"))
+                }
+                for topic in TRAINING_TOPICS
+            }
+
+        left_dates = training_dates(left_raw)
+        right_dates = training_dates(right_raw)
+        shared_topics = [
+            topic for topic in TRAINING_TOPICS if left_dates[topic] and right_dates[topic]
+        ]
+        if shared_topics:
+            compared_weight += 25
+            exact_topics = [
+                topic for topic in shared_topics if left_dates[topic] & right_dates[topic]
+            ]
+            different_date_topics = [topic for topic in shared_topics if topic not in exact_topics]
+            if exact_topics:
+                matched_weight += round(25 * len(exact_topics) / len(shared_topics))
+                reasons.append("Same training on exact date")
+            if different_date_topics:
+                label = "training topic" if len(different_date_topics) == 1 else "training topics"
+                warnings.append(
+                    f"{len(different_date_topics)} shared {label} only recorded on different dates"
+                )
+    score = round(matched_weight / max(50, compared_weight) * 100)
+    return min(score, 100), reasons, warnings
+
+
+def build_duplicate_group_candidate(connection, records) -> dict:
+    schema = get_schema(connection, records[0]["dataset"])
+    pair_scores = [
+        (*duplicate_similarity(left, right), left["id"], right["id"])
+        for left, right in combinations(records, 2)
+    ]
+    best_score, best_reasons, best_warnings, left_id, right_id = max(
+        pair_scores, key=lambda item: (item[0], len(item[1]))
+    )
+    best_pair_ids = {left_id, right_id}
+    pair_score_by_ids = {
+        frozenset((pair_left_id, pair_right_id)): score
+        for score, _reasons, _warnings, pair_left_id, pair_right_id in pair_scores
+    }
+    records_by_id = {record["id"]: record for record in records}
+    ordered_records = [records_by_id[left_id], records_by_id[right_id]]
+    ordered_records.extend(sorted(
+        (record for record in records if record["id"] not in best_pair_ids),
+        key=lambda record: (
+            -max(pair_score_by_ids[frozenset((record["id"], best_id))] for best_id in best_pair_ids),
+            record["id"],
+        ),
+    ))
+    items = []
+    for record in ordered_records:
+        raw = json.loads(record["raw_data"])
+        items.append({
+            "record": dict(record),
+            "sections": populated_raw_sections(schema, raw),
+            "default_selected": record["id"] in best_pair_ids,
+            "strongest_pair": len(records) > 2 and record["id"] in best_pair_ids,
+            "activity_count": sum(
+                populated_value(value) for key, value in raw.items()
+                if duplicate_activity_field(record["dataset"], key)
+            ),
+        })
+    return {
+        "name": records[0]["name"],
+        "dataset": records[0]["dataset"],
+        "records": items,
+        "record_ids": [record["id"] for record in ordered_records],
+        "conflicts": duplicate_group_conflicts(connection, ordered_records),
+        "similarity": best_score,
+        "similarity_reasons": best_reasons,
+        "similarity_warnings": best_warnings,
+    }
+
+
+def duplicate_review_page(connection):
+    review_status = request.args.get("status", "pending")
+    if review_status not in {"pending", "merged", "rejected"}:
+        review_status = "pending"
+    dataset = request.args.get("dataset", "training")
+    if dataset not in {"training", "care"}:
+        dataset = "training"
+    page = max(1, request.args.get("page", 1, type=int))
+    query = request.args.get("q", "").strip()
+    page_size = 12
+    record_groups = []
+    if review_status == "pending":
+        rows = connection.execute(
+            """SELECT r.*, f.uid FROM records r JOIN farmers f ON f.id=r.farmer_id
+               WHERE r.dataset=? AND r.archived_at IS NULL ORDER BY r.name COLLATE NOCASE, r.id""",
+            (dataset,),
+        ).fetchall()
+        by_name = defaultdict(list)
+        for row in rows:
+            normalized = normalized_person_name(row["name"])
+            if normalized and (not query or query.casefold() in row["name"].casefold()):
+                by_name[normalized].append(row)
+        reviewed = {
+            (row[0], row[1]) for row in connection.execute(
+                "SELECT record_a_id, record_b_id FROM duplicate_reviews"
+            ).fetchall()
+        }
+        for same_name_rows in by_name.values():
+            if len(same_name_rows) < 2:
+                continue
+            if any(tuple(sorted((left["id"], right["id"]))) not in reviewed
+                   for left, right in combinations(same_name_rows, 2)):
+                record_groups.append(same_name_rows)
+    else:
+        reviews = connection.execute(
+            """SELECT dr.record_a_id, dr.record_b_id FROM duplicate_reviews dr
+               JOIN records a ON a.id=dr.record_a_id
+               WHERE dr.status=? AND a.dataset=? ORDER BY dr.reviewed_at DESC""",
+            (review_status, dataset),
+        ).fetchall()
+        reviewed_ids = sorted({record_id for review in reviews for record_id in review})
+        if reviewed_ids:
+            placeholders = ",".join("?" for _ in reviewed_ids)
+            reviewed_rows = connection.execute(
+                f"""SELECT r.*, f.uid FROM records r JOIN farmers f ON f.id=r.farmer_id
+                    WHERE r.id IN ({placeholders}) ORDER BY r.name COLLATE NOCASE, r.id""",
+                reviewed_ids,
+            ).fetchall()
+            by_name = defaultdict(list)
+            for row in reviewed_rows:
+                if not query or query.casefold() in row["name"].casefold():
+                    by_name[normalized_person_name(row["name"])].append(row)
+            record_groups.extend(group for group in by_name.values() if len(group) >= 2)
+    candidates = [build_duplicate_group_candidate(connection, group) for group in record_groups]
+    candidates.sort(key=lambda item: (
+        -item["similarity"], -len(item["similarity_reasons"]),
+        item["name"].casefold(), item["record_ids"],
+    ))
+    total = len(candidates)
+    candidates = candidates[(page - 1) * page_size:page * page_size]
+    return render_template(
+        "duplicates.html", candidates=candidates, review_status=review_status, dataset=dataset,
+        total=total, page=page, pages=max(1, (total + page_size - 1) // page_size), q=query,
+    )
+
+
+def comparable_activity_value(value) -> str:
+    parsed = parse_date(value)
+    return parsed.isoformat() if parsed else str(value).strip().casefold()
+
+
+def merge_training_histories(survivor_raw: dict, donor_raw: dict, merged_base: dict):
+    merged = dict(merged_base)
+    added = 0
+    overflow = []
+    for topic in TRAINING_TOPICS:
+        fields = ("Training", "Follow up", "Follow up score", "Follow up next action")
+
+        def cycles_from(raw):
+            cycles = []
+            for cycle in range(1, 4):
+                payload = {prefix: raw.get(f"{prefix} {cycle} - {topic}") for prefix in fields}
+                if any(populated_value(value) for value in payload.values()):
+                    cycles.append(payload)
+            return cycles
+
+        cycles = cycles_from(survivor_raw)
+        for donor_cycle in cycles_from(donor_raw):
+            match = None
+            for existing_cycle in cycles:
+                same_training = populated_value(donor_cycle["Training"]) and populated_value(existing_cycle["Training"]) \
+                    and comparable_activity_value(donor_cycle["Training"]) == comparable_activity_value(existing_cycle["Training"])
+                same_followup = populated_value(donor_cycle["Follow up"]) and populated_value(existing_cycle["Follow up"]) \
+                    and comparable_activity_value(donor_cycle["Follow up"]) == comparable_activity_value(existing_cycle["Follow up"])
+                if same_training or same_followup:
+                    match = existing_cycle
+                    break
+            if match is not None:
+                for prefix, value in donor_cycle.items():
+                    if populated_value(value) and not populated_value(match.get(prefix)):
+                        match[prefix] = value
+                        added += 1
+            elif len(cycles) < 3:
+                cycles.append(dict(donor_cycle))
+                added += sum(populated_value(value) for value in donor_cycle.values())
+            else:
+                overflow.append(topic)
+        for cycle in range(1, 4):
+            for prefix in fields:
+                merged.pop(f"{prefix} {cycle} - {topic}", None)
+        for cycle, payload in enumerate(cycles, start=1):
+            for prefix, value in payload.items():
+                if populated_value(value):
+                    merged[f"{prefix} {cycle} - {topic}"] = value
+    return merged, added, sorted(set(overflow))
+
+
+def reassign_duplicate_event_history(connection, donor_id: int, survivor_id: int) -> None:
+    entries = connection.execute(
+        "SELECT id, event_id, topic FROM field_event_entries WHERE record_id=?", (donor_id,)
+    ).fetchall()
+    for entry in entries:
+        conflict = connection.execute(
+            "SELECT 1 FROM field_event_entries WHERE event_id=? AND record_id=? AND topic=?",
+            (entry["event_id"], survivor_id, entry["topic"]),
+        ).fetchone()
+        if conflict:
+            continue
+        connection.execute(
+            "UPDATE followup_responses SET record_id=? WHERE event_entry_id=?",
+            (survivor_id, entry["id"]),
+        )
+        connection.execute(
+            "UPDATE field_event_entries SET record_id=? WHERE id=?", (survivor_id, entry["id"])
+        )
 
 
 def build_priorities(records, status_by_record, as_of: date | None = None):

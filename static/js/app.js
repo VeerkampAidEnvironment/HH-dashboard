@@ -19,6 +19,69 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
+  document.querySelectorAll("[data-adaptive-survey]").forEach((form) => {
+    const questionNodes = Array.from(form.querySelectorAll("[data-survey-question]"));
+    const applyMultiRules = (node, changedControl = null) => {
+      const boxes = Array.from(node.querySelectorAll('input[type="checkbox"]'));
+      if (!boxes.length) return;
+      let exclusiveValues = [];
+      try { exclusiveValues = node.dataset.exclusiveValues ? JSON.parse(node.dataset.exclusiveValues) : []; } catch (_error) { exclusiveValues = []; }
+      if (changedControl?.checked) {
+        if (exclusiveValues.includes(changedControl.value)) boxes.forEach((box) => { if (box !== changedControl) box.checked = false; });
+        else boxes.forEach((box) => { if (exclusiveValues.includes(box.value)) box.checked = false; });
+      }
+      const checked = boxes.filter((box) => box.checked);
+      const maximum = Number(node.dataset.maxSelections || 0);
+      const exclusiveSelected = checked.some((box) => exclusiveValues.includes(box.value));
+      boxes.forEach((box) => {
+        box.disabled = node.hidden || (!box.checked && (exclusiveSelected || (maximum > 0 && checked.length >= maximum)));
+      });
+    };
+    const valueFor = (questionId) => {
+      const node = form.querySelector(`[data-survey-question="${CSS.escape(questionId)}"]`);
+      if (!node) return "";
+      const checked = Array.from(node.querySelectorAll("input[type=checkbox]:checked"));
+      if (node.querySelector("input[type=checkbox]")) return checked.map((input) => input.value);
+      return node.querySelector("input[type=radio]:checked")?.value
+        ?? node.querySelector("select")?.value
+        ?? node.querySelector("input:not([type=radio]):not([type=checkbox]), textarea")?.value?.trim()
+        ?? "";
+    };
+    const conditionMatches = (condition) => {
+      if (!condition) return true;
+      const value = valueFor(condition.question);
+      if (condition.operator === "equals") return value === condition.value;
+      if (condition.operator === "in") return (condition.values || []).includes(value);
+      if (condition.operator === "contains") return Array.isArray(value) && value.includes(condition.value);
+      if (condition.operator === "contains_any") return Array.isArray(value) && value.some((item) => (condition.values || []).includes(item));
+      if (condition.operator === "has_any_except") return Array.isArray(value) && value.some((item) => item !== condition.value);
+      return false;
+    };
+    const updateSurvey = () => {
+      questionNodes.forEach((node) => {
+        let condition = null;
+        try { condition = node.dataset.condition ? JSON.parse(node.dataset.condition) : null; } catch (_error) { condition = null; }
+        const visible = conditionMatches(condition);
+        node.hidden = !visible;
+        node.querySelectorAll("input, select, textarea").forEach((control) => {
+          control.disabled = !visible;
+          if (!visible) control.required = false;
+          else if (node.dataset.required === "true" && control.type !== "checkbox") {
+            if (control.type !== "radio" || control === node.querySelector("input[type=radio]")) control.required = true;
+          }
+        });
+        applyMultiRules(node);
+      });
+    };
+    form.addEventListener("change", (event) => {
+      const node = event.target.closest?.("[data-survey-question]");
+      if (node && event.target.matches('input[type="checkbox"]')) applyMultiRules(node, event.target);
+      updateSurvey();
+    });
+    form.addEventListener("input", updateSurvey);
+    updateSurvey();
+  });
+
   document.querySelectorAll("[data-dashboard-cbf-multiselect]").forEach((control) => {
     const allBox = control.querySelector("[data-dashboard-cbf-all]");
     const boxes = Array.from(control.querySelectorAll("[data-dashboard-cbf-option]"));
@@ -245,6 +308,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const ageControl = explorer.querySelector("[data-activity-age]");
     const topicControl = explorer.querySelector("[data-activity-topic]");
     const stackControl = explorer.querySelector("[data-activity-stack-mode]");
+    const monthStartControl = explorer.querySelector("[data-activity-month-start]");
+    const monthEndControl = explorer.querySelector("[data-activity-month-end]");
     const legend = explorer.querySelector("[data-activity-legend]");
     const cbfControl = explorer.querySelector("[data-cbf-multiselect]");
     const cbfSummary = explorer.querySelector("[data-cbf-summary]");
@@ -264,9 +329,15 @@ document.addEventListener("DOMContentLoaded", () => {
       const topic = topicControl?.value || "all";
       const stackMode = selectedButtonValue(stackControl) || "total";
       const selectedCbfs = new Set(cbfBoxes.filter((box) => box.checked).map((box) => box.value));
-      const monthFarmers = new Map((timeline.months || []).map((month) => [month, new Set()]));
+      const availableMonths = timeline.months || [];
+      const startMonth = monthStartControl?.value || availableMonths[0] || "";
+      const endMonth = monthEndControl?.value || availableMonths[availableMonths.length - 1] || "";
+      const visibleMonths = availableMonths.filter((month) => (!startMonth || month >= startMonth) && (!endMonth || month <= endMonth));
+      const visibleMonthSet = new Set(visibleMonths);
+      const monthFarmers = new Map(visibleMonths.map((month) => [month, new Set()]));
       const allFarmers = new Set();
       const filteredEvents = (timeline.events || []).filter((event) => {
+        if (!visibleMonthSet.has(event.month)) return false;
         if (activity !== "all" && event.activity !== activity) return;
         if (gender !== "all" && event.gender !== gender) return;
         if (age !== "all" && event.age !== age) return;
@@ -287,12 +358,12 @@ document.addEventListener("DOMContentLoaded", () => {
       if (stackMode !== "total") {
         categories = Array.from(new Set(filteredEvents.map(categoryLabel))).sort((a, b) => a.localeCompare(b));
         if (stackMode === "activity") categories.sort((a) => a === "CT" ? -1 : 1);
-        (timeline.months || []).forEach((month) => {
+        visibleMonths.forEach((month) => {
           monthCategories.set(month, new Map(categories.map((category) => [category, new Set()])));
         });
         filteredEvents.forEach((event) => monthCategories.get(event.month)?.get(categoryLabel(event))?.add(event.farmer));
       }
-      const items = (timeline.months || []).map((month) => {
+      const items = visibleMonths.map((month) => {
         const segments = stackMode === "total" ? [] : categories.map((category) => ({
           category, value: monthCategories.get(month)?.get(category)?.size || 0,
         }));
@@ -308,6 +379,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (gender !== "all") details.push(gender);
       if (age !== "all") details.push(age);
       if (selectedCbfs.size) details.push(`${selectedCbfs.size} selected ${selectedCbfs.size === 1 ? "CBF" : "CBFs"}`);
+      if (visibleMonths.length && (startMonth !== availableMonths[0] || endMonth !== availableMonths[availableMonths.length - 1])) details.push(`${startMonth} to ${endMonth}`);
       if (stackMode !== "total") details.push(`stacked by ${stackMode === "topic" ? "training type" : stackMode}`);
       if (description) description.textContent = `Showing ${details.join(" · ")} by month.`;
       if (result) result.textContent = `${allFarmers.size} beneficiaries`;
@@ -375,6 +447,15 @@ document.addEventListener("DOMContentLoaded", () => {
       }));
     });
     topicControl?.addEventListener("change", render);
+    const updateMonthRange = (changedControl) => {
+      if (monthStartControl && monthEndControl && monthStartControl.value > monthEndControl.value) {
+        if (changedControl === monthStartControl) monthEndControl.value = monthStartControl.value;
+        else monthStartControl.value = monthEndControl.value;
+      }
+      render();
+    };
+    monthStartControl?.addEventListener("change", () => updateMonthRange(monthStartControl));
+    monthEndControl?.addEventListener("change", () => updateMonthRange(monthEndControl));
     cbfBoxes.forEach((box) => box.addEventListener("change", () => { updateCbfSummary(); render(); }));
     explorer.querySelector("[data-cbf-clear]")?.addEventListener("click", () => {
       cbfBoxes.forEach((box) => { box.checked = false; });
@@ -387,12 +468,149 @@ document.addEventListener("DOMContentLoaded", () => {
       });
       stackControl?.querySelectorAll("button").forEach((button) => button.classList.toggle("active", button.dataset.value === "total"));
       if (topicControl) topicControl.value = "all";
+      if (monthStartControl) monthStartControl.selectedIndex = 0;
+      if (monthEndControl) monthEndControl.selectedIndex = Math.max(0, monthEndControl.options.length - 1);
       cbfBoxes.forEach((box) => { box.checked = false; });
       updateCbfSummary();
       render();
     });
     updateCbfSummary();
     render();
+  });
+
+  document.querySelectorAll("[data-momentum-explorer]").forEach((explorer) => {
+    const dataNode = explorer.querySelector("[data-momentum-data]");
+    const chart = explorer.querySelector("[data-momentum-chart]");
+    const tableBody = explorer.querySelector("[data-momentum-table-body]");
+    const periodBadge = explorer.querySelector("[data-momentum-period]");
+    const monthStartControl = explorer.querySelector("[data-momentum-month-start]");
+    const monthEndControl = explorer.querySelector("[data-momentum-month-end]");
+    let momentum = { months: [], series: [] };
+    try { momentum = JSON.parse(dataNode?.textContent || "{}"); } catch (_error) { momentum = { months: [], series: [] }; }
+    const svgNamespace = "http://www.w3.org/2000/svg";
+    const svgElement = (name, attributes = {}) => {
+      const element = document.createElementNS(svgNamespace, name);
+      Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, String(value)));
+      return element;
+    };
+    const scaleFor = (values) => {
+      const peak = Math.max(...values.map((value) => Number(value) || 0), 0);
+      if (!peak) return { peak: 0, maximum: 1, ticks: [0] };
+      const rawStep = peak / 2;
+      const magnitude = 10 ** Math.floor(Math.log10(rawStep || 1));
+      const normalizedStep = rawStep / magnitude;
+      const factor = normalizedStep <= 1 ? 1 : normalizedStep <= 2 ? 2 : normalizedStep <= 5 ? 5 : 10;
+      const step = Math.max(1, Math.ceil(factor * magnitude));
+      return { peak, maximum: step * 2, ticks: [0, step, step * 2] };
+    };
+    const renderMomentum = () => {
+      const startMonth = monthStartControl?.value || momentum.months[0]?.key || "";
+      const endMonth = monthEndControl?.value || momentum.months[momentum.months.length - 1]?.key || "";
+      const visibleIndexes = momentum.months
+        .map((month, index) => ({ month, index }))
+        .filter(({ month }) => (!startMonth || month.key >= startMonth) && (!endMonth || month.key <= endMonth));
+      if (periodBadge) periodBadge.textContent = visibleIndexes.length === momentum.months.length
+        ? `Last ${visibleIndexes.length} months`
+        : `${visibleIndexes[0]?.month.label || startMonth} to ${visibleIndexes[visibleIndexes.length - 1]?.month.label || endMonth}`;
+      chart?.replaceChildren();
+      const plotLeft = 40;
+      const plotTop = 8;
+      const plotWidth = 706;
+      const plotHeight = 52;
+      (momentum.series || []).forEach((series, seriesIndex) => {
+        const values = visibleIndexes.map(({ index }) => Number(series.values[index]) || 0);
+        const scale = scaleFor(values);
+        const showMonths = seriesIndex === momentum.series.length - 1;
+        const section = document.createElement("section");
+        section.className = "momentum-series-row";
+        const header = document.createElement("header");
+        const heading = document.createElement("span");
+        const marker = document.createElement("i");
+        marker.style.background = series.color;
+        heading.append(marker, document.createTextNode(series.label));
+        const description = document.createElement("p");
+        description.textContent = series.description;
+        const peak = document.createElement("strong");
+        peak.append(document.createTextNode(scale.peak.toLocaleString()));
+        const peakLabel = document.createElement("small");
+        peakLabel.textContent = "monthly peak";
+        peak.append(peakLabel);
+        header.append(heading, description, peak);
+        const chartWrap = document.createElement("div");
+        chartWrap.className = "momentum-series-chart";
+        const svg = svgElement("svg", {
+          viewBox: `0 0 760 ${showMonths ? 92 : 68}`,
+          role: "img",
+          "aria-label": `${series.label} by month, using its own y-axis from 0 to ${scale.maximum}`,
+        });
+        scale.ticks.forEach((tick) => {
+          const y = plotTop + plotHeight - tick / scale.maximum * plotHeight;
+          const group = svgElement("g", { class: "momentum-gridline" });
+          group.append(svgElement("line", { x1: plotLeft, y1: y, x2: 746, y2: y }));
+          const text = svgElement("text", { x: 33, y: y + 3 });
+          text.textContent = tick.toLocaleString();
+          group.append(text);
+          svg.append(group);
+        });
+        const coordinates = values.map((value, index) => {
+          const x = plotLeft + (values.length > 1 ? plotWidth / (values.length - 1) * index : plotWidth / 2);
+          const y = plotTop + plotHeight - value / scale.maximum * plotHeight;
+          return { x, y, value };
+        });
+        svg.append(svgElement("polyline", {
+          class: "momentum-line",
+          points: coordinates.map(({ x, y }) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" "),
+          fill: "none",
+          stroke: series.color,
+        }));
+        coordinates.forEach(({ x, y, value }, index) => {
+          const circle = svgElement("circle", { class: "momentum-marker", cx: x, cy: y, r: 3.3, fill: series.color });
+          const title = svgElement("title");
+          title.textContent = `${visibleIndexes[index].month.label} · ${series.label}: ${value.toLocaleString()}`;
+          circle.append(title);
+          svg.append(circle);
+        });
+        if (showMonths) visibleIndexes.forEach(({ month }, index) => {
+          const x = plotLeft + (visibleIndexes.length > 1 ? plotWidth / (visibleIndexes.length - 1) * index : plotWidth / 2);
+          const text = svgElement("text", { class: "momentum-month", x, y: 84 });
+          text.textContent = month.label;
+          svg.append(text);
+        });
+        chartWrap.append(svg);
+        section.append(header, chartWrap);
+        chart?.append(section);
+      });
+      tableBody?.replaceChildren();
+      visibleIndexes.forEach(({ month, index }) => {
+        const row = document.createElement("tr");
+        const monthCell = document.createElement("td");
+        const monthLabel = document.createElement("strong");
+        monthLabel.textContent = month.label;
+        monthCell.append(monthLabel);
+        row.append(monthCell);
+        momentum.series.forEach((series) => {
+          const cell = document.createElement("td");
+          cell.textContent = Number(series.values[index] || 0).toLocaleString();
+          row.append(cell);
+        });
+        tableBody?.append(row);
+      });
+    };
+    const updateMomentumRange = (changedControl) => {
+      if (monthStartControl && monthEndControl && monthStartControl.value > monthEndControl.value) {
+        if (changedControl === monthStartControl) monthEndControl.value = monthStartControl.value;
+        else monthStartControl.value = monthEndControl.value;
+      }
+      renderMomentum();
+    };
+    monthStartControl?.addEventListener("change", () => updateMomentumRange(monthStartControl));
+    monthEndControl?.addEventListener("change", () => updateMomentumRange(monthEndControl));
+    explorer.querySelector("[data-momentum-reset]")?.addEventListener("click", () => {
+      if (monthStartControl) monthStartControl.selectedIndex = 0;
+      if (monthEndControl) monthEndControl.selectedIndex = Math.max(0, monthEndControl.options.length - 1);
+      renderMomentum();
+    });
+    renderMomentum();
   });
 
   document.querySelectorAll("select[data-enhanced-select]").forEach((select, selectIndex) => {
@@ -536,5 +754,169 @@ document.addEventListener("DOMContentLoaded", () => {
     panel.append(summary, results);
     container.append(control, panel);
     select.insertAdjacentElement("afterend", container);
+  });
+
+  const exportableFigures = document.querySelectorAll(
+    ".analytics-grid > .panel, .fh-track-grid > .panel, .interaction-grid > .panel"
+  );
+
+  const safeFileName = (value) => String(value || "dashboard-figure")
+    .normalize("NFKD")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase() || "dashboard-figure";
+
+  const copyLiveControlState = (source, clone) => {
+    const sourceControls = source.querySelectorAll("input, select, textarea, details");
+    const clonedControls = clone.querySelectorAll("input, select, textarea, details");
+    sourceControls.forEach((control, index) => {
+      const cloned = clonedControls[index];
+      if (!cloned) return;
+      if (control instanceof HTMLInputElement) {
+        cloned.toggleAttribute("checked", control.checked);
+        cloned.setAttribute("value", control.value);
+      } else if (control instanceof HTMLTextAreaElement) {
+        cloned.textContent = control.value;
+      } else if (control instanceof HTMLSelectElement) {
+        Array.from(cloned.options).forEach((option, optionIndex) => {
+          option.toggleAttribute("selected", control.options[optionIndex]?.selected || false);
+        });
+      } else if (control instanceof HTMLDetailsElement) {
+        cloned.toggleAttribute("open", control.open);
+      }
+    });
+  };
+
+  const downloadBlob = (blob, fileName) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  let figureExporterPromise;
+  const ensureFigureExporter = () => {
+    if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
+    if (figureExporterPromise) return figureExporterPromise;
+    figureExporterPromise = new Promise((resolve, reject) => {
+      const appScript = Array.from(document.scripts).find((script) => /\/static\/js\/app\.js(?:\?|$)/.test(script.src));
+      let exporterUrl = "/static/vendor/html2canvas.min.js";
+      if (appScript?.src) {
+        const scriptUrl = new URL(appScript.src, window.location.href);
+        scriptUrl.pathname = scriptUrl.pathname.replace(/\/js\/app\.js$/, "/vendor/html2canvas.min.js");
+        exporterUrl = scriptUrl.toString();
+      }
+      const script = document.createElement("script");
+      script.src = exporterUrl;
+      script.dataset.figureExporterLoader = "";
+      script.addEventListener("load", () => {
+        if (typeof window.html2canvas === "function") resolve(window.html2canvas);
+        else reject(new Error("The image exporter loaded without becoming available."));
+      }, { once: true });
+      script.addEventListener("error", () => reject(new Error("The image exporter could not be loaded.")), { once: true });
+      document.head.append(script);
+    }).catch((error) => {
+      figureExporterPromise = undefined;
+      throw error;
+    });
+    return figureExporterPromise;
+  };
+
+  const renderFigureToPng = async (figure) => {
+    const html2canvas = await ensureFigureExporter();
+    const clone = figure.cloneNode(true);
+    copyLiveControlState(figure, clone);
+    clone.querySelectorAll("[data-download-figure], [data-export-status]").forEach((node) => node.remove());
+    clone.querySelectorAll("details:not([open])").forEach((details) => {
+      Array.from(details.children).forEach((child) => {
+        if (!(child instanceof HTMLElement) || child.tagName === "SUMMARY") return;
+        child.style.display = "none";
+      });
+    });
+    clone.classList.add("figure-export-copy");
+    clone.style.margin = "0";
+    clone.querySelectorAll(".table-wrap, .training-heatmap-wrap").forEach((node) => {
+      node.style.overflow = "visible";
+      node.style.maxHeight = "none";
+    });
+
+    const candidates = [figure, ...figure.querySelectorAll("table, svg, .table-wrap, .training-heatmap-wrap")];
+    const contentWidth = Math.max(...candidates.map((node) => node.scrollWidth || 0));
+    const width = Math.ceil(Math.min(2400, Math.max(figure.getBoundingClientRect().width, contentWidth)));
+    const stage = document.createElement("div");
+    stage.className = "figure-export-stage";
+    stage.style.width = `${width}px`;
+    clone.style.width = `${width}px`;
+    stage.append(clone);
+    document.body.append(stage);
+    const height = Math.ceil(clone.scrollHeight);
+    const scale = Math.max(0.75, Math.min(2, 8192 / width, 8192 / Math.max(height, 1)));
+    try {
+      const canvas = await html2canvas(clone, {
+        backgroundColor: "#ffffff",
+        logging: false,
+        scale,
+        useCORS: true,
+        width,
+        height,
+        windowWidth: width,
+        windowHeight: height,
+        scrollX: 0,
+        scrollY: 0,
+      });
+      return await new Promise((resolve, reject) => canvas.toBlob(
+        (blob) => blob ? resolve(blob) : reject(new Error("The browser could not create the image.")),
+        "image/png"
+      ));
+    } finally {
+      stage.remove();
+    }
+  };
+
+  exportableFigures.forEach((figure) => {
+    const title = figure.querySelector("h2, h3")?.textContent?.trim() || "Dashboard figure";
+    figure.dataset.figureExport = "";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "figure-download-button";
+    button.dataset.downloadFigure = "";
+    button.setAttribute("aria-label", `Download ${title} as an image`);
+    button.innerHTML = '<span aria-hidden="true">&#8595;</span><span>Download</span>';
+    const buttonLabel = button.lastElementChild;
+    const status = document.createElement("span");
+    status.className = "figure-export-status";
+    status.dataset.exportStatus = "";
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
+    figure.append(button, status);
+
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      button.classList.add("loading");
+      if (buttonLabel) buttonLabel.textContent = "Preparing...";
+      status.textContent = "Preparing image...";
+      try {
+        const blob = await renderFigureToPng(figure);
+        const date = new Date().toISOString().slice(0, 10);
+        downloadBlob(blob, `${safeFileName(title)}-${date}.png`);
+        if (buttonLabel) buttonLabel.textContent = "Downloaded";
+        status.textContent = "Downloaded";
+      } catch (error) {
+        console.error("Figure download failed", error);
+        if (buttonLabel) buttonLabel.textContent = "Try again";
+        status.textContent = "Download failed. Please try again.";
+      } finally {
+        button.disabled = false;
+        button.classList.remove("loading");
+        window.setTimeout(() => {
+          status.textContent = "";
+          if (buttonLabel) buttonLabel.textContent = "Download";
+        }, 3000);
+      }
+    });
   });
 });

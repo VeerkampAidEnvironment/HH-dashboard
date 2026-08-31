@@ -143,7 +143,8 @@
     .flatMap((item) => item.entries.map((entry) => `${entry.recordId}::${entry.topic}`)));
   const queuedFuKeys = () => new Set(currentOutbox()
     .filter((item) => item.type === "followup")
-    .flatMap((item) => item.responses.map((entry) => `${item.recordId}::${entry.topic}`)));
+    .flatMap((item) => (item.topics || (item.responses || []).map((entry) => entry.topic))
+      .map((topic) => `${item.recordId}::${topic}`)));
 
   const refreshCounts = () => {
     const items = currentOutbox();
@@ -334,30 +335,44 @@
     });
   };
 
-  const questionInput = (question, topicIndex) => {
-    const name = `fu__${topicIndex}__${question.id}`;
+  const questionInput = (question, farmer) => {
+    const name = `survey__${question.id}`;
     const wrap = create("section", `field-question field-question-${question.type}`);
+    wrap.dataset.surveyQuestion = question.id;
+    if (question.condition) wrap.dataset.condition = JSON.stringify(question.condition);
+    wrap.dataset.required = question.required ? "true" : "false";
+    if (question.max_selections) wrap.dataset.maxSelections = String(question.max_selections);
+    if (question.exclusive_values) wrap.dataset.exclusiveValues = JSON.stringify(question.exclusive_values);
     const copy = create("div", "field-question-copy");
     copy.append(create("small", "", question.source_id), create("h3", "", question.label));
     if (question.help) copy.append(create("p", "", question.help));
+    if (question.required) copy.append(create("b", "field-required", "Required"));
     wrap.append(copy);
     const options = question.options || [];
-    if (question.type === "textarea") {
+    const prefill = question.profile_key ? (farmer.profile?.[question.profile_key] || "") : "";
+    if (question.type === "training_list") {
+      const list = create("div", "field-training-history");
+      (farmer.trainingHistory || []).forEach((topic) => list.append(create("span", "", `✓ ${topic}`)));
+      if (!(farmer.trainingHistory || []).length) list.append(create("em", "", "No recorded trainings"));
+      wrap.append(list);
+    } else if (question.type === "textarea") {
       const input = document.createElement("textarea");
       input.name = name;
       input.rows = 3;
       input.placeholder = "Enter observations or advice";
+      input.value = prefill;
       wrap.append(input);
-    } else if (question.type === "number" || question.type === "adoption_rate") {
+    } else if (question.type === "number") {
       const numberWrap = create("div", "field-number-input");
       const input = document.createElement("input");
       input.type = "number";
       input.name = name;
       input.min = "0";
-      input.step = question.type === "adoption_rate" ? "0.1" : "any";
-      if (question.type === "adoption_rate") input.max = "100";
+      if (question.max_value !== undefined) input.max = String(question.max_value);
+      input.step = "any";
+      input.value = prefill;
       numberWrap.append(input);
-      if (question.type === "adoption_rate") numberWrap.append(create("span", "", "%"));
+      if (question.unit) numberWrap.append(create("span", "", question.unit));
       wrap.append(numberWrap);
     } else if (question.type === "multi") {
       const choices = create("div", "field-choice-grid");
@@ -371,7 +386,7 @@
         choices.append(label);
       });
       wrap.append(choices);
-    } else if ((question.type === "choice" || question.type === "next_action") && options.length <= 6) {
+    } else if ((question.type === "choice" || question.type === "consent") && options.length <= 6) {
       const choices = create("div", "field-choice-grid");
       options.forEach((option) => {
         const label = create("label", "field-choice");
@@ -379,6 +394,7 @@
         input.type = "radio";
         input.name = name;
         input.value = typeof option === "object" ? option.value : option;
+        input.checked = prefill === input.value;
         label.append(input, create("span", "", typeof option === "object" ? option.label : option));
         choices.append(label);
       });
@@ -396,6 +412,7 @@
       const input = document.createElement("input");
       input.type = "text";
       input.name = name;
+      input.value = prefill;
       wrap.append(input);
     }
     return wrap;
@@ -418,44 +435,105 @@
     copy.append(create("small", "", "Selected beneficiary"), create("h2", "", farmer.name), create("p", "", [farmer.uid, farmer.group || "No group", farmer.village].filter(Boolean).join(" · ")));
     heading.append(copy);
     container.append(heading);
-    farmer.availableFollowups.forEach((status, topicIndex) => {
-      const questionnaire = fieldPackage.questionnaires[status.topic];
+    const dueTopics = farmer.availableFollowups.map((item) => item.topic);
+    const dueSet = new Set(dueTopics);
+    const sections = (fieldPackage.survey?.sections || []).filter((section) =>
+      section.always || (section.topics || []).some((topic) => dueSet.has(topic)));
+    const dueCard = create("div", "field-survey-due");
+    dueCard.append(create("strong", "", "Training types due"));
+    const dueList = create("div");
+    dueTopics.forEach((topic) => dueList.append(create("span", "", topic)));
+    dueCard.append(dueList);
+    container.append(dueCard);
+    sections.forEach((section, sectionIndex) => {
       const details = create("details", "field-questionnaire");
-      details.dataset.topic = status.topic;
-      if (topicIndex === 0) details.open = true;
+      details.dataset.section = section.id;
+      if (sectionIndex === 0) details.open = true;
       const summary = create("summary");
       const title = create("span");
-      title.append(create("strong", "", questionnaire.title), create("small", "", `${status.topic} · Last activity ${status.lastActivityDate || "unknown"}`));
-      summary.append(title, create("b", "", `${questionnaire.questions.length} questions`));
+      title.append(create("strong", "", `Section ${section.id} · ${section.title}`));
+      if (section.intro) title.append(create("small", "", section.intro));
+      summary.append(title, create("b", "", `${section.questions.length} items`));
       const questions = create("div", "field-question-list");
-      questionnaire.questions.forEach((question) => questions.append(questionInput(question, topicIndex)));
+      section.questions.forEach((question) => questions.append(questionInput(question, farmer)));
       details.append(summary, questions);
       container.append(details);
     });
+    container.dataset.topics = JSON.stringify(dueTopics);
+    const refresh = () => updateFieldSurveyConditions(container);
+    container.addEventListener("change", (event) => {
+      const node = event.target.closest?.("[data-survey-question]");
+      if (node && event.target.matches('input[type="checkbox"]')) applyFieldMultiRules(node, event.target);
+      refresh();
+    });
+    container.addEventListener("input", refresh);
+    refresh();
     container.hidden = false;
     $("[data-followup-save]").hidden = false;
     $("[data-followup-selection]").textContent = `${farmer.availableFollowups.length} ${farmer.availableFollowups.length === 1 ? "topic" : "topics"} due for ${farmer.name}`;
     container.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  const answersForTopic = (details, questionnaire, topicIndex) => {
-    const answers = {};
-    let hasAnswer = false;
-    questionnaire.questions.forEach((question) => {
-      const name = `fu__${topicIndex}__${question.id}`;
-      let value;
-      if (question.type === "multi") {
-        value = $$(`input[name="${CSS.escape(name)}"]:checked`, details).map((input) => input.value);
-      } else if (question.type === "choice" || question.type === "next_action") {
-        value = $(`input[name="${CSS.escape(name)}"]:checked`, details)?.value
-          ?? $(`select[name="${CSS.escape(name)}"]`, details)?.value ?? "";
-      } else {
-        value = $(`[name="${CSS.escape(name)}"]`, details)?.value?.trim() ?? "";
-      }
-      answers[question.id] = value;
-      hasAnswer = hasAnswer || (Array.isArray(value) ? value.length > 0 : value !== "");
+  const surveyValue = (container, questionId) => {
+    const node = $(`[data-survey-question="${CSS.escape(questionId)}"]`, container);
+    if (!node || node.hidden) return "";
+    if ($("input[type=checkbox]", node)) return $$(`input[type=checkbox]:checked`, node).map((input) => input.value);
+    return $("input[type=radio]:checked", node)?.value
+      ?? $("select", node)?.value
+      ?? $("input:not([type=radio]):not([type=checkbox]), textarea", node)?.value?.trim()
+      ?? "";
+  };
+
+  const surveyConditionMatches = (container, condition) => {
+    if (!condition) return true;
+    const value = surveyValue(container, condition.question);
+    if (condition.operator === "equals") return value === condition.value;
+    if (condition.operator === "in") return (condition.values || []).includes(value);
+    if (condition.operator === "contains") return Array.isArray(value) && value.includes(condition.value);
+    if (condition.operator === "contains_any") return Array.isArray(value) && value.some((item) => (condition.values || []).includes(item));
+    if (condition.operator === "has_any_except") return Array.isArray(value) && value.some((item) => item !== condition.value);
+    return false;
+  };
+
+  const updateFieldSurveyConditions = (container) => {
+    $$('[data-survey-question]', container).forEach((node) => {
+      const condition = node.dataset.condition ? JSON.parse(node.dataset.condition) : null;
+      const visible = surveyConditionMatches(container, condition);
+      node.hidden = !visible;
+      $$('input, select, textarea', node).forEach((control) => { control.disabled = !visible; });
+      applyFieldMultiRules(node);
     });
-    return { answers, hasAnswer };
+  };
+
+  const applyFieldMultiRules = (node, changedControl = null) => {
+    const boxes = $$('input[type="checkbox"]', node);
+    if (!boxes.length) return;
+    let exclusiveValues = [];
+    try { exclusiveValues = node.dataset.exclusiveValues ? JSON.parse(node.dataset.exclusiveValues) : []; } catch (_error) { exclusiveValues = []; }
+    if (changedControl?.checked) {
+      if (exclusiveValues.includes(changedControl.value)) boxes.forEach((box) => { if (box !== changedControl) box.checked = false; });
+      else boxes.forEach((box) => { if (exclusiveValues.includes(box.value)) box.checked = false; });
+    }
+    const checked = boxes.filter((box) => box.checked);
+    const maximum = Number(node.dataset.maxSelections || 0);
+    const exclusiveSelected = checked.some((box) => exclusiveValues.includes(box.value));
+    boxes.forEach((box) => {
+      box.disabled = node.hidden || (!box.checked && (exclusiveSelected || (maximum > 0 && checked.length >= maximum)));
+    });
+  };
+
+  const answersForSurvey = (container) => {
+    const answers = {};
+    let firstMissing = null;
+    $$('[data-survey-question]', container).forEach((node) => {
+      if (node.hidden || !node.dataset.surveyQuestion) return;
+      const questionId = node.dataset.surveyQuestion;
+      const value = surveyValue(container, questionId);
+      answers[questionId] = value;
+      const empty = Array.isArray(value) ? value.length === 0 : value === "";
+      if (!firstMissing && node.dataset.required === "true" && empty && !node.classList.contains("field-question-training_list")) firstMissing = node;
+    });
+    return { answers, firstMissing };
   };
 
   const queueSubmission = async (submission) => {
@@ -474,7 +552,7 @@
     } else if (submission.type === "followup") {
       const farmer = fieldPackage.farmers.find((item) => item.id === submission.recordId);
       if (farmer) {
-        const completedTopics = new Set(submission.responses.map((entry) => entry.topic));
+        const completedTopics = new Set(submission.topics || (submission.responses || []).map((entry) => entry.topic));
         farmer.followupTopics = farmer.followupTopics.filter((item) => !completedTopics.has(item.topic));
       }
     }
@@ -522,28 +600,25 @@
       alertUser("Select a beneficiary with a follow-up due.", "warning");
       return;
     }
-    const responses = [];
-    const detailsNodes = $$("[data-followup-questionnaires] details[data-topic]");
-    for (const [topicIndex, details] of detailsNodes.entries()) {
-      const topic = details.dataset.topic;
-      const questionnaire = fieldPackage.questionnaires[topic];
-      const { answers, hasAnswer } = answersForTopic(details, questionnaire, topicIndex);
-      if (!hasAnswer) continue;
-      const adoption = Number(answers.adoption_rate);
-      if (answers.adoption_rate === "" || !Number.isFinite(adoption) || adoption < 0 || adoption > 100) {
-        details.open = true;
-        alertUser(`Enter an adoption rate between 0 and 100 for ${topic}.`, "warning");
-        return;
-      }
-      if (!answers.next_action) {
-        details.open = true;
-        alertUser(`Choose what should happen next for ${topic}.`, "warning");
-        return;
-      }
-      responses.push({ topic, answers });
+    const container = $("[data-followup-questionnaires]");
+    const topics = JSON.parse(container.dataset.topics || "[]");
+    const { answers, firstMissing } = answersForSurvey(container);
+    if (firstMissing) {
+      firstMissing.closest("details")?.setAttribute("open", "");
+      firstMissing.scrollIntoView({ behavior: "smooth", block: "center" });
+      alertUser(`Complete required item ${$("small", firstMissing)?.textContent || "in the survey"}.`, "warning");
+      return;
     }
-    if (!responses.length) {
-      alertUser("Complete at least one follow-up questionnaire.", "warning");
+    if ((answers.i1_helpful || []).length > 2) {
+      alertUser("Select no more than two answers for I1.", "warning");
+      return;
+    }
+    if (answers.b10_1_damage !== "" && answers.b10_2_severe !== "" && Number(answers.b10_2_severe) > Number(answers.b10_1_damage)) {
+      alertUser("B10.2 cannot be greater than the number of damaged plants in B10.1.", "warning");
+      return;
+    }
+    if (answers.f2_1_total !== undefined && answers.f2_1_total !== "" && Number(answers.f2_1_unhealthy) > Number(answers.f2_1_total)) {
+      alertUser("F2.1 cannot be greater than the total number of birds inspected.", "warning");
       return;
     }
     await queueSubmission({
@@ -553,11 +628,12 @@
       cbf: currentCbf,
       eventDate: form.elements.eventDate.value,
       recordId: selectedFarmerId,
-      responses,
+      topics,
+      answers,
       geoLocation: capturedLocation ? { ...capturedLocation } : null,
       createdAt: new Date().toISOString(),
       status: "pending",
-      summary: `${farmer.name} · ${responses.length} ${responses.length === 1 ? "topic" : "topics"}`,
+      summary: `${farmer.name} · ${topics.length} ${topics.length === 1 ? "training type" : "training types"}`,
     });
     selectedFarmerId = null;
     capturedLocation = null;

@@ -111,12 +111,13 @@ def _ae_match_score(uploaded_raw: dict[str, Any], existing_raw: dict[str, Any]) 
     return exact_training_dates, characteristic_matches
 
 
-def _select_ae_match(uploaded_raw: dict[str, Any], candidate_ids: set[int], existing_by_id: dict[int, dict[str, Any]], uploaded_row: int | None = None) -> tuple[int | None, bool]:
+def _select_ae_match(uploaded_raw: dict[str, Any], candidate_ids: set[int], existing_by_id: dict[int, dict[str, Any]], uploaded_row: int | None = None, merged_aliases: dict[int, list[dict[str, Any]]] | None = None) -> tuple[int | None, bool]:
     scored = []
     for candidate_id in candidate_ids:
-        score = _ae_match_score(uploaded_raw, existing_by_id[candidate_id]["raw"])
-        if score is not None:
-            scored.append((score, candidate_id))
+        variants = [existing_by_id[candidate_id]["raw"], *(merged_aliases or {}).get(candidate_id, [])]
+        variant_scores = [score for variant in variants if (score := _ae_match_score(uploaded_raw, variant)) is not None]
+        if variant_scores:
+            scored.append((max(variant_scores), candidate_id))
     if not scored:
         return None, False
     scored.sort(reverse=True)
@@ -156,15 +157,31 @@ def append_farmer_database(connection, file: BinaryIO, filename: str = "") -> di
                        if clean(cbf) and clean(group)}
         existing_by_id = {}
         identity_matches: dict[tuple[str, ...], set[int]] = {}
-        for existing_row in connection.execute(
-            """SELECT r.id, r.source_row, r.name, r.sex, r.phone, r.village, r.group_name, r.raw_data, f.uid
+        existing_rows = connection.execute(
+            """SELECT r.id, r.source_row, r.name, r.sex, r.phone, r.village, r.group_name, r.raw_data,
+                      r.archived_at, f.uid
                FROM records r JOIN farmers f ON f.id=r.farmer_id WHERE r.dataset='training'"""
-        ).fetchall():
+        ).fetchall()
+        redirects = {row[0]: row[1] for row in connection.execute(
+            """SELECT CASE WHEN dr.survivor_record_id=dr.record_a_id THEN dr.record_b_id ELSE dr.record_a_id END,
+                      dr.survivor_record_id FROM duplicate_reviews dr WHERE dr.status='merged'"""
+        ).fetchall()}
+        prepared_rows = []
+        for existing_row in existing_rows:
             existing = dict(existing_row)
             existing["raw"] = json.loads(existing.pop("raw_data"))
-            existing_by_id[existing["id"]] = existing
+            prepared_rows.append(existing)
+            if not existing["archived_at"]:
+                existing_by_id[existing["id"]] = existing
+        merged_aliases: dict[int, list[dict[str, Any]]] = {}
+        for existing in prepared_rows:
+            target_id = redirects.get(existing["id"], existing["id"])
+            if target_id not in existing_by_id:
+                continue
             for identity in _identity_keys(existing):
-                identity_matches.setdefault(identity, set()).add(existing["id"])
+                identity_matches.setdefault(identity, set()).add(target_id)
+            if target_id != existing["id"]:
+                merged_aliases.setdefault(target_id, []).append(existing["raw"])
         next_source_row = connection.execute(
             "SELECT COALESCE(MAX(source_row), 2) + 1 FROM records WHERE dataset='training'"
         ).fetchone()[0]
@@ -191,7 +208,9 @@ def append_farmer_database(connection, file: BinaryIO, filename: str = "") -> di
             profile = next(identity for identity in identities if identity[0] == "profile")
             matching_ids = set(phone_matches) | set(identity_matches.get(profile, set()))
             if matching_ids:
-                matched_id, is_ambiguous = _select_ae_match(raw, matching_ids, existing_by_id, row_number)
+                matched_id, is_ambiguous = _select_ae_match(
+                    raw, matching_ids, existing_by_id, row_number, merged_aliases
+                )
                 if is_ambiguous or matched_id is None:
                     ambiguous += 1
                     continue
@@ -258,10 +277,21 @@ def append_care_database(connection, file: BinaryIO, filename: str = "") -> dict
         headers, _fields, module_fields = care_field_schema(sheet)
         attendance_fields = {field for fields in module_fields.values() for field in fields}
         existing_by_id, identity_matches = {}, {}
-        for row in connection.execute("""SELECT r.id, r.name, r.sex, r.phone, r.village, r.group_name, r.raw_data, f.uid
-                                       FROM records r JOIN farmers f ON f.id=r.farmer_id WHERE r.dataset='care'""").fetchall():
-            existing = dict(row); existing["raw"] = json.loads(existing.pop("raw_data")); existing_by_id[existing["id"]] = existing
-            for identity in _identity_keys(existing): identity_matches.setdefault(identity, set()).add(existing["id"])
+        existing_rows = connection.execute("""SELECT r.id, r.name, r.sex, r.phone, r.village, r.group_name,
+                                               r.raw_data, r.archived_at, f.uid
+                                       FROM records r JOIN farmers f ON f.id=r.farmer_id WHERE r.dataset='care'""").fetchall()
+        redirects = {row[0]: row[1] for row in connection.execute(
+            """SELECT CASE WHEN dr.survivor_record_id=dr.record_a_id THEN dr.record_b_id ELSE dr.record_a_id END,
+                      dr.survivor_record_id FROM duplicate_reviews dr WHERE dr.status='merged'"""
+        ).fetchall()}
+        prepared_rows = []
+        for row in existing_rows:
+            existing = dict(row); existing["raw"] = json.loads(existing.pop("raw_data")); prepared_rows.append(existing)
+            if not existing["archived_at"]: existing_by_id[existing["id"]] = existing
+        for existing in prepared_rows:
+            target_id = redirects.get(existing["id"], existing["id"])
+            if target_id not in existing_by_id: continue
+            for identity in _identity_keys(existing): identity_matches.setdefault(identity, set()).add(target_id)
         next_source_row = connection.execute("SELECT COALESCE(MAX(source_row), 3) + 1 FROM records WHERE dataset='care'").fetchone()[0]
         uploaded_identities, new_rows, attendance_updates = set(), [], []
         unchanged = duplicates = ambiguous = 0

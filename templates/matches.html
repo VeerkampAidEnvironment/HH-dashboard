@@ -2,6 +2,7 @@
 {% block title %}Identity review - ARFSA{% endblock %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">Cross-dataset identity</p><h1>Beneficiary match review</h1><p class="lead">Compare complete AE and FH source profiles before assigning the same stable beneficiary ID.</p></div></div>
+<nav class="dataset-tabs identity-review-tabs" aria-label="Identity review type"><a class="active" href="{{ url_for('matches') }}">AE / FH matches</a><a href="{{ url_for('matches', view='duplicates') }}">Duplicate names</a></nav>
 <div class="notice info">Every populated source field is available inside each comparison. Conflicting phone numbers remain excluded from candidate generation.</div>
 <nav class="dataset-tabs" aria-label="Match status">{% for value, label in [('pending','Needs review'),('confirmed','Confirmed'),('rejected','Rejected'),('all','All')] %}<a class="{{ 'active' if match_status == value }}" href="{{ url_for('matches', status=value) }}">{{ label }}</a>{% endfor %}</nav>
 <p class="muted match-count">{{ total }} matches · Page {{ page }} of {{ pages }}</p>

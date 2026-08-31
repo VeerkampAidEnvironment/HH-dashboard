@@ -265,6 +265,9 @@ class ApplicationTest(unittest.TestCase):
         self.assertIn(b"training-heatmap", response.data)
         self.assertIn(b"data-pathway-sort", response.data)
         self.assertIn(b'data-pathway-sort-key="share"', response.data)
+        self.assertIn(b"Programme momentum", response.data)
+        self.assertIn(b"First recorded training", response.data)
+        self.assertIn(b"New confirmed adoptions", response.data)
 
         with self.app.app_context():
             from app import build_dashboard_data
@@ -280,6 +283,19 @@ class ApplicationTest(unittest.TestCase):
             self.assertEqual(pathways["initial_combination_count"], 12)
             self.assertEqual(sum(item["count"] for item in pathways["distribution"]), pathways["total"])
             self.assertEqual(pathways["total"], data["summary"]["total_records"])
+            cumulative_counts = [item["cumulative_count"] for item in pathways["distribution"]]
+            self.assertEqual(cumulative_counts[0], pathways["total"])
+            self.assertEqual(cumulative_counts, sorted(cumulative_counts, reverse=True))
+            momentum = data["momentum_chart"]
+            self.assertLessEqual(len(momentum["months"]), 12)
+            self.assertEqual(
+                [series["key"] for series in momentum["series"]],
+                ["active", "first_training", "training_attendances", "followups", "adoptions"],
+            )
+            self.assertTrue(all(
+                len(series["values"]) == len(momentum["months"])
+                for series in momentum["series"]
+            ))
 
     def test_dashboard_cbf_filter_accepts_multiple_values(self):
         with self.app.app_context():
@@ -863,9 +879,9 @@ class ApplicationTest(unittest.TestCase):
                 "event_date": date.today().isoformat(), "record_id": str(due["id"]),
             },
         )
-        self.assertIn(b"Follow-up questionnaire", questionnaire_page.data)
-        self.assertIn(b"Adoption rate", questionnaire_page.data)
-        self.assertIn(b"Centralized training (CT) needed", questionnaire_page.data)
+        self.assertIn(b"CBF follow-up monitoring", questionnaire_page.data)
+        self.assertIn(b"Calculated on save", questionnaire_page.data)
+        self.assertIn(b"Trainings received", questionnaire_page.data)
         response = self.client.post(
             "/data-entry",
             data={
@@ -900,6 +916,112 @@ class ApplicationTest(unittest.TestCase):
                 (due["id"], due["topic"]),
             ).fetchone()[0]
             self.assertEqual(status, "WAIT")
+
+    def test_adaptive_followup_calculates_and_stores_training_result(self):
+        from followup_survey import PIP, SURVEY_VERSION
+
+        with self.app.app_context():
+            from db import get_db
+
+            due = get_db().execute(
+                """SELECT r.id, r.cbf_name FROM records r
+                   JOIN topic_statuses ts ON ts.record_id=r.id
+                   WHERE r.dataset='training' AND r.archived_at IS NULL
+                   AND TRIM(r.cbf_name)<>'' AND ts.status_code='FU' AND ts.topic=? LIMIT 1""",
+                (PIP,),
+            ).fetchone()
+        self.assertIsNotNone(due)
+        response = self.client.post(
+            "/data-entry",
+            data={
+                "csrf_token": self.csrf(), "cbf": due["cbf_name"], "mode": "followup",
+                "event_date": date.today().isoformat(), "record_id": str(due["id"]),
+                "survey_version": SURVEY_VERSION, "topic_count": "1", "topic__0": PIP,
+                "survey_answer__c1_map_drawn": "no",
+                "survey_answer__h1_radio": "no",
+                "survey_answer__i1_helpful": "Household Resource Mapping",
+                "survey_answer__i2_change": "No noticeable change yet",
+                "survey_answer__i3_improve": "More frequent follow-up visits",
+                "survey_answer__consent": "yes",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        with self.app.app_context():
+            from db import get_db
+
+            connection = get_db()
+            stored = connection.execute(
+                """SELECT fr.adoption_rate, fr.result_status, fr.critical_failed,
+                          fr.next_action, fa.household_outcome, fa.consent
+                   FROM followup_responses fr
+                   JOIN field_event_entries fee ON fee.id=fr.event_entry_id
+                   JOIN followup_assessments fa ON fa.event_id=fee.event_id
+                   WHERE fr.record_id=? AND fr.questionnaire_version=?
+                   ORDER BY fr.id DESC LIMIT 1""",
+                (due["id"], SURVEY_VERSION),
+            ).fetchone()
+            self.assertEqual(stored["adoption_rate"], 0)
+            self.assertEqual(stored["result_status"], "Failed")
+            self.assertEqual(stored["critical_failed"], 1)
+            self.assertEqual(stored["next_action"], "followup_1")
+            self.assertIsNone(stored["household_outcome"])
+            self.assertEqual(stored["consent"], 1)
+
+        detail = self.client.get(f"/records/{due['id']}")
+        self.assertIn(b"Adoption outcomes", detail.data)
+        self.assertIn(b"Training-type results", detail.data)
+
+    def test_adaptive_section_b_persists_package_breadth_depth_and_outcome(self):
+        from followup_survey import SECTION_B_TOPICS, SURVEY_VERSION
+        from tests.test_followup_survey import good_section_b_answers
+
+        with self.app.app_context():
+            from db import get_db
+
+            placeholders = ",".join("?" for _ in SECTION_B_TOPICS)
+            due = get_db().execute(
+                f"""SELECT r.id, r.cbf_name, ts.topic FROM records r
+                    JOIN topic_statuses ts ON ts.record_id=r.id
+                    WHERE r.dataset='training' AND r.archived_at IS NULL
+                    AND TRIM(r.cbf_name)<>'' AND ts.status_code='FU'
+                    AND ts.topic IN ({placeholders}) LIMIT 1""",
+                tuple(SECTION_B_TOPICS),
+            ).fetchone()
+        self.assertIsNotNone(due)
+        data = {
+            "csrf_token": self.csrf(), "cbf": due["cbf_name"], "mode": "followup",
+            "event_date": date.today().isoformat(), "record_id": str(due["id"]),
+            "survey_version": SURVEY_VERSION, "topic_count": "1", "topic__0": due["topic"],
+            "survey_answer__h1_radio": "no",
+            "survey_answer__i1_helpful": "Regenerative / Sustainable Agriculture",
+            "survey_answer__i2_change": "More harvest / yield",
+            "survey_answer__i3_improve": "Nothing - satisfied as is",
+            "survey_answer__consent": "yes",
+        }
+        for question_id, value in good_section_b_answers().items():
+            data[f"survey_answer__{question_id}"] = value
+        response = self.client.post("/data-entry", data=data)
+        self.assertEqual(response.status_code, 302, response.data.decode("utf-8", errors="replace")[:3000])
+        with self.app.app_context():
+            from db import get_db
+
+            connection = get_db()
+            assessment = connection.execute(
+                """SELECT * FROM followup_assessments
+                   WHERE record_id=? AND questionnaire_version=? ORDER BY id DESC LIMIT 1""",
+                (due["id"], SURVEY_VERSION),
+            ).fetchone()
+            self.assertEqual(assessment["household_outcome"], "A")
+            self.assertEqual(assessment["rvo_passed"], 1)
+            self.assertEqual(assessment["project_passed"], 1)
+            self.assertEqual(assessment["breadth_achieved"], 5)
+            self.assertEqual(assessment["breadth_total"], 5)
+            self.assertAlmostEqual(assessment["depth"], 94.7)
+            package_count = connection.execute(
+                "SELECT COUNT(*) FROM followup_package_results WHERE assessment_id=?",
+                (assessment["id"],),
+            ).fetchone()[0]
+            self.assertEqual(package_count, 5)
 
     def test_followup_can_request_ct_and_new_ct_restarts_waiting_period(self):
         with self.app.app_context():
@@ -1003,6 +1125,164 @@ class ApplicationTest(unittest.TestCase):
         self.assertIn(b"Open full record", response.data)
         self.assertIn(b"AE fields", response.data)
         self.assertIn(b"FH fields", response.data)
+
+    def test_duplicate_identity_review_merges_training_and_selected_profile_values(self):
+        from training import TRAINING_TOPICS
+
+        created_record_ids = []
+        survivor_farmer_id = None
+        with self.app.app_context():
+            from app import canonical_fields, duplicate_group_conflicts, insert_application_record, rebuild_statuses
+            from db import get_db, utc_now
+
+            connection = get_db()
+            raws = [
+                {"Name": "AAAA Duplicate Merge Test", "Sex": "F", "Age group": "A",
+                 "Parish": "Parish A", "GROUP NAME": "Group A",
+                 f"Training 1 - {TRAINING_TOPICS[0]}": "2026-01-10"},
+                {"Name": "AAAA Duplicate Merge Test", "Sex": "F", "Age group": "A",
+                 "Parish": "Parish B", "GROUP NAME": "Group A",
+                 f"Training 1 - {TRAINING_TOPICS[1]}": "2026-02-10"},
+            ]
+            cbfs = ["CBF A", "CBF B"]
+            for raw, cbf in zip(raws, cbfs):
+                cursor = connection.execute("INSERT INTO farmers(uid, created_at) VALUES(NULL, ?)", (utc_now(),))
+                farmer_id = cursor.lastrowid
+                connection.execute("UPDATE farmers SET uid=? WHERE id=?", (f"ARF-{farmer_id:06d}", farmer_id))
+                core = canonical_fields(connection, "training", raw, cbf)
+                record_id = insert_application_record(connection, farmer_id, "training", raw, core)
+                rebuild_statuses(connection, record_id, "training", raw)
+                created_record_ids.append(record_id)
+            connection.commit()
+            rows = connection.execute(
+                """SELECT r.*, f.uid FROM records r JOIN farmers f ON f.id=r.farmer_id
+                   WHERE r.id IN (?, ?) ORDER BY r.id""", created_record_ids
+            ).fetchall()
+            conflicts = duplicate_group_conflicts(connection, rows)
+
+        page = self.client.get("/matches?view=duplicates&dataset=training&q=AAAA+Duplicate+Merge+Test")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b"AAAA Duplicate Merge Test", page.data)
+        self.assertIn(b"Merge selected records", page.data)
+
+        form = {
+            "csrf_token": self.csrf(), "survivor_id": str(created_record_ids[0]),
+            "record_ids": [str(value) for value in created_record_ids],
+            "merge_ids": [str(value) for value in created_record_ids],
+        }
+        for index, conflict in enumerate(conflicts):
+            form[f"choice__{index}"] = str(
+                created_record_ids[1] if conflict["key"] == "__cbf_name__" else created_record_ids[0]
+            )
+        response = self.client.post(
+            "/duplicates/group/merge", data=form
+        )
+        self.assertEqual(response.status_code, 302)
+
+        with self.app.app_context():
+            from db import get_db
+
+            connection = get_db()
+            survivor = connection.execute("SELECT * FROM records WHERE id=?", (created_record_ids[0],)).fetchone()
+            donor = connection.execute("SELECT * FROM records WHERE id=?", (created_record_ids[1],)).fetchone()
+            merged_raw = json.loads(survivor["raw_data"])
+            survivor_farmer_id = survivor["farmer_id"]
+            self.assertEqual(survivor["parish"], "Parish A")
+            self.assertEqual(survivor["cbf_name"], "CBF B")
+            self.assertEqual(merged_raw[f"Training 1 - {TRAINING_TOPICS[0]}"], "2026-01-10")
+            self.assertEqual(merged_raw[f"Training 1 - {TRAINING_TOPICS[1]}"], "2026-02-10")
+            self.assertIsNotNone(donor["archived_at"])
+            self.assertEqual(donor["farmer_id"], survivor["farmer_id"])
+            self.assertEqual(connection.execute(
+                "SELECT status FROM duplicate_reviews WHERE record_a_id=? AND record_b_id=?",
+                created_record_ids,
+            ).fetchone()[0], "merged")
+            self.assertIsNotNone(connection.execute(
+                "SELECT 1 FROM audit_log WHERE action='merge_duplicate_group' AND entity_id=?",
+                (created_record_ids[0],),
+            ).fetchone())
+
+            connection.execute("DELETE FROM duplicate_reviews WHERE record_a_id=? AND record_b_id=?", created_record_ids)
+            connection.execute("DELETE FROM audit_log WHERE action='merge_duplicate_group' AND entity_id=?", (created_record_ids[0],))
+            connection.execute("DELETE FROM records WHERE id IN (?, ?)", created_record_ids)
+            connection.execute("DELETE FROM farmers WHERE id=?", (survivor_farmer_id,))
+            connection.commit()
+
+    def test_duplicate_names_are_grouped_and_sorted_by_similarity_without_farmer_group(self):
+        created_record_ids = []
+        created_farmer_ids = []
+        with self.app.app_context():
+            from app import canonical_fields, insert_application_record, rebuild_statuses
+            from db import get_db, utc_now
+
+            connection = get_db()
+            profiles = [
+                {"Name": "ZZZZ High Similarity Test", "Sex": "F", "Age group": "Adult",
+                 "Age": "31", "Phone Number": "0777111222", "Village": "Same Village",
+                 "Parish": "Same Parish", "Sub County": "Same Subcounty", "DISTRICT": "Same District",
+                 "GROUP NAME": group, "Training 1 - Household Resource Mapping (PIP)": "2026-03-01"}
+                for group in ("Group One", "Group Two", "Group Three")
+            ] + [
+                {"Name": "AAAA Low Similarity Test", "Sex": "F", "Age group": "Youth",
+                 "Age": "19", "Phone Number": "0700000001", "Village": "Village One",
+                 "Parish": "Parish One", "Sub County": "Subcounty One", "DISTRICT": "District One"},
+                {"Name": "AAAA Low Similarity Test", "Sex": "M", "Age group": "Adult",
+                 "Age": "48", "Phone Number": "0700000002", "Village": "Village Two",
+                 "Parish": "Parish Two", "Sub County": "Subcounty Two", "DISTRICT": "District Two"},
+            ]
+            for raw in profiles:
+                cursor = connection.execute("INSERT INTO farmers(uid, created_at) VALUES(NULL, ?)", (utc_now(),))
+                farmer_id = cursor.lastrowid
+                created_farmer_ids.append(farmer_id)
+                connection.execute("UPDATE farmers SET uid=? WHERE id=?", (f"ARF-{farmer_id:06d}", farmer_id))
+                core = canonical_fields(connection, "training", raw, "Same CBF")
+                record_id = insert_application_record(connection, farmer_id, "training", raw, core)
+                rebuild_statuses(connection, record_id, "training", raw)
+                created_record_ids.append(record_id)
+            connection.commit()
+
+        page = self.client.get("/matches?view=duplicates&dataset=training&q=Similarity+Test")
+        self.assertEqual(page.status_code, 200)
+        html = page.data.decode("utf-8")
+        self.assertEqual(html.count('data-duplicate-name="ZZZZ High Similarity Test"'), 1)
+        self.assertIn("3 records with this name", html)
+        self.assertLess(html.index("ZZZZ High Similarity Test"), html.index("AAAA Low Similarity Test"))
+        self.assertIn("Best match 100%", html)
+
+        with self.app.app_context():
+            from db import get_db
+
+            connection = get_db()
+            placeholders = ",".join("?" for _ in created_record_ids)
+            connection.execute(f"DELETE FROM records WHERE id IN ({placeholders})", created_record_ids)
+            placeholders = ",".join("?" for _ in created_farmer_ids)
+            connection.execute(f"DELETE FROM farmers WHERE id IN ({placeholders})", created_farmer_ids)
+            connection.commit()
+
+    def test_duplicate_similarity_rewards_exact_training_overlap_and_penalizes_different_dates(self):
+        from app import duplicate_similarity
+        from training import TRAINING_TOPICS
+
+        topic = TRAINING_TOPICS[0]
+        base = {
+            "dataset": "training", "phone": "0777000111", "sex": "F", "age_group": "Adult",
+            "age_value": "32", "village": "Village", "parish": "Parish",
+            "subcounty": "Subcounty", "district": "District", "cbf_name": "CBF",
+        }
+        first = {**base, "raw_data": json.dumps({f"Training 1 - {topic}": "2026-01-10"})}
+        exact = {**base, "raw_data": json.dumps({
+            f"Training 1 - {topic}": "2026-01-10",
+            f"Training 2 - {topic}": "2026-02-10",
+        })}
+        different = {**base, "raw_data": json.dumps({f"Training 1 - {topic}": "2026-03-10"})}
+
+        exact_score, exact_reasons, exact_warnings = duplicate_similarity(first, exact)
+        different_score, different_reasons, different_warnings = duplicate_similarity(first, different)
+        self.assertGreater(exact_score, different_score)
+        self.assertIn("Same training on exact date", exact_reasons)
+        self.assertFalse(exact_warnings)
+        self.assertNotIn("Same training on exact date", different_reasons)
+        self.assertTrue(any("different dates" in warning for warning in different_warnings))
 
     def test_manual_confirmation_populates_interaction_dashboard(self):
         with self.app.app_context():

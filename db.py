@@ -96,6 +96,16 @@ CREATE TABLE IF NOT EXISTS matches (
     UNIQUE(training_record_id, care_record_id)
 );
 
+CREATE TABLE IF NOT EXISTS duplicate_reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    record_a_id INTEGER NOT NULL REFERENCES records(id),
+    record_b_id INTEGER NOT NULL REFERENCES records(id),
+    survivor_record_id INTEGER REFERENCES records(id),
+    status TEXT NOT NULL CHECK(status IN ('merged', 'rejected')),
+    reviewed_at TEXT NOT NULL,
+    UNIQUE(record_a_id, record_b_id)
+);
+
 CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     occurred_at TEXT NOT NULL,
@@ -146,15 +156,50 @@ CREATE TABLE IF NOT EXISTS followup_responses (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS followup_assessments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id INTEGER NOT NULL UNIQUE REFERENCES field_events(id) ON DELETE CASCADE,
+    record_id INTEGER NOT NULL REFERENCES records(id),
+    questionnaire_version TEXT NOT NULL,
+    rvo_passed INTEGER,
+    rvo_practice_count INTEGER,
+    project_passed INTEGER,
+    household_outcome TEXT,
+    breadth_achieved INTEGER,
+    breadth_total INTEGER,
+    depth REAL,
+    profile_snapshot TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    consent INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS followup_package_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    assessment_id INTEGER NOT NULL REFERENCES followup_assessments(id) ON DELETE CASCADE,
+    package_key TEXT NOT NULL,
+    package_title TEXT NOT NULL,
+    points_earned REAL NOT NULL,
+    points_available REAL NOT NULL,
+    score REAL NOT NULL,
+    result_status TEXT NOT NULL,
+    critical_failed INTEGER NOT NULL DEFAULT 0,
+    recommendation TEXT,
+    UNIQUE(assessment_id, package_key)
+);
+
 CREATE INDEX IF NOT EXISTS idx_records_dataset ON records(dataset, archived_at);
 CREATE INDEX IF NOT EXISTS idx_records_farmer ON records(farmer_id);
 CREATE INDEX IF NOT EXISTS idx_records_cbf ON records(cbf_name);
 CREATE INDEX IF NOT EXISTS idx_records_filters ON records(sex, age_group, record_status);
 CREATE INDEX IF NOT EXISTS idx_topic_record ON topic_statuses(record_id);
 CREATE INDEX IF NOT EXISTS idx_topic_status ON topic_statuses(status_code);
+CREATE INDEX IF NOT EXISTS idx_duplicate_reviews_status ON duplicate_reviews(status);
 CREATE INDEX IF NOT EXISTS idx_field_events_cbf ON field_events(cbf_name, event_date);
 CREATE INDEX IF NOT EXISTS idx_field_entries_event ON field_event_entries(event_id);
 CREATE INDEX IF NOT EXISTS idx_followup_responses_record ON followup_responses(record_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_followup_assessments_record ON followup_assessments(record_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_followup_packages_assessment ON followup_package_results(assessment_id);
 CREATE INDEX IF NOT EXISTS idx_users_active ON users(is_active, username);
 """
 
@@ -276,6 +321,19 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
     for column_name, column_type in field_event_migrations.items():
         if column_name not in field_event_columns:
             connection.execute(f"ALTER TABLE field_events ADD COLUMN {column_name} {column_type}")
+    followup_columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(followup_responses)").fetchall()
+    }
+    followup_migrations = {
+        "result_status": "TEXT",
+        "recommendation": "TEXT",
+        "critical_failed": "INTEGER NOT NULL DEFAULT 0",
+        "points_earned": "REAL",
+        "points_available": "REAL",
+    }
+    for column_name, column_type in followup_migrations.items():
+        if column_name not in followup_columns:
+            connection.execute(f"ALTER TABLE followup_responses ADD COLUMN {column_name} {column_type}")
     connection.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_field_events_client_submission "
         "ON field_events(client_submission_id) WHERE client_submission_id IS NOT NULL"

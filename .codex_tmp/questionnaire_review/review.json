@@ -1,0 +1,2506 @@
+{
+  "source": "C:\\Users\\sem\\Downloads\\260827_HH_CBF_FollowUp_Questionnaire_Final.docx",
+  "paragraph_count": 87,
+  "table_count": 11,
+  "inline_shape_count": 0,
+  "sections": [
+    {
+      "section": 1,
+      "page_width": 10692130,
+      "page_height": 7560310,
+      "top_margin": 444500,
+      "bottom_margin": 444500,
+      "left_margin": 444500,
+      "right_margin": 444500,
+      "header": "",
+      "footer": ""
+    }
+  ],
+  "blocks": [
+    {
+      "kind": "paragraph",
+      "style": "Heading 1",
+      "visible_text": "Harvesting Health - CBF Follow-Up Monitoring Tool",
+      "all_current_text": "Harvesting Health - CBF Follow-Up Monitoring Tool",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Follow-up monitoring of adoption rates / status of project farmers",
+      "all_current_text": "Follow-up monitoring of adoption rates / status of project farmers",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Heading 2",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Heading 2",
+      "visible_text": "Scoring matrix",
+      "all_current_text": "Scoring matrix",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "table",
+      "style": "Table Grid",
+      "rows": [
+        [
+          "Pass",
+          "2 points "
+        ],
+        [
+          "Neutral",
+          "1 point "
+        ],
+        [
+          "Fail",
+          "0 Points"
+        ],
+        [
+          "N/A",
+          "removed from the denominator"
+        ],
+        [
+          "Critical fail",
+          "the whole package or section fails outright."
+        ]
+      ]
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Package score = points earned ÷ points available × 100.",
+      "all_current_text": "Package score = points earned ÷ points available × 100.",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Heading 2",
+      "visible_text": "Instructions",
+      "all_current_text": "Instructions",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "List Paragraph",
+      "visible_text": "Walking interview: Section B is conducted as a walking interview - the CBF asks questions while observing the plot directly. Observation is the control: where a question can be answered by what the farmer says or by what the CBF sees, the physical observation takes precedence.",
+      "all_current_text": "Walking interview: Section B is conducted as a walking interview - the CBF asks questions while observing the plot directly. Observation is the control: where a question can be answered by what the farmer says or by what the CBF sees, the physical observation takes precedence.",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "List Paragraph",
+      "visible_text": "Critical questions act as a switch. If triggered, the whole package fails outright (0%), regardless of the point total. Example: 14/16 points in Soil Cover & Fertility = 88% only if the package’s critical question(s) passed. If not, the result is failed, even though the points suggest a strong score.",
+      "all_current_text": "Critical questions act as a switch. If triggered, the whole package fails outright (0%), regardless of the point total. Example: 14/16 points in Soil Cover & Fertility = 88% only if the package’s critical question(s) passed. If not, the result is failed, even though the points suggest a strong score.",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Heading 2",
+      "visible_text": "Outcome and calculations:",
+      "all_current_text": "Outcome and calculations:",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "List Paragraph",
+      "visible_text": "Step 1 - RVO gate: Passes if at least two of the following practices pass :",
+      "all_current_text": "Step 1 - RVO gate: Passes if at least two of the following practices pass :",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "table",
+      "style": "Grid Table Light",
+      "rows": [
+        [
+          "#",
+          "Practice",
+          "Counted when"
+        ],
+        [
+          "1",
+          "Mulching / soil cover",
+          "B2 = pass"
+        ],
+        [
+          "2",
+          "Soil & water conservation structures",
+          "B4 = pass"
+        ],
+        [
+          "3",
+          "Conservation / minimum tillage",
+          "B5 = pass/neutral"
+        ],
+        [
+          "4",
+          "Intercropping",
+          "B7 = pass"
+        ],
+        [
+          "5",
+          "Agroforestry",
+          "B8 = pass"
+        ],
+        [
+          "6",
+          "Crop rotation",
+          "B9 = a, named crop differs from current"
+        ],
+        [
+          "7",
+          "Organic manure / bio-fertilizer",
+          "B11 = pass"
+        ],
+        [
+          "8",
+          "Integrated pest management",
+          "B10 = a or b"
+        ]
+      ]
+    },
+    {
+      "kind": "paragraph",
+      "style": "List Paragraph",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Step 2 - Project standard: Each package in B and later section gets one result ",
+      "all_current_text": "Step 2 - Project standard: Each package in B and later section gets one result ",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "List Paragraph",
+      "visible_text": "Achieved: No critical fail and score 50% or more",
+      "all_current_text": "Achieved: No critical fail and score 50% or more",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "List Paragraph",
+      "visible_text": "Partial: No critical fail and score below 50%",
+      "all_current_text": "Partial: No critical fail and score below 50%",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "List Paragraph",
+      "visible_text": "Failed: Any critical question triggered",
+      "all_current_text": "Failed: Any critical question triggered",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Step 3 - Combined household outcome",
+      "all_current_text": "Step 3 - Combined household outcome",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "table",
+      "style": "Grid Table Light",
+      "rows": [
+        [
+          "Outcome",
+          "RVO",
+          "Project",
+          "Condition",
+          "Action"
+        ],
+        [
+          "A - Strong adopter",
+          "✅",
+          "✅",
+          "≥2 packages Achieved, no package Partial or Failed",
+          "No training needed."
+        ],
+        [
+          "B - Compliant, gaps remain",
+          "✅",
+          "✅",
+          "≥2 packages Achieved, but ≥1 package Partial or Failed",
+          "Centralized training for each weak package. Follow-up to verify uptake."
+        ],
+        [
+          "C - RVO-Compliant ",
+          "✅",
+          "❌",
+          "≥2 practices observed, but <2 packages Achieved",
+          "Practices present but shallow. Centralized training for all weak packages. Short-interval follow-up."
+        ],
+        [
+          "D - Below both bars",
+          "❌",
+          "❌",
+          "<2 practices observed",
+          "Priority household. Full training package. Shortest follow-up interval."
+        ]
+      ]
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "\tStep 4 – recommend centralized trainings based on packages if partial or failed:",
+      "all_current_text": "Step 4 – recommend centralized trainings based on packages if partial or failed:",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "List Paragraph",
+      "visible_text": "Pest management: Bio-inputs",
+      "all_current_text": "Pest management: Bio-inputs",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "List Paragraph",
+      "visible_text": "Soil cover & fertility: Bio-inputs",
+      "all_current_text": "Soil cover & fertility: Bio-inputs",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "List Paragraph",
+      "visible_text": "Erosion & water structures: SWC",
+      "all_current_text": "Erosion & water structures: SWC",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "List Paragraph",
+      "visible_text": "Crop diversification: Regenerative/Sustainable Agriculture + Tree Planting & Agroforestry",
+      "all_current_text": "Crop diversification: Regenerative/Sustainable Agriculture + Tree Planting & Agroforestry",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "List Paragraph",
+      "visible_text": "Reduced disturbance: Regenerative/Sustainable Agriculture",
+      "all_current_text": "Reduced disturbance: Regenerative/Sustainable Agriculture",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Step 5 – Indicate follow-up’s: ",
+      "all_current_text": "Step 5 – Indicate follow-up’s: ",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "List Paragraph",
+      "visible_text": "1 month: Any critical fail in Section B, or RVO gate not met (<2 practices observed)",
+      "all_current_text": "1 month: Any critical fail in Section B, or RVO gate not met (<2 practices observed)",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "List Paragraph",
+      "visible_text": "3 months: No critical fail, but fewer than 2 packages Achieved, or any package Partial (<50%)",
+      "all_current_text": "3 months: No critical fail, but fewer than 2 packages Achieved, or any package Partial (<50%)",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "List Paragraph",
+      "visible_text": "6 months: All packages Achieved (≥50%), none Partial or Failed, but at least one package below 70%",
+      "all_current_text": "6 months: All packages Achieved (≥50%), none Partial or Failed, but at least one package below 70%",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "List Paragraph",
+      "visible_text": "No follow-up needed: All five packages Achieved at 70% or above, no critical fails",
+      "all_current_text": "No follow-up needed: All five packages Achieved at 70% or above, no critical fails",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Always show Breadth and Depth together. Depth is averaged only over surviving packages, so a household that failed four packages and passed one strong one can show a high Depth while not reaching the Breadth gate. Neither figure should be displayed without the other.",
+      "all_current_text": "Always show Breadth and Depth together. Depth is averaged only over surviving packages, so a household that failed four packages and passed one strong one can show a high Depth while not reaching the Breadth gate. Neither figure should be displayed without the other.",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Heading 2",
+      "visible_text": "Section B packages and training mapping",
+      "all_current_text": "Section B packages and training mapping",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "table",
+      "style": "Table Grid",
+      "rows": [
+        [
+          "Erosion & water structures",
+          "9 scored items\n18 points  "
+        ],
+        [
+          "Soil cover & fertility",
+          "11 items\n22 points  "
+        ],
+        [
+          "Crop diversification:",
+          "8 items\n16 points  "
+        ],
+        [
+          "Pest management",
+          "7 items\n14 points  "
+        ],
+        [
+          "Reduced disturbance",
+          "4 items\n8 points"
+        ]
+      ]
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "table",
+      "style": "Normal Table",
+      "rows": [
+        [
+          "No.",
+          "Question",
+          "Response options",
+          "Scoring",
+          "Package",
+          "Type"
+        ],
+        [
+          "SECTION A - Visit, Location & Household Profile",
+          "SECTION A - Visit, Location & Household Profile",
+          "SECTION A - Visit, Location & Household Profile",
+          "SECTION A - Visit, Location & Household Profile",
+          "SECTION A - Visit, Location & Household Profile",
+          "SECTION A - Visit, Location & Household Profile"
+        ],
+        [
+          "A1",
+          "Date of visit",
+          "Automatic",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "A2",
+          "Name of the data collector",
+          "Automatic",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "A3",
+          "Name of beneficiary",
+          "Select in the dashboard",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "A4",
+          "District",
+          "Automatic (check and edit)",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "A5",
+          "Sub-county / Division",
+          "Automatic (check and edit)",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "A6",
+          "Village / Cell",
+          "Automatic (check and edit)",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "A7",
+          "GPS location / polygon — start tracking",
+          "Automatic — button to start tracking",
+          "Not scored\nWhere a farmer owns several plots, track only the main plot or the one nearest the home",
+          "—",
+          ""
+        ],
+        [
+          "A8",
+          "Beneficiary profile (all automatic — check and edit)",
+          "A8.1 Type of beneficiary\nA8.2 Contact of the farmer\nA8.3 Gender\nA8.4 PWD\nA8.5 Age group\nA8.6 Farmer group membership",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "A9",
+          "Level of education completed",
+          "a) Not gone to school\nb) Pre-primary\nc) Primary\nd) Secondary O-level\ne) Secondary A-level\nf) Certificate\ng) Diploma\nh) Degree\ni) Other (specify)",
+          "Not scored — saved to database",
+          "—",
+          ""
+        ],
+        [
+          "A10",
+          "Number of people living in the household",
+          "Total:\nOf which male:\nOf which female:",
+          "Not scored — saved to database",
+          "—",
+          ""
+        ],
+        [
+          "A11",
+          "Which trainings did you receive?",
+          "a) Household Resource Mapping (PIP)\nb) Sustainable / Regenerative Agriculture\nc) Bio-inputs training\nd) Tree Planting and Agroforestry\ne) SWC\nf) Kitchen garden and vegetable growing\ng) Financial Literacy\nh) Poultry Mgt and Vaccination",
+          "Determines which sections open:\nb/c/d/e → Section B\na → Section C\nf → Section D\ng → Section E\nh → Section F",
+          "—",
+          "GATE"
+        ],
+        [
+          "SECTION B - Regenerative / Sustainable Farming Practices (farmers only; one continuous farm walk)",
+          "SECTION B - Regenerative / Sustainable Farming Practices (farmers only; one continuous farm walk)",
+          "SECTION B - Regenerative / Sustainable Farming Practices (farmers only; one continuous farm walk)",
+          "SECTION B - Regenerative / Sustainable Farming Practices (farmers only; one continuous farm walk)",
+          "SECTION B - Regenerative / Sustainable Farming Practices (farmers only; one continuous farm walk)",
+          "SECTION B - Regenerative / Sustainable Farming Practices (farmers only; one continuous farm walk)"
+        ],
+        [
+          "B1",
+          "Walking the plot, what crops / species do you see planted?",
+          "a) Dark green leafy vegetables (sukuma wiki, black nightshade, amaranth/dodo, spider plant)\nb) Other vegetables (cabbage, carrots, eggplant, onions, tomatoes)\nc) Beans & pulses (beans, cowpeas, groundnuts)\nd) Roots & tubers (cassava, potato)\ne) Cereals / grains (maize, millet, rice, sorghum)\nf) Bananas / plantain\ng) Fruit\nh) Coffee\ni) Other cash crops",
+          "Passes if more than 2 food groups present\nh and i do not count toward the total",
+          "Crop diversification",
+          "CRITICAL + GATE"
+        ],
+        [
+          "B2",
+          "What is mostly covering the soil surface between plants?",
+          "a) Bare soil\nb) Crop residue or mulch\nc) Living ground cover\nd) Other",
+          "b/c pass\na/d fail",
+          "Erosion + Soil cover + Crop diversification",
+          "GATE"
+        ],
+        [
+          "B2.1",
+          "[If B2 = b] What do you observe?",
+          "a) Full cover, at least 3 cm thick\nb) More than 80% cover, at least 1 cm of material where covered\nc) Scattered, above 50% covered\nd) Less than 50% covered",
+          "a/b pass\nc neutral\nd fail",
+          "Soil cover + Erosion",
+          ""
+        ],
+        [
+          "B2.1",
+          "[If B2 = c] What do you observe?",
+          "a) Dense, deliberate cover crop, little bare ground\nb) Cover present but patchy, or a mix of planted cover and volunteer growth\nc) Sparse, or mostly volunteer weeds rather than planted cover",
+          "a pass\nb neutral\nc fail",
+          "Soil cover + Erosion",
+          ""
+        ],
+        [
+          "B3",
+          "Observe if any of the following are visible",
+          "a) Rills (small channels) on the plot surface\nb) Gully (too wide or deep to step across)\nc) Plant or tree roots exposed above the soil surface\nd) Loose soil deposited at the base of a slope, plot edge, or against structures\ne) Bare compacted patches with no soil cover",
+          "Not point-scored.\nOVERRIDE: 2 or more severe features (see B3.1–B3.3) fails the Erosion package regardless of structures.",
+          "Erosion",
+          "GATE"
+        ],
+        [
+          "B3.1",
+          "[If B3 = a] What is the depth of the rills?",
+          "a) Ankle-height or less\nb) Deeper than an ankle",
+          "b = severe feature",
+          "Erosion",
+          ""
+        ],
+        [
+          "B3.2",
+          "[If B3 = c] What is the occurrence of exposed roots?",
+          "a) Isolated (1–2 plants)\nb) Widespread",
+          "b = severe feature",
+          "Erosion",
+          ""
+        ],
+        [
+          "B3.3",
+          "[If B3 = d] What is the occurrence of the loose soil?",
+          "a) Thin scatter\nb) Built-up ridge",
+          "b = severe feature",
+          "Erosion",
+          ""
+        ],
+        [
+          "B4",
+          "Are any of the following soil and water conservation structures visible?",
+          "a) Grass strips\nb) Trash lines\nc) Stone bunds\nd) Trenches\ne) Bench terracing\nf) None",
+          "a–e pass\nf fails the package",
+          "Erosion",
+          "CRITICAL + GATE"
+        ],
+        [
+          "B4.1",
+          "[If B4 = a–e] Do the structures run across the full width of the plot, or only part of it?",
+          "a) Full width\nb) Partial\nc) Single structure only",
+          "a pass\nb neutral\nc fail",
+          "Erosion",
+          ""
+        ],
+        [
+          "B4.2",
+          "[If B4 = a–e] Do the structures follow the contour of the land?",
+          "a) Yes\nb) No\nc) Unsure",
+          "a pass\nb/c fail",
+          "Erosion",
+          ""
+        ],
+        [
+          "B5",
+          "Looking at the soil surface, how was this plot prepared?",
+          "a) Fully tilled\nb) Minimally tilled (1–2 times in a year)\nc) Planting holes or strips\nd) Undisturbed between rows",
+          "a fails the package\nb neutral\nc/d pass",
+          "Reduced disturbance \n+ Erosion \n+ Soil cover",
+          "CRITICAL + GATE"
+        ],
+        [
+          "B5.1",
+          "[If B5 = b/c/d] Do you see old furrow or ridge marks from previous ploughing on this plot?",
+          "a) No old marks — consistent with the current method\nb) Old furrows visible (recent transition from ploughing)\nc) Plot newly opened, no previous cultivation to compare",
+          "a pass\nb neutral\nc N/A ",
+          "Reduced disturbance",
+          ""
+        ],
+        [
+          "B5.2",
+          "[If B5 = b/c/d] Is the preparation method used across the whole plot, or only part of it?",
+          "a) Whole plot\nb) Part of the plot only\nc) Varies across sections",
+          "a pass\nb/c fail",
+          "Reduced disturbance",
+          ""
+        ],
+        [
+          "B6",
+          "How do you typically manage weeds during the season?",
+          "a) Hand-pulling / spot-hoeing\nb) Full-bed hoeing, a few times a year\nc) Full-bed hoeing, frequent\nd) Herbicide",
+          "a pass\nb neutral\nc/d fail",
+          "Reduced disturbance",
+          ""
+        ],
+        [
+          "B7",
+          "How are the crops arranged on this plot?",
+          "a) Single crop, uniform rows\nb) Mixed crops interplanted\nc) Other",
+          "b pass\na/c fail",
+          "Crop diversification \n+ Pest management",
+          ""
+        ],
+        [
+          "B8",
+          "Are trees or shrubs within or bordering this plot?",
+          "a) Yes\nb) No",
+          "a pass\nb fail",
+          "Crop diversification \n+ Erosion \n+ Soil cover",
+          ""
+        ],
+        [
+          "B8.1",
+          "[If B8 = a] Is there anything planted directly next to or underneath the trees?",
+          "a) Yes\nb) No",
+          "a pass\nb neutral",
+          "Crop diversification \n+ Erosion \n+ Soil cover",
+          ""
+        ],
+        [
+          "B8.2",
+          "[If B8 = a] How are the trees arranged?",
+          "a) Boundary\nb) Compound\nc) Intercropping\nd) Woodlots\ne) Other",
+          "a/c/d pass\nb/e fail",
+          "Crop diversification \n+ Erosion",
+          ""
+        ],
+        [
+          "B9",
+          "Can you identify a previous crop from residue, stubble, or physical traces on this plot? (stakes or supports not used by the current crop; old ridges or spacing inconsistent with the current layout; banana stools, maize stalks, or perennial stumps between plantings)",
+          "a) Yes - CBF names the previous crop (free text) ______\nb) Traces visible, but the crop cannot be identified\nc) No traces of a previous crop",
+          "a pass - where the named crop differs from the current crop, otherwise neutral\nb neutral \nc fail\n",
+          "Crop diversification \n+ Pest management \n+ Soil cover",
+          ""
+        ],
+        [
+          "B9.1",
+          "[Ask the farmer] Was a different crop grown here last season?",
+          "a) Yes\nb) No\nc) Unsure",
+          "a pass\nb/c fail",
+          "Crop diversification \n+ Pest management \n+ Soil cover",
+          ""
+        ],
+        [
+          "B10",
+          "Do you see pest damage, or any pest management method in use?",
+          "a) Biological / manual method (predators, hand-picking, traps, bio-pesticides)\nb) Both — synthetic and biological / manual\nc) Synthetic pesticide only\nd) No evidence",
+          "a/b pass\nc/d fail the package",
+          "Pest management",
+          "CRITICAL + GATE"
+        ],
+        [
+          "B10.1",
+          "[If B10 = a/b] Walk a line across the plot and inspect 10 plants at even intervals. How many of the 10 show pest or disease damage?",
+          "Number: ___ / 10",
+          "0–2 pass\n3–5 neutral\n6+ fails the package",
+          "Pest management",
+          "CRITICAL"
+        ],
+        [
+          "B10.2",
+          "[If B10 = a/b] Of the damaged plants, how many have damage affecting more than half the leaves or the growing point?",
+          "Number: ___ / 10",
+          "0–1 pass\n2 neutral\n3+ fails the package",
+          "Pest management",
+          "CRITICAL"
+        ],
+        [
+          "B10.3",
+          "[If B10 = a/b] Since using bio-pesticide, has use of inorganic / chemical pesticide changed?",
+          "a) Increased\nb) Same\nc) Reduced\nd) Did not use inorganic / chemical pesticide before",
+          "b/c pass\na/d fail",
+          "Pest management",
+          ""
+        ],
+        [
+          "B11",
+          "Tick each soil fertility input with physical evidence on this plot or homestead",
+          "a) Manure or compost visible on the soil surface or in planting holes\nb) Compost heap or manure pile present on the homestead\nc) Bio-fertilizer preparation materials present (fermentation drums, plant material, containers)\nd) Empty synthetic fertilizer bags or containers present\ne) None of the above",
+          "a/b/c pass\nd alone fails\ne fails",
+          "Soil cover",
+          "GATE"
+        ],
+        [
+          "B11.1",
+          "[If B11 = a] Where on the plot is it applied?",
+          "a) Across the whole plot / all plants, evenly\nb) In planting holes or around individual plants only\nc) In one section of the plot only",
+          "a/b pass\nc neutral",
+          "Soil cover",
+          ""
+        ],
+        [
+          "B11.2",
+          "[If B11 = a or c] How is it applied?",
+          "a) Spread on the surface\nb) Dug or mixed into the soil\nc) Placed in planting holes\nd) Liquid — poured at the plant base\ne) Liquid — sprayed on leaves\nf) None of the above",
+          "a–e pass\nf fail",
+          "Soil cover",
+          ""
+        ],
+        [
+          "B12",
+          "Dig a quadrant 30 cm wide × 30 cm long × 30 cm deep at a representative spot on the plot. How many earthworms or other soil macrofauna (beetle larvae, grubs) do you find?",
+          "a) 0\nb) 1–4\nc) 5+",
+          "c pass\nb neutral\na fail",
+          "Soil cover",
+          ""
+        ],
+        [
+          "B13",
+          "How many times was synthetic fertilizer applied on this plot last season?",
+          "Number (0 if none) + unit",
+          "Locked baseline - not scored on the first visit",
+          "—",
+          ""
+        ],
+        [
+          "B14",
+          "How many wheelbarrow-loads (or equivalent unit) of manure or compost were applied on this plot last season / year?",
+          "Number + unit",
+          "Locked baseline - not scored on the first visit",
+          "—",
+          ""
+        ],
+        [
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across\nPackages (not) passed:\nBio-inputs training = Pest management + Soil cover and fertility\nSustainable/Regenerative Agriculture + Tree planting/Agroforestry + SWC = Crop diversification + Reduced disturbance + Erosion",
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across\nPackages (not) passed:\nBio-inputs training = Pest management + Soil cover and fertility\nSustainable/Regenerative Agriculture + Tree planting/Agroforestry + SWC = Crop diversification + Reduced disturbance + Erosion",
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across\nPackages (not) passed:\nBio-inputs training = Pest management + Soil cover and fertility\nSustainable/Regenerative Agriculture + Tree planting/Agroforestry + SWC = Crop diversification + Reduced disturbance + Erosion",
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across\nPackages (not) passed:\nBio-inputs training = Pest management + Soil cover and fertility\nSustainable/Regenerative Agriculture + Tree planting/Agroforestry + SWC = Crop diversification + Reduced disturbance + Erosion",
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across\nPackages (not) passed:\nBio-inputs training = Pest management + Soil cover and fertility\nSustainable/Regenerative Agriculture + Tree planting/Agroforestry + SWC = Crop diversification + Reduced disturbance + Erosion",
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across\nPackages (not) passed:\nBio-inputs training = Pest management + Soil cover and fertility\nSustainable/Regenerative Agriculture + Tree planting/Agroforestry + SWC = Crop diversification + Reduced disturbance + Erosion"
+        ],
+        [
+          "B15",
+          "What is the main gap observed?",
+          "Free text",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "B16",
+          "What immediate recommendation / advice was given to the farmer?",
+          "Free text",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "B17",
+          "When is the next follow-up?",
+          "a) 1 month\nb) 3 months\nc) 6 months\nd) No follow-up needed",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "B18",
+          "Photo upload",
+          "Best / weakest practice",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "SECTION C - Household Resource Mapping / PIP",
+          "SECTION C - Household Resource Mapping / PIP",
+          "SECTION C - Household Resource Mapping / PIP",
+          "SECTION C - Household Resource Mapping / PIP",
+          "SECTION C - Household Resource Mapping / PIP",
+          "SECTION C - Household Resource Mapping / PIP"
+        ],
+        [
+          "C1",
+          "[Ask] Did you draw a Household Resource Map?",
+          "a) Yes\nb) No",
+          "a pass\nb fails the package — section ends",
+          "PIP",
+          "CRITICAL + GATE"
+        ],
+        [
+          "C2",
+          "[Observe] Is a map showing the current household situation present?",
+          "a) Yes, visible\nb) No",
+          "a pass\nb fail",
+          "PIP",
+          ""
+        ],
+        [
+          "C3",
+          "[Observe] Is the map / plan displayed (hung on the wall) or kept in a dedicated book, rather than loose or unlocatable?",
+          "a) Displayed or in a book\nb) Exists but loose or hard to locate\nc) Not shown",
+          "a pass\nb neutral\nc fail",
+          "PIP",
+          ""
+        ],
+        [
+          "C4",
+          "[Observe] Does the plan show signs of use since it was made — dated notes, ticked-off items, or visible handling and wear?",
+          "a) Yes, clear signs of use\nb) Some signs, unclear\nc) No signs of use",
+          "a pass\nb neutral\nc fail",
+          "PIP",
+          ""
+        ],
+        [
+          "C5",
+          "What is the main gap observed?",
+          "Free text",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "C6",
+          "What immediate recommendation / advice was given to the farmer?",
+          "Free text",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "C7",
+          "When is the next follow-up?",
+          "a) 1 month\nb) 3 months\nc) 6 months\nd) No follow-up needed",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "C8",
+          "Upload photo of the map",
+          "Upload / camera button",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "SECTION D - Kitchen Garden and Vegetable Growing",
+          "SECTION D - Kitchen Garden and Vegetable Growing",
+          "SECTION D - Kitchen Garden and Vegetable Growing",
+          "SECTION D - Kitchen Garden and Vegetable Growing",
+          "SECTION D - Kitchen Garden and Vegetable Growing",
+          "SECTION D - Kitchen Garden and Vegetable Growing"
+        ],
+        [
+          "D1",
+          "Food sourcing inventory — for each group, indicate own production / bought / both / not consumed",
+          "a) Dark green leafy vegetables (dodo, nightshade, sukuma, spider plant)\nb) Other vegetables (tomato, cabbage, onion, eggplant)\nc) Beans & pulses\nd) Roots and tubers (cassava, potato)\ne) Cereals (barley, millet, rice, sorghum)\nf) Bananas\ng) Fruits\nh) Eggs & poultry",
+          "Not scored — repeated and saved each visit",
+          "—",
+          ""
+        ],
+        [
+          "D2",
+          "Roughly how much of the planted kitchen garden area is covered by growing vegetables, versus bare soil or weeds?",
+          "a) Vegetables cover most of the kitchen garden — little bare ground between plants\nb) Vegetables and bare ground or weeds are roughly equal\nc) Mostly bare ground or weeds, few vegetables remaining",
+          "a pass\nb neutral\nc fail",
+          "Kitchen garden",
+          ""
+        ],
+        [
+          "D3",
+          "Are there weeds taller than the vegetable plants in the same plot?",
+          "a) No\nb) Yes, in patches\nc) Yes, across most of the garden",
+          "a pass\nb neutral\nc fail",
+          "Kitchen garden",
+          ""
+        ],
+        [
+          "D4",
+          "Inspect 10 vegetable plants across the bed. How many are wilted, yellowing, or dead?",
+          "Number: ___ / 10",
+          "0–3 pass\n4–6 neutral\n7–10 fail",
+          "Kitchen garden",
+          ""
+        ],
+        [
+          "D5",
+          "Which of the following structures are visible?",
+          "a) Sack\nb) Keyhole wall\nc) Raised bed edge\nd) Fencing",
+          "Descriptive — not scored",
+          "—",
+          ""
+        ],
+        [
+          "D6",
+          "Is seed from this garden stored for the next season, and can you see it?",
+          "a) Yes, storage container or hanging bundle visible\nb) Farmer says yes, nothing visible\nc) No",
+          "a pass\nb neutral\nc fail",
+          "Kitchen garden",
+          ""
+        ],
+        [
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across",
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across",
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across",
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across",
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across",
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across"
+        ],
+        [
+          "D7",
+          "What is the main gap observed?",
+          "Free text",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "D8",
+          "What immediate recommendation / advice was given to the farmer?",
+          "Free text",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "D9",
+          "When is the next follow-up?",
+          "a) 1 month\nb) 3 months\nc) 6 months\nd) No follow-up needed",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "D10",
+          "Photo upload",
+          "Best / weakest practice",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "SECTION E — Financial Literacy",
+          "SECTION E — Financial Literacy",
+          "SECTION E — Financial Literacy",
+          "SECTION E — Financial Literacy",
+          "SECTION E — Financial Literacy",
+          "SECTION E — Financial Literacy"
+        ],
+        [
+          "E1",
+          "[Ask, then request to see it] Does the household have a budget, plan, or financial record?",
+          "a) Yes, shown\nb) Says yes, not shown\nc) No",
+          "a pass\nb neutral\nc fail",
+          "Financial literacy",
+          ""
+        ],
+        [
+          "E2",
+          "Who makes financial decisions in your household — for example, the last major purchase?",
+          "a) Respondent alone\nb) Spouse alone\nc) Both\nd) Single-adult household — no second adult",
+          "c pass\na/b fail\nd N/A — removed from the denominator",
+          "Financial literacy",
+          ""
+        ],
+        [
+          "E3",
+          "Do you live within your means (spending within what you earn or have)?",
+          "a) Yes\nb) No",
+          "a pass\nb fails the section",
+          "Financial literacy",
+          "CRITICAL"
+        ],
+        [
+          "E4",
+          "Were investments made in the last 12 months?",
+          "a) Yes\nb) No",
+          "a pass\nb fails the section",
+          "Financial literacy",
+          "GATE"
+        ],
+        [
+          "E4.1",
+          "[If E4 = a] What have you invested in since the training?",
+          "a) Farming\nb) Land\nc) Business\nd) Other",
+          "a/b/c/d pass",
+          "Financial literacy",
+          ""
+        ],
+        [
+          "E5",
+          "How much do you save on average per month?",
+          "Amount in UGX: ______\nPlus share of income being saved",
+          "Any amount above zero = pass\nZero or no saving = fail\n\nSave for future visits ",
+          "Financial literacy",
+          ""
+        ],
+        [
+          "E6",
+          "Where do you save part of your income?",
+          "a) Bank / SACCO\nb) Saving group\nc) Mobile money\nd) At home\ne) Other",
+          "a/b/c pass\nd/e neutral\n",
+          "Financial literacy",
+          ""
+        ],
+        [
+          "E7",
+          "Do you keep records of income and expenses?",
+          "a) Yes\nb) No",
+          "a pass\nb fail",
+          "Financial literacy",
+          ""
+        ],
+        [
+          "E8",
+          "[Ask to see it] Does the farmer have a record-keeping book?",
+          "a) Yes — shown + picture\nb) Yes — not shown\nc) No",
+          "a pass\nb neutral\nc fail",
+          "Financial literacy",
+          "GATE"
+        ],
+        [
+          "E8.1",
+          "[If E8 = a/b] How often do you update the records?",
+          "a) Never\nb) Daily\nc) Weekly\nd) Monthly\ne) Annually\nf) Other",
+          "b/c/d pass\ne/f neutral\na fail",
+          "Financial literacy",
+          ""
+        ],
+        [
+          "E8.2",
+          "[If E8 = a/b] How has record keeping helped you?",
+          "a) Easy tracking of income and expenses\nb) Improved planning and budgeting\nc) Better investment decisions\nd) To calculate profit or loss\ne) Other",
+          "Descriptive — not scored",
+          "—",
+          ""
+        ],
+        [
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across",
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across",
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across",
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across",
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across",
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across"
+        ],
+        [
+          "E9",
+          "What is the main gap observed?",
+          "Free text",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "E10",
+          "What immediate recommendation / advice was given to the farmer?",
+          "Free text",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "E11",
+          "When is the next follow-up?",
+          "a) 1 month\nb) 3 months\nc) 6 months\nd) No follow-up needed",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "E12",
+          "Photo upload",
+          "Best / weakest practice",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "SECTION F - Poultry Production and Management",
+          "SECTION F - Poultry Production and Management",
+          "SECTION F - Poultry Production and Management",
+          "SECTION F - Poultry Production and Management",
+          "SECTION F - Poultry Production and Management",
+          "SECTION F - Poultry Production and Management"
+        ],
+        [
+          "F1",
+          "Where are the birds at this moment?",
+          "a) In a house or enclosed structure\nb) In a fenced or bounded area\nc) Roaming freely, no boundary\nd) No birds can be seen",
+          "a/b pass\nc fails the section\nd ends the section",
+          "Poultry",
+          "CRITICAL + GATE"
+        ],
+        [
+          "F1.1",
+          "[If F1 = a/b] Which of these are present in the structure? (tick all observed)",
+          "a) Roof intact, no daylight through it\nb) Walls or mesh on all sides\nc) Door that closes\nd) Openings above bird height for air\ne) Litter or bedding on the floor",
+          "More than 2 = pass\n1 = neutral\n0 = fail",
+          "Poultry",
+          ""
+        ],
+        [
+          "F2",
+          "How many birds are visible?",
+          "a) 5 or more\nb) Fewer than 5",
+          "Not scored - sets the inspection method in F2.1",
+          "—",
+          "GATE"
+        ],
+        [
+          "F2.1",
+          "Inspect the birds. How many show ruffled feathers, closed eyes, nasal discharge, or are separated from the flock?",
+          "[If F2 = a] Inspect 5 birds — Number ___ / 5\n[If F2 = b] Inspect all birds present — Number ___ / ___",
+          "If 5 birds inspected:\n0–1 pass \n2–3 neutral \n4+ fails the section\n\nIf fewer than 5 birds: more than half showing signs = fail (not a critical fail); otherwise pass",
+          "Poultry",
+          "CRITICAL (5-bird inspection only)"
+        ],
+        [
+          "F3",
+          "Are any sick birds kept apart from the rest?",
+          "a) Yes, separate space in use\nb) No sick birds seen\nc) Sick birds mixed with the flock",
+          "a pass\nb neutral\nc fail",
+          "Poultry",
+          "CRITICAL"
+        ],
+        [
+          "F4",
+          "[Ask to see] Poultry record book",
+          "a) Shown, with entries in the last month\nb) Shown, no recent entries\nc) Not shown or does not exist",
+          "a pass\nb neutral\nc fail",
+          "Poultry",
+          ""
+        ],
+        [
+          "F5",
+          "[Ask to see] Vaccination record or last vaccine container",
+          "a) Shown, dated within the last 6 months\nb) Shown, older or undated\nc) Nothing shown",
+          "a pass\nb neutral\nc fail",
+          "Poultry",
+          ""
+        ],
+        [
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across",
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across",
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across",
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across",
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across",
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across"
+        ],
+        [
+          "F6",
+          "What is the main gap observed or shared by the farmer?",
+          "Free text",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "F7",
+          "What immediate advice was given to the farmer?",
+          "Free text",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "F8",
+          "When is the next follow-up?",
+          "a) 1 month\nb) 3 months\nc) 6 months\nd) No follow-up needed",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "F9",
+          "Photo of the poultry management practices",
+          "Upload / camera button",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "SECTION G -  Tree Nursery Establishment and Management Practices",
+          "SECTION G -  Tree Nursery Establishment and Management Practices",
+          "SECTION G -  Tree Nursery Establishment and Management Practices",
+          "SECTION G -  Tree Nursery Establishment and Management Practices",
+          "SECTION G -  Tree Nursery Establishment and Management Practices",
+          "SECTION G -  Tree Nursery Establishment and Management Practices"
+        ],
+        [
+          "G1",
+          "Are seedlings present at the nursery site?",
+          "a) Yes\nb) No",
+          "b fails the section — section ends",
+          "Tree nursery",
+          "CRITICAL + GATE"
+        ],
+        [
+          "G2",
+          "Roughly how many seedlings are on site?",
+          "Number",
+          "Descriptive + denominator for G9",
+          "—",
+          ""
+        ],
+        [
+          "G3",
+          "What type of nursery is this?",
+          "a) Permanent structure\nb) Temporary or flying nursery",
+          "Descriptive — not scored",
+          "—",
+          ""
+        ],
+        [
+          "G4",
+          "Where is the nearest water source, and is it flowing today?",
+          "a) On site or adjacent, water present\nb) Within a short walk, water present\nc) Distant, or no water available today",
+          "a/b pass\nc fail",
+          "Tree nursery",
+          ""
+        ],
+        [
+          "G5",
+          "Is there stagnant water or waterlogging anywhere in the nursery bed?",
+          "a) No standing water, ground drains\nb) Damp patches only\nc) Stagnant water or visible waterlogging",
+          "a pass\nb neutral\nc fail",
+          "Tree nursery",
+          ""
+        ],
+        [
+          "G5.1",
+          "Are there visible run-off channels, eroded furrows, or washed-out patches in the seedbed?",
+          "a) No - bed surface intact\nb) Yes - visible channels or washed-out areas",
+          "a pass\nb fail\n",
+          "Tree nursery",
+          ""
+        ],
+        [
+          "G6",
+          "Is shade provided over the tree seedlings in the nursery bed?",
+          "a) Shade structure or netting covering the beds\nb) Partial shade over some beds only\nc) No shade",
+          "a pass\nb neutral\nc fail",
+          "Tree nursery",
+          ""
+        ],
+        [
+          "G7",
+          "Is the soil in the pots or beds damp at the moment?",
+          "a) Damp\nb) Dry on the surface, damp below\nc) Dry throughout",
+          "a pass\nb neutral\nc fail",
+          "Tree nursery",
+          ""
+        ],
+        [
+          "G8",
+          "Are weeds growing in or between the seedbeds?",
+          "a) Few or none\nb) Weeds present but shorter than the seedlings\nc) Weeds taller than the seedlings",
+          "a pass\nb neutral\nc fail",
+          "Tree nursery",
+          ""
+        ],
+        [
+          "G9",
+          "Inspect 10 seedlings. How many are yellowing, wilted, dead, or show leaf damage?",
+          "Number ___ / 10",
+          "0–1 pass\n2–3 neutral\n4+ fails the section",
+          "Tree nursery",
+          "CRITICAL"
+        ],
+        [
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across",
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across",
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across",
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across",
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across",
+          "Auto-Calculation – Show the Outcome\npoints earned ÷ points available across"
+        ],
+        [
+          "G10",
+          "What is the main gap observed?",
+          "Free text",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "G11",
+          "What immediate recommendation / advice was given to the farmer?",
+          "Free text",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "G12",
+          "When is the next follow-up?",
+          "a) 1 month\nb) 3 months\nc) 6 months\nd) No follow-up needed",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "G13",
+          "Photo of the observed practices",
+          "Upload / camera button",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "SECTION H - Radio Talk Show Impact (everyone)",
+          "SECTION H - Radio Talk Show Impact (everyone)",
+          "SECTION H - Radio Talk Show Impact (everyone)",
+          "SECTION H - Radio Talk Show Impact (everyone)",
+          "SECTION H - Radio Talk Show Impact (everyone)",
+          "SECTION H - Radio Talk Show Impact (everyone)"
+        ],
+        [
+          "H1",
+          "Do you listen to the radio?",
+          "a) Yes\nb) No",
+          "Not scored\nb ends the section",
+          "—",
+          "GATE"
+        ],
+        [
+          "H1.1",
+          "[If H1 = a] Have you ever listened to any Harvesting Health radio talk-show?",
+          "a) Yes\nb) No",
+          "Not scored\nb ends the section",
+          "—",
+          ""
+        ],
+        [
+          "H1.2",
+          "[If H1.1 = a] Have you practised something learned from it?",
+          "a) Yes - free text ______\nb) No",
+          "Not scored — narrative",
+          "—",
+          ""
+        ],
+        [
+          "SECTION I - Producer’s Feedback on Trainings (everyone; entirely unscored)",
+          "SECTION I - Producer’s Feedback on Trainings (everyone; entirely unscored)",
+          "SECTION I - Producer’s Feedback on Trainings (everyone; entirely unscored)",
+          "SECTION I - Producer’s Feedback on Trainings (everyone; entirely unscored)",
+          "SECTION I - Producer’s Feedback on Trainings (everyone; entirely unscored)",
+          "SECTION I - Producer’s Feedback on Trainings (everyone; entirely unscored)"
+        ],
+        [
+          "I1",
+          "Which training topics have helped you the most? (select up to 2)",
+          "a) Bio-inputs\nb) Regenerative / Sustainable Agriculture\nc) Tree Planting & Agroforestry\nd) SWC\ne) Kitchen Garden\nf) Financial Literacy\ng) Household Resource Mapping\nh) Poultry Mgt & Vaccination",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "I2",
+          "What is the biggest change you have noticed since starting these practices?",
+          "a) More harvest / yield\nb) More food variety at home\nc) Spending less on inputs\nd) Less soil erosion / land damage\ne) Better animal / poultry health\nf) Saving more money\ng) No noticeable change yet\nh) Other (free text)",
+          "Not scored",
+          "—",
+          ""
+        ],
+        [
+          "I3",
+          "What would make the trainings more useful to you?",
+          "a) More hands-on demonstration\nb) More frequent follow-up visits\nc) Materials in local language\nd) Cover new / different topics\ne) Nothing — satisfied as is\nf) Other",
+          "Not scored",
+          "—",
+          ""
+        ]
+      ]
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Consent",
+      "all_current_text": "Consent",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "☐  I have received permission from the participant / beneficiary to document and share their practices, for learning and communication purposes.",
+      "all_current_text": "☐  I have received permission from the participant / beneficiary to document and share their practices, for learning and communication purposes.",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Walk-Through Good Adopter:",
+      "all_current_text": "Walk-Through Good Adopter:",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "table",
+      "style": "Grid Table Light",
+      "rows": [
+        [
+          "Item",
+          "Response",
+          "Result",
+          "Points"
+        ],
+        [
+          "B1 — Food groups",
+          "3 groups present",
+          "Pass",
+          "2"
+        ],
+        [
+          "B2 — Soil cover (parent)",
+          "b) Mulch",
+          "Pass",
+          "2"
+        ],
+        [
+          "B2.1(b) — Mulch quality",
+          "c) Scattered, >50%",
+          "Neutral",
+          "1"
+        ],
+        [
+          "B3 — Erosion features",
+          "Isolated roots only",
+          "Not scored — no override",
+          "—"
+        ],
+        [
+          "B4 — Structures",
+          "a) Grass strips",
+          "Pass",
+          "2"
+        ],
+        [
+          "B4.1 — Full width/partial",
+          "a) Full width",
+          "Pass",
+          "2"
+        ],
+        [
+          "B4.2 — Contour",
+          "a) Yes",
+          "Pass",
+          "2"
+        ],
+        [
+          "B5 — Prep method",
+          "c) Planting holes",
+          "Pass",
+          "2"
+        ],
+        [
+          "B5.1 — Furrow marks",
+          "a) None",
+          "Pass",
+          "2"
+        ],
+        [
+          "B5.2 — Whole plot/part",
+          "a) Whole plot",
+          "Pass",
+          "2"
+        ],
+        [
+          "B6 — Weed management",
+          "a) Hand-pulling/spot-hoeing",
+          "Pass",
+          "2"
+        ],
+        [
+          "B7 — Arrangement",
+          "b) Interplanted",
+          "Pass",
+          "2"
+        ],
+        [
+          "B8 — Trees present",
+          "a) Yes",
+          "Pass",
+          "2"
+        ],
+        [
+          "B8.1 — Underplanting",
+          "b) Nothing underneath",
+          "Neutral",
+          "1"
+        ],
+        [
+          "B8.2 — Tree arrangement",
+          "a) Boundary",
+          "Pass",
+          "2"
+        ],
+        [
+          "B9 — Residue/rotation",
+          "a) Names crop, differs from current",
+          "Pass",
+          "2"
+        ],
+        [
+          "B9.1 — Farmer confirmation",
+          "a) Yes, different crop",
+          "Pass",
+          "2"
+        ],
+        [
+          "B10 — Pest method",
+          "a) Biological/manual",
+          "Pass",
+          "2"
+        ],
+        [
+          "B10.1 — Damage count",
+          "1/10",
+          "Pass",
+          "2"
+        ],
+        [
+          "B10.2 — Severity count",
+          "0/10",
+          "Pass",
+          "2"
+        ],
+        [
+          "B10.3 — Pesticide change",
+          "c) Reduced",
+          "Pass",
+          "2"
+        ],
+        [
+          "B11 — Fertility ticklist",
+          "a) Manure visible",
+          "Pass",
+          "2"
+        ],
+        [
+          "B11.1 — Application location",
+          "a) Whole plot evenly",
+          "Pass",
+          "2"
+        ],
+        [
+          "B11.2 — Application method",
+          "a) Spread on surface",
+          "Pass",
+          "2"
+        ],
+        [
+          "B12 — Earthworm count",
+          "c) 5+",
+          "Pass",
+          "2"
+        ]
+      ]
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Crop diversification 15/16 = 94% ",
+      "all_current_text": "Crop diversification 15/16 = 94% ",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Erosion 16/18 = 89% ",
+      "all_current_text": "Erosion 16/18 = 89% ",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Soil cover 20/22 = 91% ",
+      "all_current_text": "Soil cover 20/22 = 91% ",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Pest management 14/14 = 100% ",
+      "all_current_text": "Pest management 14/14 = 100% ",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Reduced disturbance 8/8 = 100%",
+      "all_current_text": "Reduced disturbance 8/8 = 100%",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Breadth = 5/5 - Depth = 95%",
+      "all_current_text": "Breadth = 5/5 - Depth = 95%",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Other sections",
+      "all_current_text": "Other sections",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "table",
+      "style": "Grid Table Light",
+      "rows": [
+        [
+          "Section",
+          "Key answers",
+          "Result"
+        ],
+        [
+          "C — PIP",
+          "Map drawn, current map visible, loose/not displayed (neutral), clear signs of use",
+          "7/8 = 88%"
+        ],
+        [
+          "D — Kitchen Garden",
+          "Vegetables cover most of bed, no weeds, 2/10 wilted, seed storage visible",
+          "8/8 = 100%"
+        ],
+        [
+          "E — Financial Literacy",
+          "Budget shown, both decide, lives within means, invested in farming, saves regularly, bank/SACCO, records shown weekly",
+          "20/20 = 100%"
+        ],
+        [
+          "F — Poultry",
+          "Housed, 3+ housing items, healthy flock, isolation practiced, records and vaccination current",
+          "12/12 = 100%"
+        ]
+      ]
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Walk-Through Medium Adopter ",
+      "all_current_text": "Walk-Through Medium Adopter ",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "table",
+      "style": "Grid Table Light",
+      "rows": [
+        [
+          "Item",
+          "Response",
+          "Result",
+          "Points"
+        ],
+        [
+          "B1 — Food groups",
+          "3 groups present",
+          "Pass",
+          "2"
+        ],
+        [
+          "B2 — Soil cover (parent)",
+          "b) Mulch",
+          "Pass",
+          "2"
+        ],
+        [
+          "B2.1(b) — Mulch quality",
+          "c) Scattered, >50%",
+          "Neutral",
+          "1"
+        ],
+        [
+          "B3 — Erosion features",
+          "Rills ankle-height + isolated roots",
+          "Not scored — 0 severe, no override",
+          "—"
+        ],
+        [
+          "B4 — Structures",
+          "a) Grass strips",
+          "Pass",
+          "2"
+        ],
+        [
+          "B4.1 — Full width/partial",
+          "b) Partial",
+          "Neutral",
+          "1"
+        ],
+        [
+          "B4.2 — Contour",
+          "c) Unsure",
+          "Fail",
+          "0"
+        ],
+        [
+          "B5 — Prep method",
+          "c) Planting holes",
+          "Pass",
+          "2"
+        ],
+        [
+          "B5.1 — Furrow marks",
+          "b) Old furrows visible",
+          "Neutral",
+          "1"
+        ],
+        [
+          "B5.2 — Whole plot/part",
+          "b) Part of plot only",
+          "Fail",
+          "0"
+        ],
+        [
+          "B6 — Weed management",
+          "b) Full-bed hoeing, few times/yr",
+          "Neutral",
+          "1"
+        ],
+        [
+          "B7 — Arrangement",
+          "a) Single crop, uniform",
+          "Fail",
+          "0"
+        ],
+        [
+          "B8 — Trees present",
+          "a) Yes",
+          "Pass",
+          "2"
+        ],
+        [
+          "B8.1 — Underplanting",
+          "b) No",
+          "Neutral",
+          "1"
+        ],
+        [
+          "B8.2 — Tree arrangement",
+          "b) Compound",
+          "Fail",
+          "0"
+        ],
+        [
+          "B9 — Residue/rotation",
+          "b) Traces visible, unidentifiable",
+          "Rotation neutral (1) · Soil cover pass (2)",
+          "1 / 2"
+        ],
+        [
+          "B9.1 — Farmer confirmation",
+          "b) No, same crop",
+          "Fail",
+          "0"
+        ],
+        [
+          "B10 — Pest method",
+          "c) Synthetic pesticide only",
+          "CRITICAL FAIL",
+          "—"
+        ],
+        [
+          "B10.1–B10.3",
+          "—",
+          "Don't fire (conditional on a/b)",
+          "—"
+        ],
+        [
+          "B11 — Fertility ticklist",
+          "a) Manure visible",
+          "Pass",
+          "2"
+        ],
+        [
+          "B11.1 — Application location",
+          "c) One section only",
+          "Neutral",
+          "1"
+        ],
+        [
+          "B11.2 — Application method",
+          "a) Spread on surface",
+          "Pass",
+          "2"
+        ],
+        [
+          "B12 — Earthworm count",
+          "b) 1–4",
+          "Neutral",
+          "1"
+        ]
+      ]
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Package totals:",
+      "all_current_text": "Package totals:",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Crop diversification: B1(2)+B2(2)+B7(0)+B8(2)+B8.1(1)+B8.2(0)+B9-rotation(1)+B9.1(0) = 8/16 = 50%",
+      "all_current_text": "Crop diversification: B1(2)+B2(2)+B7(0)+B8(2)+B8.1(1)+B8.2(0)+B9-rotation(1)+B9.1(0) = 8/16 = 50%",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Erosion: B2(2)+B2.1(1)+B4(2)+B4.1(1)+B4.2(0)+B5(2)+B8(2)+B8.1(1)+B8.2(0) = 11/18 = 61%",
+      "all_current_text": "Erosion: B2(2)+B2.1(1)+B4(2)+B4.1(1)+B4.2(0)+B5(2)+B8(2)+B8.1(1)+B8.2(0) = 11/18 = 61%",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Soil cover: B2(2)+B2.1(1)+B5(2)+B8(2)+B8.1(1)+B9 (2)+B9.1(0)+B11(2)+B11.1(1)+B11.2(2)+B12(1) = 16/22 = 73%",
+      "all_current_text": "Soil cover: B2(2)+B2.1(1)+B5(2)+B8(2)+B8.1(1)+B9 (2)+B9.1(0)+B11(2)+B11.1(1)+B11.2(2)+B12(1) = 16/22 = 73%",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Pest management: CRITICAL FAIL - excluded",
+      "all_current_text": "Pest management: CRITICAL FAIL - excluded",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Reduced disturbance: B5(2)+B5.1(1)+B5.2(0)+B6(1) = 4/8 = 50%",
+      "all_current_text": "Reduced disturbance: B5(2)+B5.1(1)+B5.2(0)+B6(1) = 4/8 = 50%",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Breadth = 4/5 ",
+      "all_current_text": "Breadth = 4/5 ",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Depth = mean(50, 61, 73, 50) = 58%",
+      "all_current_text": "Depth = mean(50, 61, 73, 50) = 58%",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Recommendation: ",
+      "all_current_text": "Recommendation: ",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "List Paragraph",
+      "visible_text": "Centralized Training in Bio-inputs (critical fail)",
+      "all_current_text": "Centralized Training in Bio-inputs (critical fail)",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "List Paragraph",
+      "visible_text": "Sustainable/Regenerative Agriculture + Tree planting/Agroforestry + SWC?",
+      "all_current_text": "Sustainable/Regenerative Agriculture + Tree planting/Agroforestry + SWC?",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Other sections",
+      "all_current_text": "Other sections",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "table",
+      "style": "Grid Table Light",
+      "rows": [
+        [
+          "Section",
+          "Answers",
+          "Result",
+          "Recommendation"
+        ],
+        [
+          "C — PIP",
+          "Map drawn, current map absent, loose (neutral), no signs of use",
+          "3/8 = 38%",
+          "Centralized training in PIP"
+        ],
+        [
+          "D — Kitchen Garden",
+          "Roughly equal veg/bare, weeds in patches, 4/10 wilted, seed claimed not shown",
+          "4/8 = 50%",
+          "Centralized training in Kitchen Gardens "
+        ],
+        [
+          "E — Financial Literacy",
+          "Budget claimed not shown, respondent alone decides, does not live within means",
+          "CRITICAL FAIL ",
+          "Centralized training in financial literacy "
+        ],
+        [
+          "F — Poultry",
+          "Housed, 1 housing item (neutral), <5 birds, 1 of 4 shows signs (pass, not critical), no sick birds seen (neutral), records/vaccination shown but stale",
+          "8/12 = 67%",
+          "Centralized training in Poultry Mgt and Vaccination "
+        ]
+      ]
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Walk-Through Bad Adopter",
+      "all_current_text": "Walk-Through Bad Adopter",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Section B — Regenerative / Sustainable Farming Practices",
+      "all_current_text": "Section B — Regenerative / Sustainable Farming Practices",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "table",
+      "style": "Grid Table Light",
+      "rows": [
+        [
+          "Item",
+          "Response",
+          "Result",
+          "Points"
+        ],
+        [
+          "B1 — Food groups",
+          "1 food group only",
+          "CRITICAL FAIL",
+          "—"
+        ],
+        [
+          "B2 — Soil cover (parent)",
+          "a) Bare soil",
+          "Fail",
+          "0"
+        ],
+        [
+          "B2.1",
+          "—",
+          "N/A — B2 ≠ b/c, doesn't fire",
+          "—"
+        ],
+        [
+          "B3 — Erosion features",
+          "Rills deeper than ankle + built-up loose soil ridge",
+          "2 severe features → CRITICAL FAIL",
+          "—"
+        ],
+        [
+          "B4 — Structures",
+          "f) None",
+          "CRITICAL FAIL (redundant with B3)",
+          "—"
+        ],
+        [
+          "B5 — Prep method",
+          "a) Fully tilled",
+          "CRITICAL FAIL (Reduced disturbance)",
+          "—"
+        ],
+        [
+          "B5.1 / B5.2",
+          "—",
+          "Don't fire — conditional on b/c/d",
+          "—"
+        ],
+        [
+          "B6 — Weed management",
+          "c) Full-bed hoeing, frequent",
+          "Fail (package already failed)",
+          "—"
+        ],
+        [
+          "B7 — Arrangement",
+          "a) Single crop, uniform",
+          "Fail",
+          "0"
+        ],
+        [
+          "B8 — Trees present",
+          "b) No",
+          "Fail",
+          "0"
+        ],
+        [
+          "B8.1 / B8.2",
+          "—",
+          "N/A — B8 ≠ a",
+          "—"
+        ],
+        [
+          "B9 — Residue/rotation",
+          "c) No traces",
+          "Fail (rotation) · Fail (soil cover)",
+          "0 / 0"
+        ],
+        [
+          "B9.1 — Farmer confirmation",
+          "b) No, same crop",
+          "Fail",
+          "0"
+        ],
+        [
+          "B10 — Pest method",
+          "c) Synthetic pesticide only",
+          "CRITICAL FAIL",
+          "—"
+        ],
+        [
+          "B11 — Fertility ticklist",
+          "e) None of the above",
+          "Fail",
+          "0"
+        ],
+        [
+          "B11.1 / B11.2",
+          "—",
+          "N/A — B11 ≠ a",
+          "—"
+        ],
+        [
+          "B12 — Earthworm count",
+          "a) 0",
+          "Fail",
+          "0"
+        ]
+      ]
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Package totals:",
+      "all_current_text": "Package totals:",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Crop diversification: CRITICAL FAIL — excluded",
+      "all_current_text": "Crop diversification: CRITICAL FAIL — excluded",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Erosion: CRITICAL FAIL — excluded",
+      "all_current_text": "Erosion: CRITICAL FAIL — excluded",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Reduced disturbance: CRITICAL FAIL — excluded",
+      "all_current_text": "Reduced disturbance: CRITICAL FAIL — excluded",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Pest management: CRITICAL FAIL — excluded",
+      "all_current_text": "Pest management: CRITICAL FAIL — excluded",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "Soil cover: B2(0)+B5(0)+B8(0)+B9(0)+B9.1(0)+B11(0)+B12(0) = 0/14 = 0%",
+      "all_current_text": "Soil cover: B2(0)+B5(0)+B8(0)+B9(0)+B9.1(0)+B11(0)+B12(0) = 0/14 = 0%",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    },
+    {
+      "kind": "table",
+      "style": "Table Grid",
+      "rows": [
+        [
+          "Section",
+          "Key answers",
+          "Result"
+        ],
+        [
+          "C — PIP",
+          "No map drawn",
+          "CRITICAL FAIL — section ends, excluded"
+        ],
+        [
+          "D — Kitchen Garden",
+          "Mostly bare/weeds, weeds across most of garden, 8/10 wilted, no seed storage",
+          "0/8 = 0%"
+        ],
+        [
+          "E — Financial Literacy",
+          "No budget, respondent alone decides, does not live within means",
+          "CRITICAL FAIL — excluded entirely"
+        ],
+        [
+          "F — Poultry",
+          "Birds roaming freely, no boundary",
+          "CRITICAL FAIL — section fails outright"
+        ],
+        [
+          "G — Tree Nursery",
+          "No seedlings present at site",
+          "CRITICAL FAIL — section ends, excluded"
+        ]
+      ]
+    },
+    {
+      "kind": "paragraph",
+      "style": "Normal",
+      "visible_text": "",
+      "all_current_text": "",
+      "inserted_text": "",
+      "deleted_text": "",
+      "hyperlinks": []
+    }
+  ],
+  "package_parts": [
+    "[Content_Types].xml",
+    "_rels/.rels",
+    "docProps/app.xml",
+    "docProps/core.xml",
+    "word/_rels/document.xml.rels",
+    "word/document.xml",
+    "word/fontTable.xml",
+    "word/numbering.xml",
+    "word/settings.xml",
+    "word/styles.xml",
+    "word/theme/theme1.xml",
+    "word/webSettings.xml"
+  ],
+  "media": [],
+  "comments": [],
+  "comments_extended_present": false,
+  "tracked_changes": {
+    "insertions": 0,
+    "deletions": 0,
+    "moves_from": 0,
+    "moves_to": 0
+  }
+}

@@ -1,0 +1,302 @@
+[001] P (Heading 1): Harvesting Health - CBF Follow-Up Monitoring Tool
+[002] P (Normal): Follow-up monitoring of adoption rates / status of project farmers
+[004] P (Heading 2): Scoring matrix
+[005] TABLE (Table Grid):
+      R1: Pass || 2 points 
+      R2: Neutral || 1 point 
+      R3: Fail || 0 Points
+      R4: N/A || removed from the denominator
+      R5: Critical fail || the whole package or section fails outright.
+[006] P (Normal): Package score = points earned ÷ points available × 100.
+[008] P (Heading 2): Instructions
+[009] P (List Paragraph): Walking interview: Section B is conducted as a walking interview - the CBF asks questions while observing the plot directly. Observation is the control: where a question can be answered by what the farmer says or by what the CBF sees, the physical observation takes precedence.
+[010] P (List Paragraph): Critical questions act as a switch. If triggered, the whole package fails outright (0%), regardless of the point total. Example: 14/16 points in Soil Cover & Fertility = 88% only if the package’s critical question(s) passed. If not, the result is failed, even though the points suggest a strong score.
+[012] P (Heading 2): Outcome and calculations:
+[013] P (List Paragraph): Step 1 - RVO gate: Passes if at least two of the following practices pass :
+[014] TABLE (Grid Table Light):
+      R1: # || Practice || Counted when
+      R2: 1 || Mulching / soil cover || B2 = pass
+      R3: 2 || Soil & water conservation structures || B4 = pass
+      R4: 3 || Conservation / minimum tillage || B5 = pass/neutral
+      R5: 4 || Intercropping || B7 = pass
+      R6: 5 || Agroforestry || B8 = pass
+      R7: 6 || Crop rotation || B9 = a, named crop differs from current
+      R8: 7 || Organic manure / bio-fertilizer || B11 = pass
+      R9: 8 || Integrated pest management || B10 = a or b
+[016] P (Normal): Step 2 - Project standard: Each package in B and later section gets one result 
+[017] P (List Paragraph): Achieved: No critical fail and score 50% or more
+[018] P (List Paragraph): Partial: No critical fail and score below 50%
+[019] P (List Paragraph): Failed: Any critical question triggered
+[021] P (Normal): Step 3 - Combined household outcome
+[023] TABLE (Grid Table Light):
+      R1: Outcome || RVO || Project || Condition || Action
+      R2: A - Strong adopter || ✅ || ✅ || ≥2 packages Achieved, no package Partial or Failed || No training needed.
+      R3: B - Compliant, gaps remain || ✅ || ✅ || ≥2 packages Achieved, but ≥1 package Partial or Failed || Centralized training for each weak package. Follow-up to verify uptake.
+      R4: C - RVO-Compliant  || ✅ || ❌ || ≥2 practices observed, but <2 packages Achieved || Practices present but shallow. Centralized training for all weak packages. Short-interval follow-up.
+      R5: D - Below both bars || ❌ || ❌ || <2 practices observed || Priority household. Full training package. Shortest follow-up interval.
+[026] P (Normal): 	Step 4 – recommend centralized trainings based on packages if partial or failed:
+[027] P (List Paragraph): Pest management: Bio-inputs
+[028] P (List Paragraph): Soil cover & fertility: Bio-inputs
+[029] P (List Paragraph): Erosion & water structures: SWC
+[030] P (List Paragraph): Crop diversification: Regenerative/Sustainable Agriculture + Tree Planting & Agroforestry
+[031] P (List Paragraph): Reduced disturbance: Regenerative/Sustainable Agriculture
+[033] P (Normal): Step 5 – Indicate follow-up’s: 
+[034] P (List Paragraph): 1 month: Any critical fail in Section B, or RVO gate not met (<2 practices observed)
+[035] P (List Paragraph): 3 months: No critical fail, but fewer than 2 packages Achieved, or any package Partial (<50%)
+[036] P (List Paragraph): 6 months: All packages Achieved (≥50%), none Partial or Failed, but at least one package below 70%
+[037] P (List Paragraph): No follow-up needed: All five packages Achieved at 70% or above, no critical fails
+[040] P (Normal): Always show Breadth and Depth together. Depth is averaged only over surviving packages, so a household that failed four packages and passed one strong one can show a high Depth while not reaching the Breadth gate. Neither figure should be displayed without the other.
+[041] P (Heading 2): Section B packages and training mapping
+[042] TABLE (Table Grid):
+      R1: Erosion & water structures || 9 scored items / 18 points  
+      R2: Soil cover & fertility || 11 items / 22 points  
+      R3: Crop diversification: || 8 items / 16 points  
+      R4: Pest management || 7 items / 14 points  
+      R5: Reduced disturbance || 4 items / 8 points
+[044] TABLE (Normal Table):
+      R1: No. || Question || Response options || Scoring || Package || Type
+      R2: SECTION A - Visit, Location & Household Profile || SECTION A - Visit, Location & Household Profile || SECTION A - Visit, Location & Household Profile || SECTION A - Visit, Location & Household Profile || SECTION A - Visit, Location & Household Profile || SECTION A - Visit, Location & Household Profile
+      R3: A1 || Date of visit || Automatic || Not scored || — || 
+      R4: A2 || Name of the data collector || Automatic || Not scored || — || 
+      R5: A3 || Name of beneficiary || Select in the dashboard || Not scored || — || 
+      R6: A4 || District || Automatic (check and edit) || Not scored || — || 
+      R7: A5 || Sub-county / Division || Automatic (check and edit) || Not scored || — || 
+      R8: A6 || Village / Cell || Automatic (check and edit) || Not scored || — || 
+      R9: A7 || GPS location / polygon — start tracking || Automatic — button to start tracking || Not scored / Where a farmer owns several plots, track only the main plot or the one nearest the home || — || 
+      R10: A8 || Beneficiary profile (all automatic — check and edit) || A8.1 Type of beneficiary / A8.2 Contact of the farmer / A8.3 Gender / A8.4 PWD / A8.5 Age group / A8.6 Farmer group membership || Not scored || — || 
+      R11: A9 || Level of education completed || a) Not gone to school / b) Pre-primary / c) Primary / d) Secondary O-level / e) Secondary A-level / f) Certificate / g) Diploma / h) Degree / i) Other (specify) || Not scored — saved to database || — || 
+      R12: A10 || Number of people living in the household || Total: / Of which male: / Of which female: || Not scored — saved to database || — || 
+      R13: A11 || Which trainings did you receive? || a) Household Resource Mapping (PIP) / b) Sustainable / Regenerative Agriculture / c) Bio-inputs training / d) Tree Planting and Agroforestry / e) SWC / f) Kitchen garden and vegetable growing / g) Financial Literacy / h) Poultry Mgt and Vaccination || Determines which sections open: / b/c/d/e → Section B / a → Section C / f → Section D / g → Section E / h → Section F || — || GATE
+      R14: SECTION B - Regenerative / Sustainable Farming Practices (farmers only; one continuous farm walk) || SECTION B - Regenerative / Sustainable Farming Practices (farmers only; one continuous farm walk) || SECTION B - Regenerative / Sustainable Farming Practices (farmers only; one continuous farm walk) || SECTION B - Regenerative / Sustainable Farming Practices (farmers only; one continuous farm walk) || SECTION B - Regenerative / Sustainable Farming Practices (farmers only; one continuous farm walk) || SECTION B - Regenerative / Sustainable Farming Practices (farmers only; one continuous farm walk)
+      R15: B1 || Walking the plot, what crops / species do you see planted? || a) Dark green leafy vegetables (sukuma wiki, black nightshade, amaranth/dodo, spider plant) / b) Other vegetables (cabbage, carrots, eggplant, onions, tomatoes) / c) Beans & pulses (beans, cowpeas, groundnuts) / d) Roots & tubers (cassava, potato) / e) Cereals / grains (maize, millet, rice, sorghum) / f) Bananas / plantain / g) Fruit / h) Coffee / i) Other cash crops || Passes if more than 2 food groups present / h and i do not count toward the total || Crop diversification || CRITICAL + GATE
+      R16: B2 || What is mostly covering the soil surface between plants? || a) Bare soil / b) Crop residue or mulch / c) Living ground cover / d) Other || b/c pass / a/d fail || Erosion + Soil cover + Crop diversification || GATE
+      R17: B2.1 || [If B2 = b] What do you observe? || a) Full cover, at least 3 cm thick / b) More than 80% cover, at least 1 cm of material where covered / c) Scattered, above 50% covered / d) Less than 50% covered || a/b pass / c neutral / d fail || Soil cover + Erosion || 
+      R18: B2.1 || [If B2 = c] What do you observe? || a) Dense, deliberate cover crop, little bare ground / b) Cover present but patchy, or a mix of planted cover and volunteer growth / c) Sparse, or mostly volunteer weeds rather than planted cover || a pass / b neutral / c fail || Soil cover + Erosion || 
+      R19: B3 || Observe if any of the following are visible || a) Rills (small channels) on the plot surface / b) Gully (too wide or deep to step across) / c) Plant or tree roots exposed above the soil surface / d) Loose soil deposited at the base of a slope, plot edge, or against structures / e) Bare compacted patches with no soil cover || Not point-scored. / OVERRIDE: 2 or more severe features (see B3.1–B3.3) fails the Erosion package regardless of structures. || Erosion || GATE
+      R20: B3.1 || [If B3 = a] What is the depth of the rills? || a) Ankle-height or less / b) Deeper than an ankle || b = severe feature || Erosion || 
+      R21: B3.2 || [If B3 = c] What is the occurrence of exposed roots? || a) Isolated (1–2 plants) / b) Widespread || b = severe feature || Erosion || 
+      R22: B3.3 || [If B3 = d] What is the occurrence of the loose soil? || a) Thin scatter / b) Built-up ridge || b = severe feature || Erosion || 
+      R23: B4 || Are any of the following soil and water conservation structures visible? || a) Grass strips / b) Trash lines / c) Stone bunds / d) Trenches / e) Bench terracing / f) None || a–e pass / f fails the package || Erosion || CRITICAL + GATE
+      R24: B4.1 || [If B4 = a–e] Do the structures run across the full width of the plot, or only part of it? || a) Full width / b) Partial / c) Single structure only || a pass / b neutral / c fail || Erosion || 
+      R25: B4.2 || [If B4 = a–e] Do the structures follow the contour of the land? || a) Yes / b) No / c) Unsure || a pass / b/c fail || Erosion || 
+      R26: B5 || Looking at the soil surface, how was this plot prepared? || a) Fully tilled / b) Minimally tilled (1–2 times in a year) / c) Planting holes or strips / d) Undisturbed between rows || a fails the package / b neutral / c/d pass || Reduced disturbance  / + Erosion  / + Soil cover || CRITICAL + GATE
+      R27: B5.1 || [If B5 = b/c/d] Do you see old furrow or ridge marks from previous ploughing on this plot? || a) No old marks — consistent with the current method / b) Old furrows visible (recent transition from ploughing) / c) Plot newly opened, no previous cultivation to compare || a pass / b neutral / c N/A  || Reduced disturbance || 
+      R28: B5.2 || [If B5 = b/c/d] Is the preparation method used across the whole plot, or only part of it? || a) Whole plot / b) Part of the plot only / c) Varies across sections || a pass / b/c fail || Reduced disturbance || 
+      R29: B6 || How do you typically manage weeds during the season? || a) Hand-pulling / spot-hoeing / b) Full-bed hoeing, a few times a year / c) Full-bed hoeing, frequent / d) Herbicide || a pass / b neutral / c/d fail || Reduced disturbance || 
+      R30: B7 || How are the crops arranged on this plot? || a) Single crop, uniform rows / b) Mixed crops interplanted / c) Other || b pass / a/c fail || Crop diversification  / + Pest management || 
+      R31: B8 || Are trees or shrubs within or bordering this plot? || a) Yes / b) No || a pass / b fail || Crop diversification  / + Erosion  / + Soil cover || 
+      R32: B8.1 || [If B8 = a] Is there anything planted directly next to or underneath the trees? || a) Yes / b) No || a pass / b neutral || Crop diversification  / + Erosion  / + Soil cover || 
+      R33: B8.2 || [If B8 = a] How are the trees arranged? || a) Boundary / b) Compound / c) Intercropping / d) Woodlots / e) Other || a/c/d pass / b/e fail || Crop diversification  / + Erosion || 
+      R34: B9 || Can you identify a previous crop from residue, stubble, or physical traces on this plot? (stakes or supports not used by the current crop; old ridges or spacing inconsistent with the current layout; banana stools, maize stalks, or perennial stumps between plantings) || a) Yes - CBF names the previous crop (free text) ______ / b) Traces visible, but the crop cannot be identified / c) No traces of a previous crop || a pass - where the named crop differs from the current crop, otherwise neutral / b neutral  / c fail /  || Crop diversification  / + Pest management  / + Soil cover || 
+      R35: B9.1 || [Ask the farmer] Was a different crop grown here last season? || a) Yes / b) No / c) Unsure || a pass / b/c fail || Crop diversification  / + Pest management  / + Soil cover || 
+      R36: B10 || Do you see pest damage, or any pest management method in use? || a) Biological / manual method (predators, hand-picking, traps, bio-pesticides) / b) Both — synthetic and biological / manual / c) Synthetic pesticide only / d) No evidence || a/b pass / c/d fail the package || Pest management || CRITICAL + GATE
+      R37: B10.1 || [If B10 = a/b] Walk a line across the plot and inspect 10 plants at even intervals. How many of the 10 show pest or disease damage? || Number: ___ / 10 || 0–2 pass / 3–5 neutral / 6+ fails the package || Pest management || CRITICAL
+      R38: B10.2 || [If B10 = a/b] Of the damaged plants, how many have damage affecting more than half the leaves or the growing point? || Number: ___ / 10 || 0–1 pass / 2 neutral / 3+ fails the package || Pest management || CRITICAL
+      R39: B10.3 || [If B10 = a/b] Since using bio-pesticide, has use of inorganic / chemical pesticide changed? || a) Increased / b) Same / c) Reduced / d) Did not use inorganic / chemical pesticide before || b/c pass / a/d fail || Pest management || 
+      R40: B11 || Tick each soil fertility input with physical evidence on this plot or homestead || a) Manure or compost visible on the soil surface or in planting holes / b) Compost heap or manure pile present on the homestead / c) Bio-fertilizer preparation materials present (fermentation drums, plant material, containers) / d) Empty synthetic fertilizer bags or containers present / e) None of the above || a/b/c pass / d alone fails / e fails || Soil cover || GATE
+      R41: B11.1 || [If B11 = a] Where on the plot is it applied? || a) Across the whole plot / all plants, evenly / b) In planting holes or around individual plants only / c) In one section of the plot only || a/b pass / c neutral || Soil cover || 
+      R42: B11.2 || [If B11 = a or c] How is it applied? || a) Spread on the surface / b) Dug or mixed into the soil / c) Placed in planting holes / d) Liquid — poured at the plant base / e) Liquid — sprayed on leaves / f) None of the above || a–e pass / f fail || Soil cover || 
+      R43: B12 || Dig a quadrant 30 cm wide × 30 cm long × 30 cm deep at a representative spot on the plot. How many earthworms or other soil macrofauna (beetle larvae, grubs) do you find? || a) 0 / b) 1–4 / c) 5+ || c pass / b neutral / a fail || Soil cover || 
+      R44: B13 || How many times was synthetic fertilizer applied on this plot last season? || Number (0 if none) + unit || Locked baseline - not scored on the first visit || — || 
+      R45: B14 || How many wheelbarrow-loads (or equivalent unit) of manure or compost were applied on this plot last season / year? || Number + unit || Locked baseline - not scored on the first visit || — || 
+      R46: Auto-Calculation – Show the Outcome / points earned ÷ points available across / Packages (not) passed: / Bio-inputs training = Pest management + Soil cover and fertility / Sustainable/Regenerative Agriculture + Tree planting/Agroforestry + SWC = Crop diversification + Reduced disturbance + Erosion || Auto-Calculation – Show the Outcome / points earned ÷ points available across / Packages (not) passed: / Bio-inputs training = Pest management + Soil cover and fertility / Sustainable/Regenerative Agriculture + Tree planting/Agroforestry + SWC = Crop diversification + Reduced disturbance + Erosion || Auto-Calculation – Show the Outcome / points earned ÷ points available across / Packages (not) passed: / Bio-inputs training = Pest management + Soil cover and fertility / Sustainable/Regenerative Agriculture + Tree planting/Agroforestry + SWC = Crop diversification + Reduced disturbance + Erosion || Auto-Calculation – Show the Outcome / points earned ÷ points available across / Packages (not) passed: / Bio-inputs training = Pest management + Soil cover and fertility / Sustainable/Regenerative Agriculture + Tree planting/Agroforestry + SWC = Crop diversification + Reduced disturbance + Erosion || Auto-Calculation – Show the Outcome / points earned ÷ points available across / Packages (not) passed: / Bio-inputs training = Pest management + Soil cover and fertility / Sustainable/Regenerative Agriculture + Tree planting/Agroforestry + SWC = Crop diversification + Reduced disturbance + Erosion || Auto-Calculation – Show the Outcome / points earned ÷ points available across / Packages (not) passed: / Bio-inputs training = Pest management + Soil cover and fertility / Sustainable/Regenerative Agriculture + Tree planting/Agroforestry + SWC = Crop diversification + Reduced disturbance + Erosion
+      R47: B15 || What is the main gap observed? || Free text || Not scored || — || 
+      R48: B16 || What immediate recommendation / advice was given to the farmer? || Free text || Not scored || — || 
+      R49: B17 || When is the next follow-up? || a) 1 month / b) 3 months / c) 6 months / d) No follow-up needed || Not scored || — || 
+      R50: B18 || Photo upload || Best / weakest practice || Not scored || — || 
+      R51: SECTION C - Household Resource Mapping / PIP || SECTION C - Household Resource Mapping / PIP || SECTION C - Household Resource Mapping / PIP || SECTION C - Household Resource Mapping / PIP || SECTION C - Household Resource Mapping / PIP || SECTION C - Household Resource Mapping / PIP
+      R52: C1 || [Ask] Did you draw a Household Resource Map? || a) Yes / b) No || a pass / b fails the package — section ends || PIP || CRITICAL + GATE
+      R53: C2 || [Observe] Is a map showing the current household situation present? || a) Yes, visible / b) No || a pass / b fail || PIP || 
+      R54: C3 || [Observe] Is the map / plan displayed (hung on the wall) or kept in a dedicated book, rather than loose or unlocatable? || a) Displayed or in a book / b) Exists but loose or hard to locate / c) Not shown || a pass / b neutral / c fail || PIP || 
+      R55: C4 || [Observe] Does the plan show signs of use since it was made — dated notes, ticked-off items, or visible handling and wear? || a) Yes, clear signs of use / b) Some signs, unclear / c) No signs of use || a pass / b neutral / c fail || PIP || 
+      R56: C5 || What is the main gap observed? || Free text || Not scored || — || 
+      R57: C6 || What immediate recommendation / advice was given to the farmer? || Free text || Not scored || — || 
+      R58: C7 || When is the next follow-up? || a) 1 month / b) 3 months / c) 6 months / d) No follow-up needed || Not scored || — || 
+      R59: C8 || Upload photo of the map || Upload / camera button || Not scored || — || 
+      R60: SECTION D - Kitchen Garden and Vegetable Growing || SECTION D - Kitchen Garden and Vegetable Growing || SECTION D - Kitchen Garden and Vegetable Growing || SECTION D - Kitchen Garden and Vegetable Growing || SECTION D - Kitchen Garden and Vegetable Growing || SECTION D - Kitchen Garden and Vegetable Growing
+      R61: D1 || Food sourcing inventory — for each group, indicate own production / bought / both / not consumed || a) Dark green leafy vegetables (dodo, nightshade, sukuma, spider plant) / b) Other vegetables (tomato, cabbage, onion, eggplant) / c) Beans & pulses / d) Roots and tubers (cassava, potato) / e) Cereals (barley, millet, rice, sorghum) / f) Bananas / g) Fruits / h) Eggs & poultry || Not scored — repeated and saved each visit || — || 
+      R62: D2 || Roughly how much of the planted kitchen garden area is covered by growing vegetables, versus bare soil or weeds? || a) Vegetables cover most of the kitchen garden — little bare ground between plants / b) Vegetables and bare ground or weeds are roughly equal / c) Mostly bare ground or weeds, few vegetables remaining || a pass / b neutral / c fail || Kitchen garden || 
+      R63: D3 || Are there weeds taller than the vegetable plants in the same plot? || a) No / b) Yes, in patches / c) Yes, across most of the garden || a pass / b neutral / c fail || Kitchen garden || 
+      R64: D4 || Inspect 10 vegetable plants across the bed. How many are wilted, yellowing, or dead? || Number: ___ / 10 || 0–3 pass / 4–6 neutral / 7–10 fail || Kitchen garden || 
+      R65: D5 || Which of the following structures are visible? || a) Sack / b) Keyhole wall / c) Raised bed edge / d) Fencing || Descriptive — not scored || — || 
+      R66: D6 || Is seed from this garden stored for the next season, and can you see it? || a) Yes, storage container or hanging bundle visible / b) Farmer says yes, nothing visible / c) No || a pass / b neutral / c fail || Kitchen garden || 
+      R67: Auto-Calculation – Show the Outcome / points earned ÷ points available across || Auto-Calculation – Show the Outcome / points earned ÷ points available across || Auto-Calculation – Show the Outcome / points earned ÷ points available across || Auto-Calculation – Show the Outcome / points earned ÷ points available across || Auto-Calculation – Show the Outcome / points earned ÷ points available across || Auto-Calculation – Show the Outcome / points earned ÷ points available across
+      R68: D7 || What is the main gap observed? || Free text || Not scored || — || 
+      R69: D8 || What immediate recommendation / advice was given to the farmer? || Free text || Not scored || — || 
+      R70: D9 || When is the next follow-up? || a) 1 month / b) 3 months / c) 6 months / d) No follow-up needed || Not scored || — || 
+      R71: D10 || Photo upload || Best / weakest practice || Not scored || — || 
+      R72: SECTION E — Financial Literacy || SECTION E — Financial Literacy || SECTION E — Financial Literacy || SECTION E — Financial Literacy || SECTION E — Financial Literacy || SECTION E — Financial Literacy
+      R73: E1 || [Ask, then request to see it] Does the household have a budget, plan, or financial record? || a) Yes, shown / b) Says yes, not shown / c) No || a pass / b neutral / c fail || Financial literacy || 
+      R74: E2 || Who makes financial decisions in your household — for example, the last major purchase? || a) Respondent alone / b) Spouse alone / c) Both / d) Single-adult household — no second adult || c pass / a/b fail / d N/A — removed from the denominator || Financial literacy || 
+      R75: E3 || Do you live within your means (spending within what you earn or have)? || a) Yes / b) No || a pass / b fails the section || Financial literacy || CRITICAL
+      R76: E4 || Were investments made in the last 12 months? || a) Yes / b) No || a pass / b fails the section || Financial literacy || GATE
+      R77: E4.1 || [If E4 = a] What have you invested in since the training? || a) Farming / b) Land / c) Business / d) Other || a/b/c/d pass || Financial literacy || 
+      R78: E5 || How much do you save on average per month? || Amount in UGX: ______ / Plus share of income being saved || Any amount above zero = pass / Zero or no saving = fail /  / Save for future visits  || Financial literacy || 
+      R79: E6 || Where do you save part of your income? || a) Bank / SACCO / b) Saving group / c) Mobile money / d) At home / e) Other || a/b/c pass / d/e neutral /  || Financial literacy || 
+      R80: E7 || Do you keep records of income and expenses? || a) Yes / b) No || a pass / b fail || Financial literacy || 
+      R81: E8 || [Ask to see it] Does the farmer have a record-keeping book? || a) Yes — shown + picture / b) Yes — not shown / c) No || a pass / b neutral / c fail || Financial literacy || GATE
+      R82: E8.1 || [If E8 = a/b] How often do you update the records? || a) Never / b) Daily / c) Weekly / d) Monthly / e) Annually / f) Other || b/c/d pass / e/f neutral / a fail || Financial literacy || 
+      R83: E8.2 || [If E8 = a/b] How has record keeping helped you? || a) Easy tracking of income and expenses / b) Improved planning and budgeting / c) Better investment decisions / d) To calculate profit or loss / e) Other || Descriptive — not scored || — || 
+      R84: Auto-Calculation – Show the Outcome / points earned ÷ points available across || Auto-Calculation – Show the Outcome / points earned ÷ points available across || Auto-Calculation – Show the Outcome / points earned ÷ points available across || Auto-Calculation – Show the Outcome / points earned ÷ points available across || Auto-Calculation – Show the Outcome / points earned ÷ points available across || Auto-Calculation – Show the Outcome / points earned ÷ points available across
+      R85: E9 || What is the main gap observed? || Free text || Not scored || — || 
+      R86: E10 || What immediate recommendation / advice was given to the farmer? || Free text || Not scored || — || 
+      R87: E11 || When is the next follow-up? || a) 1 month / b) 3 months / c) 6 months / d) No follow-up needed || Not scored || — || 
+      R88: E12 || Photo upload || Best / weakest practice || Not scored || — || 
+      R89: SECTION F - Poultry Production and Management || SECTION F - Poultry Production and Management || SECTION F - Poultry Production and Management || SECTION F - Poultry Production and Management || SECTION F - Poultry Production and Management || SECTION F - Poultry Production and Management
+      R90: F1 || Where are the birds at this moment? || a) In a house or enclosed structure / b) In a fenced or bounded area / c) Roaming freely, no boundary / d) No birds can be seen || a/b pass / c fails the section / d ends the section || Poultry || CRITICAL + GATE
+      R91: F1.1 || [If F1 = a/b] Which of these are present in the structure? (tick all observed) || a) Roof intact, no daylight through it / b) Walls or mesh on all sides / c) Door that closes / d) Openings above bird height for air / e) Litter or bedding on the floor || More than 2 = pass / 1 = neutral / 0 = fail || Poultry || 
+      R92: F2 || How many birds are visible? || a) 5 or more / b) Fewer than 5 || Not scored - sets the inspection method in F2.1 || — || GATE
+      R93: F2.1 || Inspect the birds. How many show ruffled feathers, closed eyes, nasal discharge, or are separated from the flock? || [If F2 = a] Inspect 5 birds — Number ___ / 5 / [If F2 = b] Inspect all birds present — Number ___ / ___ || If 5 birds inspected: / 0–1 pass  / 2–3 neutral  / 4+ fails the section /  / If fewer than 5 birds: more than half showing signs = fail (not a critical fail); otherwise pass || Poultry || CRITICAL (5-bird inspection only)
+      R94: F3 || Are any sick birds kept apart from the rest? || a) Yes, separate space in use / b) No sick birds seen / c) Sick birds mixed with the flock || a pass / b neutral / c fail || Poultry || CRITICAL
+      R95: F4 || [Ask to see] Poultry record book || a) Shown, with entries in the last month / b) Shown, no recent entries / c) Not shown or does not exist || a pass / b neutral / c fail || Poultry || 
+      R96: F5 || [Ask to see] Vaccination record or last vaccine container || a) Shown, dated within the last 6 months / b) Shown, older or undated / c) Nothing shown || a pass / b neutral / c fail || Poultry || 
+      R97: Auto-Calculation – Show the Outcome / points earned ÷ points available across || Auto-Calculation – Show the Outcome / points earned ÷ points available across || Auto-Calculation – Show the Outcome / points earned ÷ points available across || Auto-Calculation – Show the Outcome / points earned ÷ points available across || Auto-Calculation – Show the Outcome / points earned ÷ points available across || Auto-Calculation – Show the Outcome / points earned ÷ points available across
+      R98: F6 || What is the main gap observed or shared by the farmer? || Free text || Not scored || — || 
+      R99: F7 || What immediate advice was given to the farmer? || Free text || Not scored || — || 
+      R100: F8 || When is the next follow-up? || a) 1 month / b) 3 months / c) 6 months / d) No follow-up needed || Not scored || — || 
+      R101: F9 || Photo of the poultry management practices || Upload / camera button || Not scored || — || 
+      R102: SECTION G -  Tree Nursery Establishment and Management Practices || SECTION G -  Tree Nursery Establishment and Management Practices || SECTION G -  Tree Nursery Establishment and Management Practices || SECTION G -  Tree Nursery Establishment and Management Practices || SECTION G -  Tree Nursery Establishment and Management Practices || SECTION G -  Tree Nursery Establishment and Management Practices
+      R103: G1 || Are seedlings present at the nursery site? || a) Yes / b) No || b fails the section — section ends || Tree nursery || CRITICAL + GATE
+      R104: G2 || Roughly how many seedlings are on site? || Number || Descriptive + denominator for G9 || — || 
+      R105: G3 || What type of nursery is this? || a) Permanent structure / b) Temporary or flying nursery || Descriptive — not scored || — || 
+      R106: G4 || Where is the nearest water source, and is it flowing today? || a) On site or adjacent, water present / b) Within a short walk, water present / c) Distant, or no water available today || a/b pass / c fail || Tree nursery || 
+      R107: G5 || Is there stagnant water or waterlogging anywhere in the nursery bed? || a) No standing water, ground drains / b) Damp patches only / c) Stagnant water or visible waterlogging || a pass / b neutral / c fail || Tree nursery || 
+      R108: G5.1 || Are there visible run-off channels, eroded furrows, or washed-out patches in the seedbed? || a) No - bed surface intact / b) Yes - visible channels or washed-out areas || a pass / b fail /  || Tree nursery || 
+      R109: G6 || Is shade provided over the tree seedlings in the nursery bed? || a) Shade structure or netting covering the beds / b) Partial shade over some beds only / c) No shade || a pass / b neutral / c fail || Tree nursery || 
+      R110: G7 || Is the soil in the pots or beds damp at the moment? || a) Damp / b) Dry on the surface, damp below / c) Dry throughout || a pass / b neutral / c fail || Tree nursery || 
+      R111: G8 || Are weeds growing in or between the seedbeds? || a) Few or none / b) Weeds present but shorter than the seedlings / c) Weeds taller than the seedlings || a pass / b neutral / c fail || Tree nursery || 
+      R112: G9 || Inspect 10 seedlings. How many are yellowing, wilted, dead, or show leaf damage? || Number ___ / 10 || 0–1 pass / 2–3 neutral / 4+ fails the section || Tree nursery || CRITICAL
+      R113: Auto-Calculation – Show the Outcome / points earned ÷ points available across || Auto-Calculation – Show the Outcome / points earned ÷ points available across || Auto-Calculation – Show the Outcome / points earned ÷ points available across || Auto-Calculation – Show the Outcome / points earned ÷ points available across || Auto-Calculation – Show the Outcome / points earned ÷ points available across || Auto-Calculation – Show the Outcome / points earned ÷ points available across
+      R114: G10 || What is the main gap observed? || Free text || Not scored || — || 
+      R115: G11 || What immediate recommendation / advice was given to the farmer? || Free text || Not scored || — || 
+      R116: G12 || When is the next follow-up? || a) 1 month / b) 3 months / c) 6 months / d) No follow-up needed || Not scored || — || 
+      R117: G13 || Photo of the observed practices || Upload / camera button || Not scored || — || 
+      R118: SECTION H - Radio Talk Show Impact (everyone) || SECTION H - Radio Talk Show Impact (everyone) || SECTION H - Radio Talk Show Impact (everyone) || SECTION H - Radio Talk Show Impact (everyone) || SECTION H - Radio Talk Show Impact (everyone) || SECTION H - Radio Talk Show Impact (everyone)
+      R119: H1 || Do you listen to the radio? || a) Yes / b) No || Not scored / b ends the section || — || GATE
+      R120: H1.1 || [If H1 = a] Have you ever listened to any Harvesting Health radio talk-show? || a) Yes / b) No || Not scored / b ends the section || — || 
+      R121: H1.2 || [If H1.1 = a] Have you practised something learned from it? || a) Yes - free text ______ / b) No || Not scored — narrative || — || 
+      R122: SECTION I - Producer’s Feedback on Trainings (everyone; entirely unscored) || SECTION I - Producer’s Feedback on Trainings (everyone; entirely unscored) || SECTION I - Producer’s Feedback on Trainings (everyone; entirely unscored) || SECTION I - Producer’s Feedback on Trainings (everyone; entirely unscored) || SECTION I - Producer’s Feedback on Trainings (everyone; entirely unscored) || SECTION I - Producer’s Feedback on Trainings (everyone; entirely unscored)
+      R123: I1 || Which training topics have helped you the most? (select up to 2) || a) Bio-inputs / b) Regenerative / Sustainable Agriculture / c) Tree Planting & Agroforestry / d) SWC / e) Kitchen Garden / f) Financial Literacy / g) Household Resource Mapping / h) Poultry Mgt & Vaccination || Not scored || — || 
+      R124: I2 || What is the biggest change you have noticed since starting these practices? || a) More harvest / yield / b) More food variety at home / c) Spending less on inputs / d) Less soil erosion / land damage / e) Better animal / poultry health / f) Saving more money / g) No noticeable change yet / h) Other (free text) || Not scored || — || 
+      R125: I3 || What would make the trainings more useful to you? || a) More hands-on demonstration / b) More frequent follow-up visits / c) Materials in local language / d) Cover new / different topics / e) Nothing — satisfied as is / f) Other || Not scored || — || 
+[045] P (Normal): Consent
+[046] P (Normal): ☐  I have received permission from the participant / beneficiary to document and share their practices, for learning and communication purposes.
+[048] P (Normal): Walk-Through Good Adopter:
+[049] TABLE (Grid Table Light):
+      R1: Item || Response || Result || Points
+      R2: B1 — Food groups || 3 groups present || Pass || 2
+      R3: B2 — Soil cover (parent) || b) Mulch || Pass || 2
+      R4: B2.1(b) — Mulch quality || c) Scattered, >50% || Neutral || 1
+      R5: B3 — Erosion features || Isolated roots only || Not scored — no override || —
+      R6: B4 — Structures || a) Grass strips || Pass || 2
+      R7: B4.1 — Full width/partial || a) Full width || Pass || 2
+      R8: B4.2 — Contour || a) Yes || Pass || 2
+      R9: B5 — Prep method || c) Planting holes || Pass || 2
+      R10: B5.1 — Furrow marks || a) None || Pass || 2
+      R11: B5.2 — Whole plot/part || a) Whole plot || Pass || 2
+      R12: B6 — Weed management || a) Hand-pulling/spot-hoeing || Pass || 2
+      R13: B7 — Arrangement || b) Interplanted || Pass || 2
+      R14: B8 — Trees present || a) Yes || Pass || 2
+      R15: B8.1 — Underplanting || b) Nothing underneath || Neutral || 1
+      R16: B8.2 — Tree arrangement || a) Boundary || Pass || 2
+      R17: B9 — Residue/rotation || a) Names crop, differs from current || Pass || 2
+      R18: B9.1 — Farmer confirmation || a) Yes, different crop || Pass || 2
+      R19: B10 — Pest method || a) Biological/manual || Pass || 2
+      R20: B10.1 — Damage count || 1/10 || Pass || 2
+      R21: B10.2 — Severity count || 0/10 || Pass || 2
+      R22: B10.3 — Pesticide change || c) Reduced || Pass || 2
+      R23: B11 — Fertility ticklist || a) Manure visible || Pass || 2
+      R24: B11.1 — Application location || a) Whole plot evenly || Pass || 2
+      R25: B11.2 — Application method || a) Spread on surface || Pass || 2
+      R26: B12 — Earthworm count || c) 5+ || Pass || 2
+[050] P (Normal): Crop diversification 15/16 = 94% 
+[051] P (Normal): Erosion 16/18 = 89% 
+[052] P (Normal): Soil cover 20/22 = 91% 
+[053] P (Normal): Pest management 14/14 = 100% 
+[054] P (Normal): Reduced disturbance 8/8 = 100%
+[056] P (Normal): Breadth = 5/5 - Depth = 95%
+[057] P (Normal): Other sections
+[058] TABLE (Grid Table Light):
+      R1: Section || Key answers || Result
+      R2: C — PIP || Map drawn, current map visible, loose/not displayed (neutral), clear signs of use || 7/8 = 88%
+      R3: D — Kitchen Garden || Vegetables cover most of bed, no weeds, 2/10 wilted, seed storage visible || 8/8 = 100%
+      R4: E — Financial Literacy || Budget shown, both decide, lives within means, invested in farming, saves regularly, bank/SACCO, records shown weekly || 20/20 = 100%
+      R5: F — Poultry || Housed, 3+ housing items, healthy flock, isolation practiced, records and vaccination current || 12/12 = 100%
+[063] P (Normal): Walk-Through Medium Adopter 
+[065] TABLE (Grid Table Light):
+      R1: Item || Response || Result || Points
+      R2: B1 — Food groups || 3 groups present || Pass || 2
+      R3: B2 — Soil cover (parent) || b) Mulch || Pass || 2
+      R4: B2.1(b) — Mulch quality || c) Scattered, >50% || Neutral || 1
+      R5: B3 — Erosion features || Rills ankle-height + isolated roots || Not scored — 0 severe, no override || —
+      R6: B4 — Structures || a) Grass strips || Pass || 2
+      R7: B4.1 — Full width/partial || b) Partial || Neutral || 1
+      R8: B4.2 — Contour || c) Unsure || Fail || 0
+      R9: B5 — Prep method || c) Planting holes || Pass || 2
+      R10: B5.1 — Furrow marks || b) Old furrows visible || Neutral || 1
+      R11: B5.2 — Whole plot/part || b) Part of plot only || Fail || 0
+      R12: B6 — Weed management || b) Full-bed hoeing, few times/yr || Neutral || 1
+      R13: B7 — Arrangement || a) Single crop, uniform || Fail || 0
+      R14: B8 — Trees present || a) Yes || Pass || 2
+      R15: B8.1 — Underplanting || b) No || Neutral || 1
+      R16: B8.2 — Tree arrangement || b) Compound || Fail || 0
+      R17: B9 — Residue/rotation || b) Traces visible, unidentifiable || Rotation neutral (1) · Soil cover pass (2) || 1 / 2
+      R18: B9.1 — Farmer confirmation || b) No, same crop || Fail || 0
+      R19: B10 — Pest method || c) Synthetic pesticide only || CRITICAL FAIL || —
+      R20: B10.1–B10.3 || — || Don't fire (conditional on a/b) || —
+      R21: B11 — Fertility ticklist || a) Manure visible || Pass || 2
+      R22: B11.1 — Application location || c) One section only || Neutral || 1
+      R23: B11.2 — Application method || a) Spread on surface || Pass || 2
+      R24: B12 — Earthworm count || b) 1–4 || Neutral || 1
+[066] P (Normal): Package totals:
+[067] P (Normal): Crop diversification: B1(2)+B2(2)+B7(0)+B8(2)+B8.1(1)+B8.2(0)+B9-rotation(1)+B9.1(0) = 8/16 = 50%
+[068] P (Normal): Erosion: B2(2)+B2.1(1)+B4(2)+B4.1(1)+B4.2(0)+B5(2)+B8(2)+B8.1(1)+B8.2(0) = 11/18 = 61%
+[069] P (Normal): Soil cover: B2(2)+B2.1(1)+B5(2)+B8(2)+B8.1(1)+B9 (2)+B9.1(0)+B11(2)+B11.1(1)+B11.2(2)+B12(1) = 16/22 = 73%
+[070] P (Normal): Pest management: CRITICAL FAIL - excluded
+[071] P (Normal): Reduced disturbance: B5(2)+B5.1(1)+B5.2(0)+B6(1) = 4/8 = 50%
+[073] P (Normal): Breadth = 4/5 
+[074] P (Normal): Depth = mean(50, 61, 73, 50) = 58%
+[076] P (Normal): Recommendation: 
+[077] P (List Paragraph): Centralized Training in Bio-inputs (critical fail)
+[078] P (List Paragraph): Sustainable/Regenerative Agriculture + Tree planting/Agroforestry + SWC?
+[080] P (Normal): Other sections
+[081] TABLE (Grid Table Light):
+      R1: Section || Answers || Result || Recommendation
+      R2: C — PIP || Map drawn, current map absent, loose (neutral), no signs of use || 3/8 = 38% || Centralized training in PIP
+      R3: D — Kitchen Garden || Roughly equal veg/bare, weeds in patches, 4/10 wilted, seed claimed not shown || 4/8 = 50% || Centralized training in Kitchen Gardens 
+      R4: E — Financial Literacy || Budget claimed not shown, respondent alone decides, does not live within means || CRITICAL FAIL  || Centralized training in financial literacy 
+      R5: F — Poultry || Housed, 1 housing item (neutral), <5 birds, 1 of 4 shows signs (pass, not critical), no sick birds seen (neutral), records/vaccination shown but stale || 8/12 = 67% || Centralized training in Poultry Mgt and Vaccination 
+[085] P (Normal): Walk-Through Bad Adopter
+[086] P (Normal): Section B — Regenerative / Sustainable Farming Practices
+[087] TABLE (Grid Table Light):
+      R1: Item || Response || Result || Points
+      R2: B1 — Food groups || 1 food group only || CRITICAL FAIL || —
+      R3: B2 — Soil cover (parent) || a) Bare soil || Fail || 0
+      R4: B2.1 || — || N/A — B2 ≠ b/c, doesn't fire || —
+      R5: B3 — Erosion features || Rills deeper than ankle + built-up loose soil ridge || 2 severe features → CRITICAL FAIL || —
+      R6: B4 — Structures || f) None || CRITICAL FAIL (redundant with B3) || —
+      R7: B5 — Prep method || a) Fully tilled || CRITICAL FAIL (Reduced disturbance) || —
+      R8: B5.1 / B5.2 || — || Don't fire — conditional on b/c/d || —
+      R9: B6 — Weed management || c) Full-bed hoeing, frequent || Fail (package already failed) || —
+      R10: B7 — Arrangement || a) Single crop, uniform || Fail || 0
+      R11: B8 — Trees present || b) No || Fail || 0
+      R12: B8.1 / B8.2 || — || N/A — B8 ≠ a || —
+      R13: B9 — Residue/rotation || c) No traces || Fail (rotation) · Fail (soil cover) || 0 / 0
+      R14: B9.1 — Farmer confirmation || b) No, same crop || Fail || 0
+      R15: B10 — Pest method || c) Synthetic pesticide only || CRITICAL FAIL || —
+      R16: B11 — Fertility ticklist || e) None of the above || Fail || 0
+      R17: B11.1 / B11.2 || — || N/A — B11 ≠ a || —
+      R18: B12 — Earthworm count || a) 0 || Fail || 0
+[089] P (Normal): Package totals:
+[090] P (Normal): Crop diversification: CRITICAL FAIL — excluded
+[091] P (Normal): Erosion: CRITICAL FAIL — excluded
+[092] P (Normal): Reduced disturbance: CRITICAL FAIL — excluded
+[093] P (Normal): Pest management: CRITICAL FAIL — excluded
+[094] P (Normal): Soil cover: B2(0)+B5(0)+B8(0)+B9(0)+B9.1(0)+B11(0)+B12(0) = 0/14 = 0%
+[097] TABLE (Table Grid):
+      R1: Section || Key answers || Result
+      R2: C — PIP || No map drawn || CRITICAL FAIL — section ends, excluded
+      R3: D — Kitchen Garden || Mostly bare/weeds, weeds across most of garden, 8/10 wilted, no seed storage || 0/8 = 0%
+      R4: E — Financial Literacy || No budget, respondent alone decides, does not live within means || CRITICAL FAIL — excluded entirely
+      R5: F — Poultry || Birds roaming freely, no boundary || CRITICAL FAIL — section fails outright
+      R6: G — Tree Nursery || No seedlings present at site || CRITICAL FAIL — section ends, excluded
