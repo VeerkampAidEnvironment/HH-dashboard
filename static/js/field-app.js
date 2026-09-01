@@ -85,6 +85,7 @@
     const status = $("[data-location-status]");
     const captureButton = $("[data-capture-location]");
     const clearButton = $("[data-clear-location]");
+    if (!status || !captureButton || !clearButton) return;
     if (!capturedLocation) {
       status.textContent = "Optional — add the device's current GPS location to this follow-up.";
       status.classList.remove("captured");
@@ -340,6 +341,7 @@
     const wrap = create("section", `field-question field-question-${question.type}`);
     wrap.dataset.surveyQuestion = question.id;
     if (question.condition) wrap.dataset.condition = JSON.stringify(question.condition);
+    if (question.skip_condition) wrap.dataset.skipCondition = JSON.stringify(question.skip_condition);
     wrap.dataset.required = question.required ? "true" : "false";
     if (question.max_selections) wrap.dataset.maxSelections = String(question.max_selections);
     if (question.exclusive_values) wrap.dataset.exclusiveValues = JSON.stringify(question.exclusive_values);
@@ -349,7 +351,10 @@
     if (question.required) copy.append(create("b", "field-required", "Required"));
     wrap.append(copy);
     const options = question.options || [];
-    const rawPrefill = question.profile_key ? String(farmer.profile?.[question.profile_key] || "").trim() : "";
+    const prefillSource = question.profile_key
+      ? farmer.profile?.[question.profile_key]
+      : (question.carry_forward ? farmer.previousAnswers?.[question.id] : "");
+    const rawPrefill = String(prefillSource ?? "").trim();
     const matchedPrefill = options.find((option) => {
       const value = typeof option === "object" ? option.value : option;
       const label = typeof option === "object" ? option.label : option;
@@ -363,13 +368,124 @@
       wrap.append(list);
     } else if (question.type === "readonly") {
       const value = create("div", "field-readonly-value");
-      value.append(create("strong", "", prefill || "Not recorded"), create("small", "", "Filled from the beneficiary database"));
+      const label = create("strong", "", prefill || "Not recorded");
+      const note = create("small", "", "Filled from the beneficiary database");
       const input = document.createElement("input");
       input.type = "hidden";
       input.name = name;
       input.value = prefill;
-      value.append(input);
+      value.append(label, note, input);
+      if (question.editable) {
+        value.classList.add("survey-editable-value");
+        const editButton = create("button", "button button-ghost button-small", "Edit");
+        editButton.type = "button";
+        const editor = create("div", "survey-inline-editor");
+        editor.hidden = true;
+        const editorInput = document.createElement("input");
+        editorInput.type = question.id === "a8_contact" ? "tel" : "text";
+        editorInput.value = prefill;
+        editorInput.setAttribute("aria-label", `Edit ${question.label}`);
+        const saveButton = create("button", "button button-primary button-small", "Save");
+        const cancelButton = create("button", "button button-ghost button-small", "Cancel");
+        saveButton.type = "button";
+        cancelButton.type = "button";
+        const closeEditor = () => { editor.hidden = true; label.hidden = false; note.hidden = false; editButton.hidden = false; };
+        editButton.addEventListener("click", () => {
+          editorInput.value = input.value;
+          label.hidden = true;
+          note.hidden = true;
+          editButton.hidden = true;
+          editor.hidden = false;
+          editorInput.focus();
+        });
+        saveButton.addEventListener("click", () => {
+          input.value = editorInput.value.trim();
+          label.textContent = input.value || "Not recorded";
+          closeEditor();
+        });
+        cancelButton.addEventListener("click", closeEditor);
+        editorInput.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") { event.preventDefault(); saveButton.click(); }
+          if (event.key === "Escape") { event.preventDefault(); closeEditor(); }
+        });
+        editor.append(editorInput, saveButton, cancelButton);
+        value.append(editButton, editor);
+      }
       wrap.append(value);
+    } else if (question.type === "gps") {
+      const tracker = create("div", "survey-gps-capture");
+      tracker.dataset.gpsTracker = "";
+      tracker.dataset.tracking = "false";
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = name;
+      const status = create("div", "survey-gps-status", "No plot boundary recorded yet.");
+      const actions = create("div", "survey-gps-actions");
+      const startButton = create("button", "button button-secondary button-small", "Start tracking");
+      const stopButton = create("button", "button button-primary button-small", "Stop and save");
+      const clearButton = create("button", "button button-ghost button-small", "Clear");
+      [startButton, stopButton, clearButton].forEach((button) => { button.type = "button"; });
+      stopButton.hidden = true;
+      clearButton.hidden = true;
+      let watchId = null;
+      let points = [];
+      const distanceFromLastPoint = (point) => {
+        const previous = points.at(-1);
+        if (!previous) return Infinity;
+        const radians = (degrees) => degrees * Math.PI / 180;
+        const latitudeDelta = radians(point.latitude - previous.latitude);
+        const longitudeDelta = radians(point.longitude - previous.longitude);
+        const a = Math.sin(latitudeDelta / 2) ** 2
+          + Math.cos(radians(previous.latitude)) * Math.cos(radians(point.latitude))
+          * Math.sin(longitudeDelta / 2) ** 2;
+        return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      };
+      const renderGps = () => {
+        tracker.dataset.tracking = watchId === null ? "false" : "true";
+        startButton.hidden = watchId !== null;
+        stopButton.hidden = watchId === null;
+        clearButton.hidden = watchId !== null || points.length === 0;
+        status.classList.toggle("captured", points.length > 0);
+        status.textContent = watchId !== null
+          ? `Tracking plot boundary… ${points.length} GPS ${points.length === 1 ? "point" : "points"} captured.`
+          : points.length
+            ? `Plot boundary saved · ${points.length} GPS ${points.length === 1 ? "point" : "points"}.`
+            : "No plot boundary recorded yet.";
+      };
+      const stopGps = () => {
+        if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+        input.value = points.length ? JSON.stringify({ points }) : "";
+        renderGps();
+      };
+      startButton.addEventListener("click", () => {
+        if (!window.isSecureContext || !("geolocation" in navigator)) {
+          alertUser("GPS tracking requires HTTPS and enabled location services.", "warning");
+          return;
+        }
+        points = [];
+        input.value = "";
+        watchId = navigator.geolocation.watchPosition((position) => {
+          if (points.length >= 5000) { stopGps(); return; }
+          const point = {
+            latitude: position.coords.latitude, longitude: position.coords.longitude,
+            accuracy: position.coords.accuracy, capturedAt: new Date(position.timestamp).toISOString(),
+          };
+          if (distanceFromLastPoint(point) < 4) return;
+          points.push(point);
+          capturedLocation = { ...point };
+          renderGps();
+        }, (error) => {
+          stopGps();
+          alertUser(error.code === 1 ? "Location permission was declined." : "The plot boundary could not be tracked.", "warning");
+        }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+        renderGps();
+      });
+      stopButton.addEventListener("click", stopGps);
+      clearButton.addEventListener("click", () => { points = []; input.value = ""; capturedLocation = null; renderGps(); });
+      actions.append(startButton, stopButton, clearButton);
+      tracker.append(input, status, actions);
+      wrap.append(tracker);
     } else if (question.type === "photos") {
       const upload = create("label", "field-photo-upload");
       const input = document.createElement("input");
@@ -398,10 +514,14 @@
       input.name = name;
       input.min = String(question.min_value ?? 0);
       if (question.max_value !== undefined) input.max = String(question.max_value);
-      input.step = question.integer ? "1" : "any";
+      input.step = String(question.step_value ?? (question.integer ? 1 : "any"));
       input.value = prefill;
+      input.placeholder = question.integer ? "Enter a whole number" : "Enter a number";
       numberWrap.append(input);
-      if (question.unit) numberWrap.append(create("span", "", question.unit));
+      if (question.unit) {
+        numberWrap.classList.add("has-unit");
+        numberWrap.append(create("span", "", question.unit));
+      }
       wrap.append(numberWrap);
     } else if (question.type === "multi") {
       const choices = create("div", "field-choice-grid");
@@ -485,13 +605,22 @@
       if (section.intro) title.append(create("small", "", section.intro));
       summary.append(title, create("b", "", `${section.questions.length} items`));
       const questions = create("div", "field-question-list");
+      if (section.instruction) questions.append(create("div", "field-section-instruction", section.instruction));
       section.questions.forEach((question) => questions.append(questionInput(question, farmer)));
+      const guide = create("div", "survey-question-guide");
+      const previousQuestion = create("button", "button button-ghost button-small", "Previous question");
+      const questionProgress = create("span", "", "");
+      const nextQuestion = create("button", "button button-primary button-small", "Next question");
+      previousQuestion.type = "button";
+      nextQuestion.type = "button";
+      guide.append(previousQuestion, questionProgress, nextQuestion);
       const actions = create("div", "field-survey-step-actions");
       actions.append(create("small", "", `Package ${sectionIndex + 1} of ${sections.length}`));
       const nextButton = create("button", "button button-primary", sectionIndex === sections.length - 1 ? "Finish final package" : "Finish this package and continue");
       nextButton.type = "button";
-      nextButton.addEventListener("click", () => {
+      nextButton.addEventListener("click", async () => {
         if (!validateFieldStep(details, container)) return;
+        if (!await window.arfsaConfirmPackage({ finalPackage: sectionIndex === sections.length - 1 })) return;
         details.hidden = true;
         details.open = false;
         const next = container.querySelector(`[data-section="${CSS.escape(sections[sectionIndex + 1]?.id || "")}"]`);
@@ -506,7 +635,42 @@
         }
       });
       actions.append(nextButton);
-      details.append(summary, questions, actions);
+      const questionNodes = $$('[data-survey-question]', questions);
+      const useQuestionGuide = section.id !== "A";
+      guide.hidden = !useQuestionGuide;
+      let currentQuestionId = questionNodes[0]?.dataset.surveyQuestion || "";
+      const refreshQuestionGuide = () => {
+        if (!useQuestionGuide) {
+          questionNodes.forEach((node) => node.classList.remove("survey-guide-hidden"));
+          actions.hidden = false;
+          return;
+        }
+        const active = questionNodes.filter((node) => !node.hidden);
+        let position = active.findIndex((node) => node.dataset.surveyQuestion === currentQuestionId);
+        if (position < 0) position = 0;
+        const current = active[position];
+        if (current) currentQuestionId = current.dataset.surveyQuestion;
+        questionNodes.forEach((node) => node.classList.toggle("survey-guide-hidden", node !== current));
+        previousQuestion.hidden = position <= 0;
+        nextQuestion.hidden = !current || position >= active.length - 1;
+        actions.hidden = !current || position < active.length - 1;
+        questionProgress.textContent = current ? `Question ${position + 1} of ${active.length}` : "No applicable questions";
+      };
+      previousQuestion.addEventListener("click", () => {
+        const active = questionNodes.filter((node) => !node.hidden);
+        const position = active.findIndex((node) => node.dataset.surveyQuestion === currentQuestionId);
+        if (position > 0) currentQuestionId = active[position - 1].dataset.surveyQuestion;
+        refreshQuestionGuide();
+      });
+      nextQuestion.addEventListener("click", () => {
+        const active = questionNodes.filter((node) => !node.hidden);
+        const position = active.findIndex((node) => node.dataset.surveyQuestion === currentQuestionId);
+        if (!validateFieldGuideQuestion(active[position], container)) return;
+        if (position >= 0 && position < active.length - 1) currentQuestionId = active[position + 1].dataset.surveyQuestion;
+        refreshQuestionGuide();
+      });
+      details.refreshQuestionGuide = refreshQuestionGuide;
+      details.append(summary, questions, guide, actions);
       container.append(details);
     });
     const finalize = create("div", "field-survey-finalize");
@@ -547,17 +711,20 @@
     if (condition.operator === "contains") return Array.isArray(value) && value.includes(condition.value);
     if (condition.operator === "contains_any") return Array.isArray(value) && value.some((item) => (condition.values || []).includes(item));
     if (condition.operator === "has_any_except") return Array.isArray(value) && value.some((item) => item !== condition.value);
+    if (condition.operator === "not_empty") return Array.isArray(value) ? value.length > 0 : value !== "";
     return false;
   };
 
   const updateFieldSurveyConditions = (container) => {
     $$('[data-survey-question]', container).forEach((node) => {
       const condition = node.dataset.condition ? JSON.parse(node.dataset.condition) : null;
-      const visible = surveyConditionMatches(container, condition);
+      const skipCondition = node.dataset.skipCondition ? JSON.parse(node.dataset.skipCondition) : null;
+      const visible = surveyConditionMatches(container, condition) && !(skipCondition && surveyConditionMatches(container, skipCondition));
       node.hidden = !visible;
       $$('input, select, textarea', node).forEach((control) => { control.disabled = !visible; });
       applyFieldMultiRules(node);
     });
+    $$('[data-section]', container).forEach((section) => section.refreshQuestionGuide?.());
   };
 
   const applyFieldMultiRules = (node, changedControl = null) => {
@@ -579,8 +746,8 @@
 
   const readPhotoFiles = async (node) => {
     const files = Array.from($('input[type="file"]', node)?.files || []);
-    if (files.length > 6) throw new Error("Upload no more than 6 photos for B18.");
-    if (files.some((file) => file.size > 8 * 1024 * 1024)) throw new Error("Each B18 photo must be smaller than 8 MB.");
+    if (files.length > 6) throw new Error("Upload no more than 6 photos for one photo question.");
+    if (files.some((file) => file.size > 8 * 1024 * 1024)) throw new Error("Each follow-up photo must be smaller than 8 MB.");
     return Promise.all(files.map((file) => new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve({ name: file.name, type: file.type, data: reader.result });
@@ -593,6 +760,11 @@
     updateFieldSurveyConditions(container);
     for (const node of $$('[data-survey-question]', step)) {
       if (node.hidden) continue;
+      if ($('[data-gps-tracker][data-tracking="true"]', node)) {
+        alertUser("Stop and save the A7 GPS tracking before finalizing this section.", "warning");
+        node.scrollIntoView({ behavior: "smooth", block: "center" });
+        return false;
+      }
       const controls = $$('input:not([type="hidden"]), select, textarea', node);
       const invalid = controls.find((control) => !control.checkValidity());
       if (invalid) {
@@ -601,7 +773,7 @@
       }
       const fileInput = $('input[type="file"]', node);
       if (fileInput?.files.length > 6) {
-        alertUser("Upload no more than 6 photos for B18.", "warning");
+        alertUser("Upload no more than 6 photos for one photo question.", "warning");
         return false;
       }
       const value = surveyValue(container, node.dataset.surveyQuestion);
@@ -642,6 +814,25 @@
     const unhealthy = Number(surveyValue(container, "f2_1_unhealthy"));
     if ($('[data-survey-question="f2_1_unhealthy"]:not([hidden])', step) && unhealthy > visible) {
       alertUser("F2.1 cannot be greater than the number of visible birds in F2.", "warning");
+      return false;
+    }
+    return true;
+  };
+
+  const validateFieldGuideQuestion = (node, container) => {
+    if (!node || node.hidden) return true;
+    if ($('[data-gps-tracker][data-tracking="true"]', node)) {
+      alertUser("Stop and save the A7 GPS tracking before continuing.", "warning");
+      return false;
+    }
+    const controls = $$('input:not([type="hidden"]), select, textarea', node);
+    const invalid = controls.find((control) => !control.checkValidity());
+    if (invalid) { invalid.reportValidity(); return false; }
+    const value = surveyValue(container, node.dataset.surveyQuestion);
+    const fileInput = $('input[type="file"]', node);
+    const empty = fileInput ? fileInput.files.length === 0 : (Array.isArray(value) ? value.length === 0 : value === "");
+    if (node.dataset.required === "true" && empty && !node.classList.contains("field-question-training_list")) {
+      alertUser(`Complete required item ${$("small", node)?.textContent || "before continuing"}.`, "warning");
       return false;
     }
     return true;
@@ -923,11 +1114,6 @@
   $("[data-fu-search]").addEventListener("input", renderFarmerList);
   $("[data-ct-form]").addEventListener("submit", saveCentralized);
   $("[data-followup-form]").addEventListener("submit", saveFollowup);
-  $("[data-capture-location]").addEventListener("click", captureCurrentLocation);
-  $("[data-clear-location]").addEventListener("click", () => {
-    capturedLocation = null;
-    updateLocationStatus();
-  });
   window.addEventListener("online", () => { updateConnection(); if (fieldPackage && currentOutbox().length) synchronize(); });
   window.addEventListener("offline", updateConnection);
   start().catch(() => alertUser("This browser could not open the tablet's offline storage.", "error"));

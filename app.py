@@ -53,6 +53,7 @@ from db import (
 )
 from questionnaire import NEXT_ACTION_OPTIONS, QUESTIONNAIRE_VERSION, questionnaire_for_topic
 from followup_survey import (
+    CARRY_FORWARD_QUESTION_IDS,
     SURVEY_VERSION,
     all_questions_for_topics,
     build_survey,
@@ -116,14 +117,14 @@ def prepare_followup_photos(field_name: str, encoded_value: str = "") -> list[di
             except (KeyError, TypeError, ValueError, binascii.Error):
                 raise ValueError("One of the offline photos is invalid.") from None
     if len(candidates) > MAX_FOLLOWUP_PHOTOS:
-        raise ValueError(f"Upload no more than {MAX_FOLLOWUP_PHOTOS} photos for B18.")
+        raise ValueError(f"Upload no more than {MAX_FOLLOWUP_PHOTOS} photos for one photo question.")
     prepared = []
     for original_name, data in candidates:
         if not data or len(data) > MAX_FOLLOWUP_PHOTO_BYTES:
-            raise ValueError("Each B18 photo must be smaller than 8 MB.")
+            raise ValueError("Each follow-up photo must be smaller than 8 MB.")
         extension = _photo_extension(data)
         if not extension:
-            raise ValueError("B18 accepts JPG, PNG, WebP or HEIC photos only.")
+            raise ValueError("Photo questions accept JPG, PNG, WebP or HEIC photos only.")
         prepared.append({"name": original_name or f"photo{extension}", "extension": extension, "data": data})
     return prepared
 
@@ -1390,6 +1391,7 @@ def create_app(test_config=None):
                     due_topics,
                     followup_profile(selected_followup_record, raw),
                     training_history=received_training_topics(raw),
+                    previous_answers=carry_forward_answers_by_record(connection, [selected_record_id]).get(selected_record_id, {}),
                 )
             else:
                 selected_record_id = None
@@ -1636,6 +1638,34 @@ def followup_profile(record, raw: dict) -> dict[str, str]:
     }
 
 
+def carry_forward_answers_by_record(connection, record_ids: list[int]) -> dict[int, dict[str, Any]]:
+    """Return the latest saved B13 quantity/unit group for each requested beneficiary."""
+    if not record_ids:
+        return {}
+    placeholders = ",".join("?" for _ in record_ids)
+    rows = connection.execute(
+        f"""SELECT record_id, answers FROM followup_responses
+            WHERE record_id IN ({placeholders}) ORDER BY id DESC""",
+        record_ids,
+    ).fetchall()
+    carried: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        record_id = row["record_id"]
+        if record_id in carried:
+            continue
+        try:
+            payload = json.loads(row["answers"])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if "b13_synthetic_fertilizer" not in payload:
+            continue
+        carried[record_id] = {
+            question_id: payload.get(question_id, {}).get("answer", "")
+            for question_id in CARRY_FORWARD_QUESTION_IDS
+        }
+    return carried
+
+
 def available_ae_cbfs(connection) -> list[str]:
     return [row[0] for row in connection.execute(
         """SELECT DISTINCT cbf_name FROM records
@@ -1684,6 +1714,7 @@ def build_field_app_package(connection, cbf_name: str) -> dict:
                 "lastActivityDate": row["last_activity_date"],
             })
     farmers = []
+    previous_answers_by_record = carry_forward_answers_by_record(connection, record_ids)
     ct_entries = 0
     followup_entries = 0
     for row in records:
@@ -1704,6 +1735,7 @@ def build_field_app_package(connection, cbf_name: str) -> dict:
             "followupTopics": followup_topics,
             "trainingHistory": received_training_topics(raw),
             "profile": followup_profile(row, raw),
+            "previousAnswers": previous_answers_by_record.get(row["id"], {}),
         })
     venue_rows = connection.execute(
         """SELECT location AS venue FROM field_events
@@ -1802,7 +1834,9 @@ def synchronize_field_submission(connection, cbf_name: str, submission, username
                 elif question["id"] == "f2_visible":
                     value = {"five_plus": 5, "under_five": survey_answers.get("f2_1_total", 1)}.get(value, value)
                 field_name = f"survey_answer__{question['id']}"
-                if question["type"] == "photos" and isinstance(value, list):
+                if question["type"] == "gps" and isinstance(value, (dict, list)):
+                    pairs.append((field_name, json.dumps(value)))
+                elif question["type"] == "photos" and isinstance(value, list):
                     pairs.append((field_name, json.dumps(value)))
                 elif isinstance(value, list):
                     pairs.extend((field_name, str(item)) for item in value)
@@ -2128,6 +2162,37 @@ def save_followup(
     return True, f"Follow-up saved for {record['name']}."
 
 
+def parse_gps_track(value: Any) -> dict[str, list[dict[str, Any]]] | str:
+    """Return a bounded, normalized A7 GPS track, or an empty string."""
+    if value is None or value == "":
+        return ""
+    try:
+        payload = json.loads(value) if isinstance(value, str) else value
+    except (TypeError, ValueError, json.JSONDecodeError) as error:
+        raise ValueError("A7 contains an invalid GPS track.") from error
+    points = payload.get("points") if isinstance(payload, dict) else payload
+    if not isinstance(points, list) or not points or len(points) > 5000:
+        raise ValueError("A7 must contain between 1 and 5,000 GPS points.")
+    normalized = []
+    for point in points:
+        if not isinstance(point, dict):
+            raise ValueError("A7 contains an invalid GPS point.")
+        try:
+            latitude = float(point.get("latitude"))
+            longitude = float(point.get("longitude"))
+            accuracy = float(point.get("accuracy", 0))
+        except (TypeError, ValueError) as error:
+            raise ValueError("A7 contains an invalid GPS point.") from error
+        if not (-90 <= latitude <= 90 and -180 <= longitude <= 180 and 0 <= accuracy <= 100000):
+            raise ValueError("A7 contains a GPS point outside the valid range.")
+        captured_at = str(point.get("capturedAt") or "")[:40]
+        normalized.append({
+            "latitude": latitude, "longitude": longitude,
+            "accuracy": accuracy, "capturedAt": captured_at,
+        })
+    return {"points": normalized}
+
+
 def save_scored_followup(
     connection, cbf_name: str, values, username: str, *,
     client_submission_id: str | None = None, device_id: str | None = None,
@@ -2184,6 +2249,11 @@ def save_scored_followup(
             except ValueError as error:
                 return False, str(error)
             answer = [{"name": photo["name"]} for photo in pending_photos[item["id"]]]
+        elif item["type"] == "gps":
+            try:
+                answer = parse_gps_track(values.get(field_name, "").strip())
+            except ValueError as error:
+                return False, str(error)
         else:
             answer = values.get(field_name, "").strip()
         if item["id"] == "b12_macrofauna":
@@ -2207,6 +2277,14 @@ def save_scored_followup(
     results = score_survey(answers, topics)
     if any(topic not in results["trainings"] for topic in topics):
         return False, "A result could not be calculated for one of the applicable training types."
+
+    gps_track = answers.get("a7_gps")
+    if isinstance(gps_track, dict) and gps_track.get("points") and latitude is None:
+        final_point = gps_track["points"][-1]
+        latitude = final_point["latitude"]
+        longitude = final_point["longitude"]
+        location_accuracy_m = final_point["accuracy"]
+        location_captured_at = final_point["capturedAt"] or None
 
     for question_id, prepared in pending_photos.items():
         stored_photos = persist_followup_photos(prepared)
@@ -2283,7 +2361,7 @@ def save_scored_followup(
             (
                 assessment_id, package["key"], package["title"], package["points_earned"],
                 package["points_available"], package["score"], package["status"],
-                int(package["critical_failed"]), ", ".join(package["recommendations"]),
+                int(package["critical_failed"]), package["recommendation"],
             ),
         )
 

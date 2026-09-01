@@ -74,20 +74,44 @@
       {% for section in followup_survey.sections %}
       <details class="questionnaire-topic survey-section survey-wizard-step" data-survey-section="{{ section.id }}" data-survey-step="{{ loop.index0 }}" {{ 'open' if loop.first }} {{ 'hidden' if not loop.first }}>
         <summary><div><span class="topic-number">{{ section.id }}</span><div><strong>{{ section.title }}</strong>{% if section.intro %}<small>{{ section.intro }}</small>{% endif %}</div></div><span class="badge">{{ section.questions|length }} items</span></summary>
+        {% if section.instruction %}<div class="survey-section-instruction"><strong>{{ section.instruction }}</strong></div>{% endif %}
         <div class="questionnaire-questions">
           {% for question in section.questions %}{% set field_name = 'survey_answer__' ~ question.id %}
-          <section class="questionnaire-question question-{{ question.type }}" data-survey-question="{{ question.id }}" {% if question.condition %}data-condition='{{ question.condition|tojson }}'{% endif %} data-required="{{ 'true' if question.required else 'false' }}"{% if question.max_selections %} data-max-selections="{{ question.max_selections }}"{% endif %}{% if question.exclusive_values %} data-exclusive-values='{{ question.exclusive_values|tojson }}'{% endif %}>
+          <section class="questionnaire-question question-{{ question.type }}" data-survey-question="{{ question.id }}" {% if question.condition %}data-condition='{{ question.condition|tojson }}'{% endif %}{% if question.skip_condition %} data-skip-condition='{{ question.skip_condition|tojson }}'{% endif %} data-required="{{ 'true' if question.required else 'false' }}"{% if question.max_selections %} data-max-selections="{{ question.max_selections }}"{% endif %}{% if question.exclusive_values %} data-exclusive-values='{{ question.exclusive_values|tojson }}'{% endif %}>
             <div class="question-copy"><span>{{ question.source_id }}</span><div><h3>{{ question.label }}</h3>{% if question.help %}<p>{{ question.help }}</p>{% endif %}{% if question.required %}<small class="survey-required">Required</small>{% endif %}</div></div>
             {% if question.type == 'training_list' %}
               <div class="survey-readonly-list">{% for value in question.display_values %}<span>✓ {{ value }}</span>{% else %}<em>No recorded trainings</em>{% endfor %}</div>
             {% elif question.type == 'readonly' %}
+              {% if question.editable %}
+              <div class="survey-readonly-value survey-editable-value" data-editable-profile>
+                <input type="hidden" name="{{ field_name }}" value="{{ question.prefill or '' }}" data-editable-stored>
+                <div data-editable-display><strong data-editable-label>{{ question.prefill or 'Not recorded' }}</strong><small>Filled from the beneficiary database</small></div>
+                <button class="button button-ghost button-small" type="button" data-editable-open>Edit</button>
+                <div class="survey-inline-editor" data-editable-editor hidden>
+                  <input type="{{ 'tel' if question.id == 'a8_contact' else 'text' }}" value="{{ question.prefill or '' }}" data-editable-input aria-label="Edit {{ question.label }}">
+                  <button class="button button-primary button-small" type="button" data-editable-save>Save</button>
+                  <button class="button button-ghost button-small" type="button" data-editable-cancel>Cancel</button>
+                </div>
+              </div>
+              {% else %}
               <div class="survey-readonly-value"><strong>{{ question.prefill or 'Not recorded' }}</strong><small>Filled from the beneficiary database</small></div><input type="hidden" name="{{ field_name }}" value="{{ question.prefill or '' }}">
+              {% endif %}
             {% elif question.type == 'textarea' %}
               <textarea name="{{ field_name }}" rows="3" placeholder="Enter observations or advice">{{ question.prefill or '' }}</textarea>
             {% elif question.type == 'number' %}
-              <div class="question-number"><input type="number" name="{{ field_name }}" min="{{ question.min_value if question.min_value is defined else 0 }}"{% if question.max_value is defined %} max="{{ question.max_value }}"{% endif %} step="{{ 1 if question.integer else 'any' }}" value="{{ question.prefill or '' }}" placeholder="Enter number" {% if question.required and not question.condition %}required{% endif %}>{% if question.unit %}<span>{{ question.unit }}</span>{% endif %}</div>
+              <div class="question-number{{ ' has-unit' if question.unit }}"><input type="number" name="{{ field_name }}" min="{{ question.min_value if question.min_value is defined else 0 }}"{% if question.max_value is defined %} max="{{ question.max_value }}"{% endif %} step="{{ question.step_value if question.step_value is defined else (1 if question.integer else 'any') }}" value="{{ question.prefill if question.prefill is defined and question.prefill is not none else '' }}" placeholder="{{ 'Enter a whole number' if question.integer else 'Enter a number' }}" {% if question.required and not question.condition %}required{% endif %}>{% if question.unit %}<span aria-hidden="true">{{ question.unit }}</span>{% endif %}</div>
             {% elif question.type == 'photos' %}
               <label class="survey-photo-upload"><input type="file" name="{{ field_name }}" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple><span>Choose photos</span><small>Up to 6 photos · JPG, PNG, WebP or HEIC</small></label>
+            {% elif question.type == 'gps' %}
+              <div class="survey-gps-capture" data-gps-tracker>
+                <input type="hidden" name="{{ field_name }}" value="">
+                <div class="survey-gps-status" data-gps-status>No plot boundary recorded yet.</div>
+                <div class="survey-gps-actions">
+                  <button class="button button-secondary button-small" type="button" data-gps-start>Start tracking</button>
+                  <button class="button button-primary button-small" type="button" data-gps-stop hidden>Stop and save</button>
+                  <button class="button button-ghost button-small" type="button" data-gps-clear hidden>Clear</button>
+                </div>
+              </div>
             {% elif question.type == 'multi' %}
               <div class="question-option-grid">{% for option in question.options %}<label class="question-check"><input type="checkbox" name="{{ field_name }}" value="{{ option.value }}"><span>{{ option.label }}</span></label>{% endfor %}</div>
             {% elif question.type in ['choice', 'consent'] and question.options|length <= 6 %}
@@ -109,5 +133,4 @@
 </section>
 {% endif %}
 
-{% if selected_cbf %}<section class="entry-history"><div class="section-heading"><p class="eyebrow">Recent activity</p><h2>CBF submissions</h2></div><div class="panel"><div class="table-wrap"><table class="data-table"><thead><tr><th>Date</th><th>CBF</th><th>Type</th><th>Location</th><th>Beneficiaries</th><th>Topic entries</th><th>Entered by</th></tr></thead><tbody>{% for event in history %}<tr><td>{{ event.event_date|datefmt }}</td><td><strong>{{ event.cbf_name }}</strong></td><td><span class="status-pill">{{ 'Centralized training' if event.event_type == 'centralized' else 'Follow-up' }}</span></td><td>{% if event.latitude is not none and event.longitude is not none %}<a href="https://www.openstreetmap.org/?mlat={{ event.latitude }}&mlon={{ event.longitude }}#map=17/{{ event.latitude }}/{{ event.longitude }}" target="_blank" rel="noopener">View GPS location</a>{% if event.location_accuracy_m is not none %}<small> · ±{{ event.location_accuracy_m|round|int }} m</small>{% endif %}{% else %}{{ event.location or '—' }}{% endif %}</td><td>{{ event.farmer_count }}</td><td>{{ event.entry_count }}</td><td>{{ event.created_by }}</td></tr>{% else %}<tr><td colspan="7" class="empty-cell">No CBF submissions have been recorded yet.</td></tr>{% endfor %}</tbody></table></div></div></section>{% endif %}
 {% endblock %}

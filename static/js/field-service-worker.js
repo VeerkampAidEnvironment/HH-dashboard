@@ -1,4 +1,4 @@
-const CACHE_NAME = "arfsa-field-shell-v11";
+const CACHE_NAME = "arfsa-field-shell-v23";
 const APP_SHELL = [
   "/field-app/",
   "/field-app/manifest.webmanifest",

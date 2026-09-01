@@ -1,3 +1,53 @@
+window.arfsaConfirmPackage = ({ finalPackage = false } = {}) => new Promise((resolve) => {
+  const previousFocus = document.activeElement;
+  const overlay = document.createElement("div");
+  overlay.className = "package-confirm-overlay";
+  overlay.innerHTML = `
+    <section class="package-confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="package-confirm-title" aria-describedby="package-confirm-description">
+      <div class="package-confirm-icon" aria-hidden="true">✓</div>
+      <p class="eyebrow">Final check</p>
+      <h2 id="package-confirm-title">${finalPackage ? "Finalize the last package?" : "Finalize this package?"}</h2>
+      <p id="package-confirm-description">Please check the answers carefully before continuing.</p>
+      <div class="package-confirm-warning"><span aria-hidden="true">!</span><strong>After finalizing, you cannot return to edit this package.</strong></div>
+      <div class="package-confirm-actions">
+        <button class="button button-ghost" type="button" data-package-cancel>Keep editing</button>
+        <button class="button button-primary" type="button" data-package-confirm>${finalPackage ? "Finalize and calculate results" : "Finalize package and continue"}</button>
+      </div>
+    </section>`;
+  document.body.append(overlay);
+  document.body.classList.add("modal-open");
+  const cancelButton = overlay.querySelector("[data-package-cancel]");
+  const confirmButton = overlay.querySelector("[data-package-confirm]");
+  const finish = (confirmed) => {
+    document.removeEventListener("keydown", onKeydown);
+    overlay.classList.remove("visible");
+    document.body.classList.remove("modal-open");
+    window.setTimeout(() => overlay.remove(), 160);
+    previousFocus?.focus?.();
+    resolve(confirmed);
+  };
+  const onKeydown = (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      finish(false);
+    }
+    if (event.key === "Tab") {
+      const buttons = [cancelButton, confirmButton];
+      const index = buttons.indexOf(document.activeElement);
+      event.preventDefault();
+      buttons[(index + (event.shiftKey ? -1 : 1) + buttons.length) % buttons.length].focus();
+    }
+  };
+  cancelButton.addEventListener("click", () => finish(false));
+  confirmButton.addEventListener("click", () => finish(true));
+  overlay.addEventListener("click", (event) => { if (event.target === overlay) finish(false); });
+  document.addEventListener("keydown", onKeydown);
+  window.requestAnimationFrame(() => {
+    overlay.classList.add("visible");
+    cancelButton.focus();
+  });
+});
+
 document.addEventListener("DOMContentLoaded", () => {
   const menuButton = document.querySelector("[data-menu-toggle]");
   const navigation = document.querySelector("[data-main-nav]");
@@ -21,6 +71,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.querySelectorAll("[data-adaptive-survey]").forEach((form) => {
     const questionNodes = Array.from(form.querySelectorAll("[data-survey-question]"));
+    let refreshQuestionGuides = () => {};
     const applyMultiRules = (node, changedControl = null) => {
       const boxes = Array.from(node.querySelectorAll('input[type="checkbox"]'));
       if (!boxes.length) return;
@@ -55,13 +106,16 @@ document.addEventListener("DOMContentLoaded", () => {
       if (condition.operator === "contains") return Array.isArray(value) && value.includes(condition.value);
       if (condition.operator === "contains_any") return Array.isArray(value) && value.some((item) => (condition.values || []).includes(item));
       if (condition.operator === "has_any_except") return Array.isArray(value) && value.some((item) => item !== condition.value);
+      if (condition.operator === "not_empty") return Array.isArray(value) ? value.length > 0 : value !== "";
       return false;
     };
     const updateSurvey = () => {
       questionNodes.forEach((node) => {
         let condition = null;
+        let skipCondition = null;
         try { condition = node.dataset.condition ? JSON.parse(node.dataset.condition) : null; } catch (_error) { condition = null; }
-        const visible = conditionMatches(condition);
+        try { skipCondition = node.dataset.skipCondition ? JSON.parse(node.dataset.skipCondition) : null; } catch (_error) { skipCondition = null; }
+        const visible = conditionMatches(condition) && !(skipCondition && conditionMatches(skipCondition));
         node.hidden = !visible;
         node.querySelectorAll("input, select, textarea").forEach((control) => {
           control.disabled = !visible;
@@ -72,6 +126,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         applyMultiRules(node);
       });
+      refreshQuestionGuides();
     };
     form.addEventListener("change", (event) => {
       const node = event.target.closest?.("[data-survey-question]");
@@ -80,6 +135,106 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     form.addEventListener("input", updateSurvey);
     updateSurvey();
+
+    form.querySelectorAll("[data-editable-profile]").forEach((container) => {
+      const display = container.querySelector("[data-editable-display]");
+      const label = container.querySelector("[data-editable-label]");
+      const stored = container.querySelector("[data-editable-stored]");
+      const editor = container.querySelector("[data-editable-editor]");
+      const input = container.querySelector("[data-editable-input]");
+      const openButton = container.querySelector("[data-editable-open]");
+      const closeEditor = () => {
+        editor.hidden = true;
+        display.hidden = false;
+        openButton.hidden = false;
+      };
+      openButton.addEventListener("click", () => {
+        input.value = stored.value;
+        display.hidden = true;
+        openButton.hidden = true;
+        editor.hidden = false;
+        input.focus();
+      });
+      container.querySelector("[data-editable-save]").addEventListener("click", () => {
+        stored.value = input.value.trim();
+        label.textContent = stored.value || "Not recorded";
+        closeEditor();
+        stored.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      container.querySelector("[data-editable-cancel]").addEventListener("click", closeEditor);
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") { event.preventDefault(); container.querySelector("[data-editable-save]").click(); }
+        if (event.key === "Escape") { event.preventDefault(); closeEditor(); }
+      });
+    });
+
+    form.querySelectorAll("[data-gps-tracker]").forEach((tracker) => {
+      const input = tracker.querySelector('input[type="hidden"]');
+      const status = tracker.querySelector("[data-gps-status]");
+      const startButton = tracker.querySelector("[data-gps-start]");
+      const stopButton = tracker.querySelector("[data-gps-stop]");
+      const clearButton = tracker.querySelector("[data-gps-clear]");
+      let watchId = null;
+      let points = [];
+      const distanceFromLastPoint = (point) => {
+        const previous = points.at(-1);
+        if (!previous) return Infinity;
+        const radians = (degrees) => degrees * Math.PI / 180;
+        const latitudeDelta = radians(point.latitude - previous.latitude);
+        const longitudeDelta = radians(point.longitude - previous.longitude);
+        const a = Math.sin(latitudeDelta / 2) ** 2
+          + Math.cos(radians(previous.latitude)) * Math.cos(radians(point.latitude))
+          * Math.sin(longitudeDelta / 2) ** 2;
+        return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      };
+      const render = () => {
+        tracker.dataset.tracking = watchId === null ? "false" : "true";
+        startButton.hidden = watchId !== null;
+        stopButton.hidden = watchId === null;
+        clearButton.hidden = watchId !== null || points.length === 0;
+        status.classList.toggle("captured", points.length > 0);
+        status.textContent = watchId !== null
+          ? `Tracking plot boundary… ${points.length} GPS ${points.length === 1 ? "point" : "points"} captured.`
+          : points.length
+            ? `Plot boundary saved · ${points.length} GPS ${points.length === 1 ? "point" : "points"}.`
+            : "No plot boundary recorded yet.";
+      };
+      const stop = () => {
+        if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+        input.value = points.length ? JSON.stringify({ points }) : "";
+        render();
+      };
+      startButton.addEventListener("click", () => {
+        if (!window.isSecureContext || !("geolocation" in navigator)) {
+          status.textContent = "GPS tracking is unavailable. Use HTTPS and enable location services on this device.";
+          return;
+        }
+        points = [];
+        input.value = "";
+        watchId = navigator.geolocation.watchPosition((position) => {
+          if (points.length >= 5000) { stop(); return; }
+          const point = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            accuracy: position.coords.accuracy,
+            capturedAt: new Date(position.timestamp).toISOString(),
+          };
+          if (distanceFromLastPoint(point) >= 4) points.push(point);
+          render();
+        }, (error) => {
+          stop();
+          status.textContent = error.code === 1
+            ? "Location permission was declined. Enable it in the browser to track A7."
+            : "The plot boundary could not be tracked. Check location services and try again.";
+        }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+        render();
+      });
+      stopButton.addEventListener("click", stop);
+      clearButton.addEventListener("click", () => { points = []; input.value = ""; render(); });
+      window.addEventListener("beforeunload", () => { if (watchId !== null) navigator.geolocation.clearWatch(watchId); });
+      render();
+    });
 
     if (form.matches("[data-survey-wizard]")) {
       const steps = Array.from(form.querySelectorAll("[data-survey-step]"));
@@ -91,10 +246,28 @@ document.addEventListener("DOMContentLoaded", () => {
         node.querySelector("input:not([type=hidden]), select, textarea")?.focus();
         return false;
       };
+      const validateGuideQuestion = (node) => {
+        if (!node || node.hidden) return true;
+        if (node.querySelector('[data-gps-tracker][data-tracking="true"]')) {
+          return failQuestion(node, "Stop and save the A7 GPS tracking before continuing.");
+        }
+        const controls = Array.from(node.querySelectorAll("input:not([type=hidden]), select, textarea"));
+        const invalid = controls.find((control) => !control.checkValidity());
+        if (invalid) { invalid.reportValidity(); return false; }
+        const value = valueFor(node.dataset.surveyQuestion);
+        const empty = Array.isArray(value) ? value.length === 0 : value === "";
+        if (node.dataset.required === "true" && empty && !node.classList.contains("question-training_list")) {
+          return failQuestion(node, `Complete required item ${node.querySelector(".question-copy > span")?.textContent || "before continuing"}.`);
+        }
+        return true;
+      };
       const validateStep = (step) => {
         updateSurvey();
         for (const node of Array.from(step.querySelectorAll("[data-survey-question]"))) {
           if (node.hidden) continue;
+          if (node.querySelector('[data-gps-tracker][data-tracking="true"]')) {
+            return failQuestion(node, "Stop and save the A7 GPS tracking before finalizing this section.");
+          }
           const controls = Array.from(node.querySelectorAll("input:not([type=hidden]), select, textarea"));
           const invalid = controls.find((control) => !control.checkValidity());
           if (invalid) {
@@ -139,8 +312,52 @@ document.addEventListener("DOMContentLoaded", () => {
       steps.forEach((step, index) => {
         step.hidden = index !== 0;
         step.open = index === 0;
-        step.querySelector("[data-survey-next]")?.addEventListener("click", () => {
+        const nodes = Array.from(step.querySelectorAll("[data-survey-question]"));
+        const useQuestionGuide = step.dataset.surveySection !== "A";
+        const packageActions = step.querySelector(".survey-step-actions");
+        const guide = document.createElement("div");
+        guide.className = "survey-question-guide";
+        guide.innerHTML = '<button class="button button-ghost button-small" type="button" data-guide-previous>Previous question</button><span data-guide-progress></span><button class="button button-primary button-small" type="button" data-guide-next>Next question</button>';
+        packageActions.before(guide);
+        guide.hidden = !useQuestionGuide;
+        const previousButton = guide.querySelector("[data-guide-previous]");
+        const nextQuestionButton = guide.querySelector("[data-guide-next]");
+        const progress = guide.querySelector("[data-guide-progress]");
+        let currentQuestionId = nodes[0]?.dataset.surveyQuestion || "";
+        const refreshGuide = () => {
+          if (!useQuestionGuide) {
+            nodes.forEach((node) => node.classList.remove("survey-guide-hidden"));
+            packageActions.hidden = false;
+            return;
+          }
+          const active = nodes.filter((node) => !node.hidden);
+          let position = active.findIndex((node) => node.dataset.surveyQuestion === currentQuestionId);
+          if (position < 0) position = 0;
+          const current = active[position];
+          if (current) currentQuestionId = current.dataset.surveyQuestion;
+          nodes.forEach((node) => node.classList.toggle("survey-guide-hidden", node !== current));
+          previousButton.hidden = position <= 0;
+          nextQuestionButton.hidden = !current || position >= active.length - 1;
+          packageActions.hidden = !current || position < active.length - 1;
+          progress.textContent = current ? `Question ${position + 1} of ${active.length}` : "No applicable questions";
+        };
+        previousButton.addEventListener("click", () => {
+          const active = nodes.filter((node) => !node.hidden);
+          const position = active.findIndex((node) => node.dataset.surveyQuestion === currentQuestionId);
+          if (position > 0) currentQuestionId = active[position - 1].dataset.surveyQuestion;
+          refreshGuide();
+        });
+        nextQuestionButton.addEventListener("click", () => {
+          const active = nodes.filter((node) => !node.hidden);
+          const position = active.findIndex((node) => node.dataset.surveyQuestion === currentQuestionId);
+          if (!validateGuideQuestion(active[position])) return;
+          if (position >= 0 && position < active.length - 1) currentQuestionId = active[position + 1].dataset.surveyQuestion;
+          refreshGuide();
+        });
+        step.refreshQuestionGuide = refreshGuide;
+        step.querySelector("[data-survey-next]")?.addEventListener("click", async () => {
           if (!validateStep(step)) return;
+          if (!await window.arfsaConfirmPackage()) return;
           step.hidden = true;
           step.open = false;
           currentStep = index + 1;
@@ -152,8 +369,18 @@ document.addEventListener("DOMContentLoaded", () => {
           }
         });
       });
-      form.addEventListener("submit", (event) => {
-        if (!validateStep(steps[currentStep] || steps.at(-1))) event.preventDefault();
+      refreshQuestionGuides = () => steps.forEach((step) => step.refreshQuestionGuide?.());
+      refreshQuestionGuides();
+      let finalSubmitConfirmed = false;
+      form.addEventListener("submit", async (event) => {
+        if (finalSubmitConfirmed) return;
+        event.preventDefault();
+        if (!validateStep(steps[currentStep] || steps.at(-1))) {
+          return;
+        }
+        if (!await window.arfsaConfirmPackage({ finalPackage: true })) return;
+        finalSubmitConfirmed = true;
+        form.requestSubmit(event.submitter || undefined);
       });
     }
   });

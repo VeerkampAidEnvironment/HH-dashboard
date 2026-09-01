@@ -972,7 +972,7 @@ class ApplicationTest(unittest.TestCase):
             self.assertEqual(stored["adoption_rate"], 0)
             self.assertEqual(stored["result_status"], "Failed")
             self.assertEqual(stored["critical_failed"], 1)
-            self.assertEqual(stored["next_action"], "followup_1")
+            self.assertEqual(stored["next_action"], "ct")
             self.assertIsNone(stored["household_outcome"])
             self.assertEqual(stored["consent"], 1)
 
@@ -1013,6 +1013,11 @@ class ApplicationTest(unittest.TestCase):
         }
         for question_id, value in good_section_b_answers().items():
             data[f"survey_answer__{question_id}"] = value
+        data.update({
+            "survey_answer__b13_synthetic_fertilizer": "2.5",
+            "survey_answer__b13_unit": "other",
+            "survey_answer__b13_unit_other": "Jerrycan",
+        })
         response = self.client.post("/data-entry", data=data)
         self.assertEqual(response.status_code, 302, response.data.decode("utf-8", errors="replace")[:3000])
         self.assertIn("/data-entry/followup-results/", response.headers["Location"])
@@ -1036,7 +1041,7 @@ class ApplicationTest(unittest.TestCase):
             self.assertEqual(assessment["project_passed"], 1)
             self.assertEqual(assessment["breadth_achieved"], 5)
             self.assertEqual(assessment["breadth_total"], 5)
-            self.assertAlmostEqual(assessment["depth"], 94.7)
+            self.assertAlmostEqual(assessment["depth"], 93.8)
             package_count = connection.execute(
                 "SELECT COUNT(*) FROM followup_package_results WHERE assessment_id=?",
                 (assessment["id"],),
@@ -1047,6 +1052,15 @@ class ApplicationTest(unittest.TestCase):
                 (due["id"],),
             ).fetchone()
             photos = json.loads(stored_response["answers"])["b18_photos"]["answer"]
+            stored_answers = json.loads(stored_response["answers"])
+            self.assertEqual(stored_answers["b13_synthetic_fertilizer"]["answer"], 2.5)
+            self.assertEqual(stored_answers["b13_unit"]["answer"], "other")
+            self.assertEqual(stored_answers["b13_unit_other"]["answer"], "Jerrycan")
+            from app import carry_forward_answers_by_record
+            self.assertEqual(
+                carry_forward_answers_by_record(connection, [due["id"]])[due["id"]],
+                {"b13_synthetic_fertilizer": 2.5, "b13_unit": "other", "b13_unit_other": "Jerrycan"},
+            )
             self.assertEqual([photo["name"] for photo in photos], ["best-practice.png", "weak-practice.jpg"])
             self.assertTrue(all((self.photo_folder / photo["file"]).exists() for photo in photos))
             response_rows = connection.execute(

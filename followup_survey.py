@@ -14,7 +14,7 @@ from statistics import mean
 from typing import Any, Iterable
 
 
-SURVEY_VERSION = "2026-08-27"
+SURVEY_VERSION = "2026-09-01-r7"
 
 PIP = "Household Resource Mapping (PIP)"
 SUSTAINABLE = "Sustainable/Regenerative Agriculture"
@@ -27,6 +27,7 @@ POULTRY = "Poultry Mgt and Vaccination"
 
 TRAINING_TOPICS = [PIP, SWC, KITCHEN, BIO_INPUTS, POULTRY, FINANCIAL, AGROFORESTRY, SUSTAINABLE]
 SECTION_B_TOPICS = {SUSTAINABLE, SWC, AGROFORESTRY, BIO_INPUTS}
+CARRY_FORWARD_QUESTION_IDS = ("b13_synthetic_fertilizer", "b13_unit", "b13_unit_other")
 
 
 def options(*items: tuple[str, str] | str) -> list[dict[str, str]]:
@@ -39,6 +40,7 @@ def options(*items: tuple[str, str] | str) -> list[dict[str, str]]:
 
 YES_NO = options(("yes", "Yes"), ("no", "No"))
 FOLLOWUP_LABELS = {
+    "ct": "New centralized training needed",
     "followup_1": "Follow up after 1 month",
     "followup_3": "Follow up after 3 months",
     "followup_6": "Follow up after 6 months",
@@ -64,12 +66,16 @@ def question(
     condition: dict[str, Any] | None = None,
     required: bool = True,
     profile_key: str | None = None,
+    carry_forward: bool = False,
     unit: str = "",
     max_selections: int | None = None,
     exclusive_values: Iterable[str] | None = None,
     min_value: float | None = None,
     max_value: float | None = None,
     integer: bool = False,
+    step_value: float | None = None,
+    editable: bool = False,
+    skip_condition: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     item: dict[str, Any] = {
         "source_id": source_id,
@@ -86,6 +92,8 @@ def question(
         item["condition"] = condition
     if profile_key:
         item["profile_key"] = profile_key
+    if carry_forward:
+        item["carry_forward"] = True
     if unit:
         item["unit"] = unit
     if max_selections is not None:
@@ -98,6 +106,12 @@ def question(
         item["max_value"] = max_value
     if integer:
         item["integer"] = True
+    if step_value is not None:
+        item["step_value"] = step_value
+    if editable:
+        item["editable"] = True
+    if skip_condition:
+        item["skip_condition"] = skip_condition
     return item
 
 
@@ -133,17 +147,22 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
         "questions": [
             question("A4", "a4_district", "District", "choice", options("Kapchorwa", "Kween"), profile_key="district", required=False),
             question("A5", "a5_subcounty", "Sub-county / Division", "choice", options(
-                "East Division", "West Division", "Kaptum", "Kwanyiy", "Kween", "Moyok"), profile_key="subcounty", required=False),
-            question("A6", "a6_village", "Village / Cell", "readonly", profile_key="village", required=False),
+                "East Division", "West Division", "Kaptum", "Kwanyiy", "Moyok"), profile_key="subcounty", required=False),
+            question("A6", "a6_village", "Village / Cell", "readonly", profile_key="village", required=False, editable=True),
+            question(
+                "A7", "a7_gps", "GPS location / plot boundary", "gps", required=False,
+                help_text=("Start tracking while walking the boundary of the farmer's main plot. "
+                           "If the farmer owns several plots, track only the main plot or the one nearest the home."),
+            ),
             question("A8.1", "a8_beneficiary_type", "Type of beneficiary", "choice", options(
                 "Direct Reach", "Indirect Reach"), profile_key="beneficiary_type", required=False),
-            question("A8.2", "a8_contact", "Contact of the beneficiary", "readonly", profile_key="phone", required=False),
+            question("A8.2", "a8_contact", "Contact of the beneficiary", "readonly", profile_key="phone", required=False, editable=True),
             question("A8.3", "a8_gender", "Gender", "choice", options(
                 ("F", "F – Female"), ("M", "M – Male"), ("D", "D – Diverse")), profile_key="sex", required=False),
             question("A8.4", "a8_pwd", "Person with a disability (PWD)", "choice", YES_NO, profile_key="pwd", required=False),
             question("A8.5", "a8_age_group", "Age group", "choice", options(
                 ("Y", "Youth"), ("A", "Adult"), ("E", "Elderly")), profile_key="age_group", required=False),
-            question("A8.6", "a8_group", "Farmer group membership", "readonly", profile_key="group", required=False),
+            question("A8.6", "a8_group", "Farmer group membership", "readonly", profile_key="group", required=False, editable=True),
             question("A9", "a9_education", "Level of education completed", "choice", options(
                 ("none", "Not gone to school"), ("pre_primary", "Pre-primary"), ("primary", "Primary"),
                 ("secondary_o", "Secondary O-level"), ("secondary_a", "Secondary A-level"),
@@ -161,6 +180,9 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
         "intro": "Conduct this as one continuous walking interview. Physical observation takes precedence over self-report.",
         "questions": [
             question("B1", "b1_food_groups", "Walking the plot, which crops or species are planted?", "multi", FOOD_GROUPS),
+            question("B5", "b5_preparation", "Looking at the soil surface, how was this plot prepared?", "choice", options(
+                ("fully_tilled", "Fully tilled"), ("minimum", "Minimally tilled - 1 or 2 times per year"),
+                ("holes", "Planting holes or strips"), ("undisturbed", "Undisturbed between rows"))),
             question("B2", "b2_cover", "What is mostly covering the soil surface between plants?", "choice", options(
                 ("bare", "Bare soil"), ("mulch", "Crop residue or mulch"),
                 ("living", "Living ground cover"), ("other", "Other"))),
@@ -174,34 +196,31 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
             question("B3", "b3_features", "Which erosion features are visible?", "multi", options(
                 ("rills", "Rills or small channels"), ("gully", "Gully too wide or deep to step across"),
                 ("roots", "Exposed plant or tree roots"), ("loose_soil", "Loose soil deposited at a slope or plot edge"),
-                ("compacted", "Bare compacted patches"), ("none", "None")), required=False,
-                help_text="Two or more severe features override and fail the Erosion package.", exclusive_values=["none"]),
+                ("compacted", "Bare compacted patches"), ("none", "None")), required=False, exclusive_values=["none"],
+                skip_condition=eq("b5_preparation", "fully_tilled")),
             question("B3.1", "b3_1_rills", "What is the depth of the rills?", "choice", options(
-                ("shallow", "Ankle-height or less"), ("deep", "Deeper than an ankle")), condition=contains("b3_features", "rills")),
+                ("shallow", "Ankle-height or less"), ("deep", "Deeper than an ankle")), condition=contains("b3_features", "rills"), skip_condition=eq("b5_preparation", "fully_tilled")),
             question("B3.2", "b3_2_roots", "How widespread are the exposed roots?", "choice", options(
-                ("isolated", "Isolated - 1 or 2 plants"), ("widespread", "Widespread")), condition=contains("b3_features", "roots")),
+                ("isolated", "Isolated - 1 or 2 plants"), ("widespread", "Widespread")), condition=contains("b3_features", "roots"), skip_condition=eq("b5_preparation", "fully_tilled")),
             question("B3.3", "b3_3_soil", "What is the occurrence of the loose soil?", "choice", options(
-                ("scatter", "Thin scatter"), ("ridge", "Built-up ridge")), condition=contains("b3_features", "loose_soil")),
+                ("scatter", "Thin scatter"), ("ridge", "Built-up ridge")), condition=contains("b3_features", "loose_soil"), skip_condition=eq("b5_preparation", "fully_tilled")),
             question("B4", "b4_structures", "Which soil and water conservation structures are visible?", "multi", options(
                 ("grass", "Grass strips"), ("trash", "Trash lines"), ("stone", "Stone bunds"),
-                ("trenches", "Trenches"), ("terracing", "Bench terracing"), ("none", "None")), exclusive_values=["none"]),
+                ("trenches", "Trenches"), ("terracing", "Bench terracing"), ("none", "None")), exclusive_values=["none"], skip_condition=eq("b5_preparation", "fully_tilled")),
             question("B4.1", "b4_1_width", "Do the structures run across the full width of the plot?", "choice", options(
                 ("full", "Full width"), ("partial", "Partial"), ("single", "Single structure only")),
-                condition={"question": "b4_structures", "operator": "has_any_except", "value": "none"}),
+                condition={"question": "b4_structures", "operator": "has_any_except", "value": "none"}, skip_condition=eq("b5_preparation", "fully_tilled")),
             question("B4.2", "b4_2_contour", "Do the structures follow the contour of the land?", "choice", options(
                 ("yes", "Yes"), ("no", "No"), ("unsure", "Unsure")),
-                condition={"question": "b4_structures", "operator": "has_any_except", "value": "none"}),
-            question("B5", "b5_preparation", "Looking at the soil surface, how was this plot prepared?", "choice", options(
-                ("fully_tilled", "Fully tilled"), ("minimum", "Minimally tilled - 1 or 2 times per year"),
-                ("holes", "Planting holes or strips"), ("undisturbed", "Undisturbed between rows"))),
+                condition={"question": "b4_structures", "operator": "has_any_except", "value": "none"}, skip_condition=eq("b5_preparation", "fully_tilled")),
             question("B5.1", "b5_1_old_marks", "Are old furrow or ridge marks visible?", "choice", options(
                 ("none", "No old marks"), ("visible", "Old furrows visible - recent transition"),
-                ("new_plot", "Newly opened plot; no previous cultivation to compare")), condition=one_of("b5_preparation", ["minimum", "holes", "undisturbed"])),
+                ("new_plot", "Newly opened plot; no previous cultivation to compare")), condition=one_of("b5_preparation", ["minimum", "holes", "undisturbed"]), skip_condition=eq("b5_preparation", "fully_tilled")),
             question("B5.2", "b5_2_extent", "Is this preparation method used across the whole plot?", "choice", options(
-                ("whole", "Whole plot"), ("part", "Part of the plot only"), ("varies", "Varies across sections")), condition=one_of("b5_preparation", ["minimum", "holes", "undisturbed"])),
+                ("whole", "Whole plot"), ("part", "Part of the plot only"), ("varies", "Varies across sections")), condition=one_of("b5_preparation", ["minimum", "holes", "undisturbed"]), skip_condition=eq("b5_preparation", "fully_tilled")),
             question("B6", "b6_weeds", "How are weeds typically managed during the season?", "choice", options(
                 ("spot", "Hand-pulling or spot-hoeing"), ("few_full", "Full-bed hoeing a few times per year"),
-                ("frequent_full", "Frequent full-bed hoeing"), ("herbicide", "Herbicide"))),
+                ("frequent_full", "Frequent full-bed hoeing"), ("herbicide", "Herbicide")), skip_condition=eq("b5_preparation", "fully_tilled")),
             question("B7", "b7_arrangement", "How are crops arranged on this plot?", "choice", options(
                 ("single", "Single crop in uniform rows"), ("mixed", "Mixed crops interplanted"), ("other", "Other"))),
             question("B8", "b8_trees", "Are trees or shrubs within or bordering this plot?", "choice", YES_NO),
@@ -227,16 +246,21 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
             question("B11", "b11_inputs", "Which soil-fertility inputs have physical evidence?", "multi", options(
                 ("manure", "Manure or compost visible"), ("heap", "Compost heap or manure pile present"),
                 ("bio", "Bio-fertilizer preparation materials present"), ("synthetic", "Empty synthetic-fertilizer bags or containers"),
-                ("none", "None")), exclusive_values=["none"]),
+                ("none", "None")), exclusive_values=["none"], skip_condition=eq("b5_preparation", "fully_tilled")),
             question("B11.1", "b11_1_location", "Where is the manure or compost mostly applied?", "choice", options(
                 ("whole", "Across the whole plot evenly"), ("holes", "In planting holes or around plants"),
-                ("section", "One section only")), condition=contains("b11_inputs", "manure")),
+                ("section", "One section only")), condition=contains("b11_inputs", "manure"), skip_condition=eq("b5_preparation", "fully_tilled")),
             question("B11.2", "b11_2_method", "How is the fertility input mostly applied?", "choice", options(
                 ("surface", "Spread on the surface"), ("mixed", "Dug or mixed into soil"), ("holes", "Placed in planting holes"),
                 ("liquid_base", "Liquid poured at plant base"), ("liquid_leaf", "Liquid sprayed on leaves"),
-                ("none", "None of these")), condition={"question": "b11_inputs", "operator": "contains_any", "values": ["manure", "bio"]}),
-            question("B12", "b12_macrofauna", "In a 30 cm x 30 cm x 30 cm quadrant, how many earthworms or other macrofauna are found?", "number", integer=True, help_text="Enter the observed count freely: 0, 1, 2 … 10 or more."),
-            question("B13", "b13_synthetic_fertilizer", "Times synthetic fertilizer was applied last season", "number", required=False, integer=True, help_text="Comparison value only; not scored."),
+                ("none", "None of these")), condition={"question": "b11_inputs", "operator": "contains_any", "values": ["manure", "bio"]}, skip_condition=eq("b5_preparation", "fully_tilled")),
+            question("B12", "b12_macrofauna", "In a 30 cm x 30 cm x 30 cm quadrant, how many earthworms or other macrofauna are found?", "number", integer=True, help_text="Enter the observed count freely: 0, 1, 2 … 10 or more.", skip_condition=eq("b5_preparation", "fully_tilled")),
+            question("B13", "b13_synthetic_fertilizer", "Amount of synthetic fertilizer applied last season", "number", required=False, carry_forward=True, help_text="Comparison value only; not scored. Enter the amount, then select its unit."),
+            question("B13.1", "b13_unit", "Unit used for the synthetic fertilizer amount", "choice", options(
+                ("kilogram", "Kilogram"), ("liter", "Liter"), ("bag", "Bag"), ("other", "Other (free text)")),
+                condition={"question": "b13_synthetic_fertilizer", "operator": "not_empty"}, carry_forward=True),
+            question("B13.1a", "b13_unit_other", "Specify the other unit", "text",
+                condition=eq("b13_unit", "other"), carry_forward=True),
             question("B14", "b14_manure_loads", "Wheelbarrow-loads of manure or compost applied last season", "number", required=False, integer=True, help_text="Comparison value only; not scored."),
             question("B15", "b15_gap", "Main gap observed", "textarea", required=False),
             question("B16", "b16_advice", "Immediate recommendation or advice given", "textarea", required=False),
@@ -260,6 +284,8 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
     },
     {
         "id": "D", "title": "Kitchen Garden and Vegetable Growing", "topics": [KITCHEN],
+        "intro": "For each food group, indicate: own production, bought, both, or not consumed.",
+        "instruction": "D1. For each food group, indicate: own production, bought, both, or not consumed.",
         "questions": [
             question("D1a", "d1_dark_leafy", "Dark green leafy vegetables (dodo, nightshade, sukuma, spider plant)", "choice", FOOD_SOURCE_OPTIONS, required=False, help_text="Food-source inventory; not scored."),
             question("D1b", "d1_other_vegetables", "Other vegetables (tomato, cabbage, onion, eggplant)", "choice", FOOD_SOURCE_OPTIONS, required=False),
@@ -280,7 +306,7 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
                 ("visible", "Yes, storage container or hanging bundle visible"), ("claimed", "Beneficiary says yes, nothing visible"), ("no", "No"))),
             question("D7", "d7_gap", "Main gap observed", "textarea", required=False),
             question("D8", "d8_advice", "Immediate recommendation or advice", "textarea", required=False),
-            question("D10", "d10_photo_reference", "Photo reference for the best or weakest practice", "text", required=False),
+            question("D10", "d10_photos", "Upload photos of the best or weakest kitchen-garden practice", "photos", required=False, help_text="You can add several photos."),
         ],
     },
     {
@@ -294,7 +320,8 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
             question("E3", "e3_within_means", "Does the household live within its means?", "choice", YES_NO),
             question("E4", "e4_invested", "Were investments made in the last 12 months?", "choice", YES_NO),
             question("E4.1", "e4_1_investments", "What was invested in since training?", "multi", options("Farming", "Land", "Business", "Other"), condition=eq("e4_invested", "yes")),
-            question("E5", "e5_savings", "Average amount saved per month", "number", unit="UGX", integer=True),
+            question("E5", "e5_savings", "Average amount saved per month", "number", unit="UGX", integer=True, step_value=100,
+                     help_text="Enter the amount in steps of UGX 100."),
             question("E6", "e6_saving_place", "Where is part of the income saved?", "choice", options(
                 ("bank", "Bank / SACCO"), ("group", "Saving group"), ("mobile", "Mobile money"),
                 ("home", "At home"), ("other", "Other"))),
@@ -308,7 +335,7 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
                 "Track income and expenses", "Improve planning and budgeting", "Make better investment decisions", "Calculate profit or loss", "Other"), required=False, condition=one_of("e8_book", ["shown", "not_shown"])),
             question("E9", "e9_gap", "Main gap observed", "textarea", required=False),
             question("E10", "e10_advice", "Immediate recommendation or advice", "textarea", required=False),
-            question("E12", "e12_photo_reference", "Photo reference for the record or practice", "text", required=False),
+            question("E12", "e12_photos", "Upload photos of the financial record or practice", "photos", required=False, help_text="You can add several photos."),
         ],
     },
     {
@@ -333,7 +360,7 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
                 ("none", "Nothing shown")), condition=one_of("f1_location", ["house", "bounded"])),
             question("F6", "f6_gap", "Main gap observed or shared", "textarea", required=False),
             question("F7", "f7_advice", "Immediate advice", "textarea", required=False),
-            question("F9", "f9_photo_reference", "Photo reference for poultry-management practices", "text", required=False),
+            question("F9", "f9_photos", "Upload photos of poultry-management practices", "photos", required=False, help_text="You can add several photos."),
         ],
     },
     {
@@ -384,17 +411,20 @@ def build_survey(
     profile: dict[str, Any] | None = None,
     *,
     training_history: Iterable[str] | None = None,
+    previous_answers: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     topics = [topic for topic in TRAINING_TOPICS if topic in set(topics)]
     profile = profile or {}
+    previous_answers = previous_answers or {}
     history_topics = [topic for topic in TRAINING_TOPICS if topic in set(training_history or topics)]
     sections = survey_sections_for_topics(topics)
     for section in sections:
         for item in section["questions"]:
             if item["type"] == "training_list":
                 item["display_values"] = history_topics
-            elif item.get("profile_key"):
-                prefill = str(profile.get(item["profile_key"], "") or "").strip()
+            elif item.get("profile_key") or item.get("carry_forward"):
+                source_value = profile.get(item["profile_key"], "") if item.get("profile_key") else previous_answers.get(item["id"], "")
+                prefill = str(source_value if source_value is not None else "").strip()
                 if item["type"] == "choice" and prefill:
                     match = next((option for option in item.get("options", [])
                                   if option["value"].casefold() == prefill.casefold()
@@ -419,9 +449,16 @@ def _answer(answers: dict[str, Any], key: str, default: Any = "") -> Any:
 
 
 def question_is_active(item: dict[str, Any], answers: dict[str, Any]) -> bool:
+    skip_condition = item.get("skip_condition")
+    if skip_condition and _condition_matches(skip_condition, answers):
+        return False
     condition = item.get("condition")
     if not condition:
         return True
+    return _condition_matches(condition, answers)
+
+
+def _condition_matches(condition: dict[str, Any], answers: dict[str, Any]) -> bool:
     value = _answer(answers, condition["question"])
     operator = condition.get("operator", "equals")
     if operator == "equals":
@@ -434,6 +471,8 @@ def question_is_active(item: dict[str, Any], answers: dict[str, Any]) -> bool:
         return isinstance(value, list) and bool(set(value).intersection(condition.get("values", [])))
     if operator == "has_any_except":
         return isinstance(value, list) and any(item != condition.get("value") for item in value)
+    if operator == "not_empty":
+        return not _is_empty(value)
     return False
 
 
@@ -465,6 +504,8 @@ def validate_answers(answers: dict[str, Any], topics: Iterable[str]) -> str | No
                 return f"{item['source_id']} must be at least {minimum:g}."
             if item.get("integer") and not number.is_integer():
                 return f"Enter a whole number for {item['source_id']}."
+            if item.get("step_value") is not None and number % item["step_value"] != 0:
+                return f"{item['source_id']} must be entered in steps of {item['step_value']:g}."
             if item.get("max_value") is not None and number > item["max_value"]:
                 return f"{item['source_id']} cannot be greater than {item['max_value']:g}."
         allowed = {option["value"] for option in item.get("options", [])}
@@ -659,6 +700,17 @@ def _result(points: float, available: float, critical: bool) -> dict[str, Any]:
     }
 
 
+def _recommended_action(result: dict[str, Any]) -> str:
+    """Apply the same next-action bands to every package and training topic."""
+    if result["critical_failed"] or result["score"] < 30:
+        return "ct"
+    if result["score"] < 50:
+        return "followup_3"
+    if result["score"] < 70:
+        return "followup_1"
+    return "none"
+
+
 def score_packages(answers: dict[str, Any]) -> dict[str, dict[str, Any]]:
     severe_count = sum([
         _answer(answers, "b3_1_rills") == "deep",
@@ -667,6 +719,17 @@ def score_packages(answers: dict[str, Any]) -> dict[str, dict[str, Any]]:
     ])
     packages: dict[str, dict[str, Any]] = {}
     for package, item_ids in PACKAGE_ITEMS.items():
+        if _answer(answers, "b5_preparation") == "fully_tilled" and package in {
+            "reduced_disturbance", "erosion_water", "soil_cover_fertility",
+        }:
+            package_result = {
+                "key": package, "title": PACKAGE_TITLES[package],
+                **_result(0, 2, True), "recommendations": PACKAGE_RECOMMENDATIONS[package],
+            }
+            package_result["next_action"] = "ct"
+            package_result["recommendation"] = f"New centralized training: {', '.join(package_result['recommendations'])}"
+            packages[package] = package_result
+            continue
         points = 0.0
         available = 0.0
         critical = package == "erosion_water" and severe_count >= 2
@@ -676,12 +739,19 @@ def score_packages(answers: dict[str, Any]) -> dict[str, dict[str, Any]]:
                 points += item.points
                 available += 2
             critical = critical or item.critical
-        packages[package] = {
+        package_result = {
             "key": package,
             "title": PACKAGE_TITLES[package],
             **_result(points, available, critical),
             "recommendations": PACKAGE_RECOMMENDATIONS[package],
         }
+        package_result["next_action"] = _recommended_action(package_result)
+        package_result["recommendation"] = (
+            f"New centralized training: {', '.join(package_result['recommendations'])}"
+            if package_result["next_action"] == "ct"
+            else FOLLOWUP_LABELS[package_result["next_action"]]
+        )
+        packages[package] = package_result
     return packages
 
 
@@ -777,25 +847,6 @@ def rvo_result(answers: dict[str, Any]) -> dict[str, Any]:
     return {"passed": count >= 2, "count": count, "total": 8, "practices": practices}
 
 
-def _section_b_followup(packages: dict[str, dict[str, Any]], rvo: dict[str, Any]) -> str:
-    if not rvo["passed"] or any(item["critical_failed"] for item in packages.values()):
-        return "followup_1"
-    achieved = sum(item["status"] == "Achieved" for item in packages.values())
-    if achieved < 2 or any(item["status"] == "Partial" for item in packages.values()):
-        return "followup_3"
-    if any(item["score"] < 70 for item in packages.values()):
-        return "followup_6"
-    return "none"
-
-
-def _ordinary_followup(result: dict[str, Any]) -> str:
-    if result["critical_failed"]:
-        return "followup_1"
-    if result["status"] == "Partial":
-        return "followup_3"
-    return "followup_6" if result["score"] < 70 else "none"
-
-
 def score_survey(answers: dict[str, Any], topics: Iterable[str]) -> dict[str, Any]:
     topics = [topic for topic in TRAINING_TOPICS if topic in set(topics)]
     has_section_b = bool(set(topics).intersection(SECTION_B_TOPICS))
@@ -805,23 +856,19 @@ def score_survey(answers: dict[str, Any], topics: Iterable[str]) -> dict[str, An
     depth = None
     household = None
     project_passed = None
-    section_b_next = None
     if has_section_b:
         achieved = sum(item["status"] == "Achieved" for item in packages.values())
-        survivors = [item["score"] for item in packages.values() if not item["critical_failed"]]
         breadth = {"achieved": achieved, "total": len(packages)}
-        depth = round(mean(survivors), 1) if survivors else 0.0
         project_passed = achieved >= 2
         any_weak = any(item["status"] != "Achieved" for item in packages.values())
         if not rvo["passed"]:
-            household = {"code": "D", "label": "Below both bars", "action": "Priority household. Full training package. Shortest follow-up interval."}
+            household = {"code": "D", "label": "Below both bars", "action": "Priority household. Apply the score-based next action for each training type."}
         elif not project_passed:
-            household = {"code": "C", "label": "RVO-Compliant", "action": "Practices present but shallow. Centralized training for all weak packages. Short-interval follow-up."}
+            household = {"code": "C", "label": "RVO-Compliant", "action": "Practices are present but shallow. Apply the score-based next action for each training type."}
         elif any_weak:
-            household = {"code": "B", "label": "Compliant, gaps remain", "action": "Centralized training for each weak package. Follow-up to verify uptake."}
+            household = {"code": "B", "label": "Compliant, gaps remain", "action": "Apply the score-based next action for each training type."}
         else:
             household = {"code": "A", "label": "Strong adopter", "action": "No training needed."}
-        section_b_next = _section_b_followup(packages, rvo)
 
     trainings: dict[str, dict[str, Any]] = {}
     for topic in topics:
@@ -832,22 +879,32 @@ def score_survey(answers: dict[str, Any], topics: Iterable[str]) -> dict[str, An
                 sum(item["points_available"] for item in components),
                 any(item["critical_failed"] for item in components),
             )
-            weak_packages = [item for item in components if item["status"] in {"Partial", "Failed"}]
-            recommendations = sorted({training for item in weak_packages for training in item["recommendations"]})
-            result["recommendation"] = ", ".join(recommendations) if recommendations else "No centralized training needed"
-            result["next_action"] = section_b_next
+            result["next_action"] = _recommended_action(result)
+            retraining_packages = [item for item in components if item["next_action"] == "ct"]
+            recommendations = sorted({training for item in retraining_packages for training in item["recommendations"]})
+            result["recommendation"] = (
+                f"New centralized training: {', '.join(recommendations or [topic])}"
+                if result["next_action"] == "ct"
+                else FOLLOWUP_LABELS[result["next_action"]]
+            )
         elif topic in SECTION_ITEMS:
             result = score_single_training(topic, answers)
-            result["recommendation"] = f"Centralized training: {topic}" if result["status"] in {"Partial", "Failed"} else "No centralized training needed"
-            result["next_action"] = _ordinary_followup(result)
+            result["next_action"] = _recommended_action(result)
+            result["recommendation"] = (
+                f"New centralized training: {topic}"
+                if result["next_action"] == "ct"
+                else FOLLOWUP_LABELS[result["next_action"]]
+            )
         else:
             continue
         result["next_action_label"] = FOLLOWUP_LABELS[result["next_action"]]
         trainings[topic] = result
 
+    depth = round(mean(item["score"] for item in trainings.values()), 1) if trainings else None
+
     package_training_recommendations = sorted({
         training
-        for item in packages.values() if item["status"] in {"Partial", "Failed"}
+        for item in packages.values() if item["next_action"] == "ct"
         for training in item["recommendations"]
     })
     return {
