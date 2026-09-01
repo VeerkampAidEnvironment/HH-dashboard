@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+from math import isfinite
 from statistics import mean
 from typing import Any, Iterable
 
@@ -44,6 +45,13 @@ FOLLOWUP_LABELS = {
     "none": "No follow-up needed",
 }
 
+FOOD_SOURCE_OPTIONS = options(
+    ("own_production", "Own production"),
+    ("bought", "Bought"),
+    ("both", "Both"),
+    ("not_consumed", "Not consumed"),
+)
+
 
 def question(
     source_id: str,
@@ -59,7 +67,9 @@ def question(
     unit: str = "",
     max_selections: int | None = None,
     exclusive_values: Iterable[str] | None = None,
+    min_value: float | None = None,
     max_value: float | None = None,
+    integer: bool = False,
 ) -> dict[str, Any]:
     item: dict[str, Any] = {
         "source_id": source_id,
@@ -82,8 +92,12 @@ def question(
         item["max_selections"] = max_selections
     if exclusive_values:
         item["exclusive_values"] = list(exclusive_values)
+    if min_value is not None:
+        item["min_value"] = min_value
     if max_value is not None:
         item["max_value"] = max_value
+    if integer:
+        item["integer"] = True
     return item
 
 
@@ -107,8 +121,8 @@ FOOD_GROUPS = options(
     ("cereals", "Cereals and grains"),
     ("bananas", "Bananas or plantain"),
     ("fruit", "Fruit"),
-    ("coffee", "Coffee (does not count as a food group)"),
-    ("cash_crop", "Other cash crop (does not count as a food group)"),
+    ("coffee", "Coffee"),
+    ("cash_crop", "Other food groups"),
 )
 
 
@@ -117,23 +131,27 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
         "id": "A", "title": "Visit, location and household profile", "always": True,
         "intro": "Confirm the pre-filled beneficiary information. Training history is read-only.",
         "questions": [
-            question("A4", "a4_district", "District", "text", profile_key="district", required=False),
-            question("A5", "a5_subcounty", "Sub-county / Division", "text", profile_key="subcounty", required=False),
-            question("A6", "a6_village", "Village / Cell", "text", profile_key="village", required=False),
-            question("A8.1", "a8_beneficiary_type", "Type of beneficiary", "text", profile_key="beneficiary_type", required=False),
-            question("A8.2", "a8_contact", "Contact of the beneficiary", "text", profile_key="phone", required=False),
-            question("A8.3", "a8_gender", "Gender", "text", profile_key="sex", required=False),
+            question("A4", "a4_district", "District", "choice", options("Kapchorwa", "Kween"), profile_key="district", required=False),
+            question("A5", "a5_subcounty", "Sub-county / Division", "choice", options(
+                "East Division", "West Division", "Kaptum", "Kwanyiy", "Kween", "Moyok"), profile_key="subcounty", required=False),
+            question("A6", "a6_village", "Village / Cell", "readonly", profile_key="village", required=False),
+            question("A8.1", "a8_beneficiary_type", "Type of beneficiary", "choice", options(
+                "Direct Reach", "Indirect Reach"), profile_key="beneficiary_type", required=False),
+            question("A8.2", "a8_contact", "Contact of the beneficiary", "readonly", profile_key="phone", required=False),
+            question("A8.3", "a8_gender", "Gender", "choice", options(
+                ("F", "F – Female"), ("M", "M – Male"), ("D", "D – Diverse")), profile_key="sex", required=False),
             question("A8.4", "a8_pwd", "Person with a disability (PWD)", "choice", YES_NO, profile_key="pwd", required=False),
-            question("A8.5", "a8_age_group", "Age group", "text", profile_key="age_group", required=False),
-            question("A8.6", "a8_group", "Farmer group membership", "text", profile_key="group", required=False),
+            question("A8.5", "a8_age_group", "Age group", "choice", options(
+                ("Y", "Youth"), ("A", "Adult"), ("E", "Elderly")), profile_key="age_group", required=False),
+            question("A8.6", "a8_group", "Farmer group membership", "readonly", profile_key="group", required=False),
             question("A9", "a9_education", "Level of education completed", "choice", options(
                 ("none", "Not gone to school"), ("pre_primary", "Pre-primary"), ("primary", "Primary"),
                 ("secondary_o", "Secondary O-level"), ("secondary_a", "Secondary A-level"),
                 ("certificate", "Certificate"), ("diploma", "Diploma"), ("degree", "Degree"),
                 ("other", "Other")), required=False, profile_key="education"),
-            question("A10.1", "a10_total", "People living in the household - total", "number", required=False),
-            question("A10.2", "a10_male", "People living in the household - male", "number", required=False),
-            question("A10.3", "a10_female", "People living in the household - female", "number", required=False),
+            question("A10.1", "a10_total", "People living in the household - total", "number", required=False, min_value=1, integer=True),
+            question("A10.2", "a10_male", "People living in the household - male", "number", required=False, min_value=0, integer=True),
+            question("A10.3", "a10_female", "People living in the household - female", "number", required=False, min_value=0, integer=True),
             question("A11", "a11_trainings", "Trainings received", "training_list", required=False,
                      help_text="Filled from the AE training history and cannot be changed during follow-up."),
         ],
@@ -196,13 +214,13 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
                 ("none", "No traces of a previous crop"))),
             question("B9.a", "b9_previous_crop", "Name the previous crop", "text", condition=eq("b9_traces", "identified")),
             question("B9.b", "b9_differs", "Is the identified crop different from the current crop?", "choice", YES_NO, condition=eq("b9_traces", "identified")),
-            question("B9.1", "b9_1_farmer", "Was a different crop grown here last season?", "choice", options(
+            question("B9.1", "b9_1_farmer", "Was a different crop grown here last season? [Ask the producer]", "choice", options(
                 ("yes", "Yes"), ("no", "No"), ("unsure", "Unsure"))),
             question("B10", "b10_pest_method", "Do you see pest damage or a pest-management method in use?", "choice", options(
                 ("biological", "Biological or manual method"), ("both", "Both synthetic and biological/manual"),
                 ("synthetic", "Synthetic pesticide only"), ("none", "No evidence"))),
-            question("B10.1", "b10_1_damage", "Of 10 plants inspected, how many show pest or disease damage?", "number", condition=one_of("b10_pest_method", ["biological", "both"]), unit="/ 10", max_value=10),
-            question("B10.2", "b10_2_severe", "How many have damage affecting over half the leaves or growing point?", "number", condition=one_of("b10_pest_method", ["biological", "both"]), unit="/ 10", max_value=10),
+            question("B10.1", "b10_1_damage", "Of 10 plants inspected, how many show pest or disease damage?", "number", condition=one_of("b10_pest_method", ["biological", "both"]), unit="/ 10", max_value=10, integer=True),
+            question("B10.2", "b10_2_severe", "How many have damage affecting over half the leaves or growing point?", "number", condition=one_of("b10_pest_method", ["biological", "both"]), unit="/ 10", max_value=10, integer=True),
             question("B10.3", "b10_3_chemical_change", "Since using bio-pesticide, how has chemical pesticide use changed?", "choice", options(
                 ("increased", "Increased"), ("same", "Stayed the same"), ("reduced", "Reduced"),
                 ("never_used", "Did not use chemical pesticide before")), condition=one_of("b10_pest_method", ["biological", "both"])),
@@ -210,20 +228,19 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
                 ("manure", "Manure or compost visible"), ("heap", "Compost heap or manure pile present"),
                 ("bio", "Bio-fertilizer preparation materials present"), ("synthetic", "Empty synthetic-fertilizer bags or containers"),
                 ("none", "None")), exclusive_values=["none"]),
-            question("B11.1", "b11_1_location", "Where is the manure or compost applied?", "choice", options(
+            question("B11.1", "b11_1_location", "Where is the manure or compost mostly applied?", "choice", options(
                 ("whole", "Across the whole plot evenly"), ("holes", "In planting holes or around plants"),
                 ("section", "One section only")), condition=contains("b11_inputs", "manure")),
-            question("B11.2", "b11_2_method", "How is the fertility input applied?", "choice", options(
+            question("B11.2", "b11_2_method", "How is the fertility input mostly applied?", "choice", options(
                 ("surface", "Spread on the surface"), ("mixed", "Dug or mixed into soil"), ("holes", "Placed in planting holes"),
                 ("liquid_base", "Liquid poured at plant base"), ("liquid_leaf", "Liquid sprayed on leaves"),
                 ("none", "None of these")), condition={"question": "b11_inputs", "operator": "contains_any", "values": ["manure", "bio"]}),
-            question("B12", "b12_macrofauna", "In a 30 cm x 30 cm x 30 cm quadrant, how many earthworms or other macrofauna are found?", "choice", options(
-                ("zero", "0"), ("one_four", "1-4"), ("five_plus", "5+"))),
-            question("B13", "b13_synthetic_fertilizer", "Times synthetic fertilizer was applied last season", "number", required=False, help_text="Comparison value only; not scored."),
-            question("B14", "b14_manure_loads", "Wheelbarrow-loads of manure or compost applied last season", "number", required=False, help_text="Comparison value only; not scored."),
+            question("B12", "b12_macrofauna", "In a 30 cm x 30 cm x 30 cm quadrant, how many earthworms or other macrofauna are found?", "number", integer=True, help_text="Enter the observed count freely: 0, 1, 2 … 10 or more."),
+            question("B13", "b13_synthetic_fertilizer", "Times synthetic fertilizer was applied last season", "number", required=False, integer=True, help_text="Comparison value only; not scored."),
+            question("B14", "b14_manure_loads", "Wheelbarrow-loads of manure or compost applied last season", "number", required=False, integer=True, help_text="Comparison value only; not scored."),
             question("B15", "b15_gap", "Main gap observed", "textarea", required=False),
             question("B16", "b16_advice", "Immediate recommendation or advice given", "textarea", required=False),
-            question("B18", "b18_photo_reference", "Photo reference for the best or weakest practice", "text", required=False),
+            question("B18", "b18_photos", "Upload photos of the best or weakest practice", "photos", required=False, help_text="You can add several photos."),
         ],
     },
     {
@@ -244,13 +261,20 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
     {
         "id": "D", "title": "Kitchen Garden and Vegetable Growing", "topics": [KITCHEN],
         "questions": [
-            question("D1", "d1_food_sources", "For each food group, record whether it is produced, bought, both or not consumed", "textarea", required=False, help_text="Repeated comparison inventory; not scored."),
+            question("D1a", "d1_dark_leafy", "Dark green leafy vegetables (dodo, nightshade, sukuma, spider plant)", "choice", FOOD_SOURCE_OPTIONS, required=False, help_text="Food-source inventory; not scored."),
+            question("D1b", "d1_other_vegetables", "Other vegetables (tomato, cabbage, onion, eggplant)", "choice", FOOD_SOURCE_OPTIONS, required=False),
+            question("D1c", "d1_beans_pulses", "Beans & pulses", "choice", FOOD_SOURCE_OPTIONS, required=False),
+            question("D1d", "d1_roots_tubers", "Roots and tubers (cassava, potato)", "choice", FOOD_SOURCE_OPTIONS, required=False),
+            question("D1e", "d1_cereals", "Cereals (barley, millet, rice, sorghum)", "choice", FOOD_SOURCE_OPTIONS, required=False),
+            question("D1f", "d1_bananas", "Bananas", "choice", FOOD_SOURCE_OPTIONS, required=False),
+            question("D1g", "d1_fruits", "Fruits", "choice", FOOD_SOURCE_OPTIONS, required=False),
+            question("D1h", "d1_eggs_poultry", "Eggs & poultry", "choice", FOOD_SOURCE_OPTIONS, required=False),
             question("D2", "d2_garden_cover", "How much of the kitchen garden is covered by growing vegetables?", "choice", options(
                 ("mostly_veg", "Vegetables cover most of the garden"), ("equal", "Vegetables and bare ground/weeds are roughly equal"),
                 ("mostly_bare", "Mostly bare ground or weeds"))),
             question("D3", "d3_weeds", "Are weeds taller than the vegetable plants?", "choice", options(
                 ("no", "No"), ("patches", "Yes, in patches"), ("most", "Yes, across most of the garden"))),
-            question("D4", "d4_unhealthy", "Of 10 vegetable plants, how many are wilted, yellowing or dead?", "number", unit="/ 10", max_value=10),
+            question("D4", "d4_unhealthy", "Of 10 vegetable plants, how many are wilted, yellowing or dead?", "number", unit="/ 10", max_value=10, integer=True),
             question("D5", "d5_structures", "Which kitchen-garden structures are visible?", "multi", options("Sack", "Keyhole wall", "Raised bed edge", "Fencing"), required=False),
             question("D6", "d6_seed_storage", "Is seed stored for next season, and can it be seen?", "choice", options(
                 ("visible", "Yes, storage container or hanging bundle visible"), ("claimed", "Beneficiary says yes, nothing visible"), ("no", "No"))),
@@ -270,7 +294,7 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
             question("E3", "e3_within_means", "Does the household live within its means?", "choice", YES_NO),
             question("E4", "e4_invested", "Were investments made in the last 12 months?", "choice", YES_NO),
             question("E4.1", "e4_1_investments", "What was invested in since training?", "multi", options("Farming", "Land", "Business", "Other"), condition=eq("e4_invested", "yes")),
-            question("E5", "e5_savings", "Average amount saved per month", "number", unit="UGX"),
+            question("E5", "e5_savings", "Average amount saved per month", "number", unit="UGX", integer=True),
             question("E6", "e6_saving_place", "Where is part of the income saved?", "choice", options(
                 ("bank", "Bank / SACCO"), ("group", "Saving group"), ("mobile", "Mobile money"),
                 ("home", "At home"), ("other", "Other"))),
@@ -296,10 +320,8 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
             question("F1.1", "f1_1_structure", "Which features are present in the structure?", "multi", options(
                 ("roof", "Roof intact"), ("walls", "Walls or mesh on all sides"), ("door", "Door that closes"),
                 ("air", "Openings above bird height"), ("litter", "Litter or bedding")), condition=one_of("f1_location", ["house", "bounded"])),
-            question("F2", "f2_visible", "How many birds are visible?", "choice", options(
-                ("five_plus", "5 or more"), ("under_five", "Fewer than 5")), condition=one_of("f1_location", ["house", "bounded"])),
-            question("F2.1", "f2_1_unhealthy", "How many inspected birds show signs of illness?", "number", condition=one_of("f1_location", ["house", "bounded"])),
-            question("F2.1b", "f2_1_total", "How many birds were inspected in total?", "number", condition=eq("f2_visible", "under_five")),
+            question("F2", "f2_visible", "How many birds are visible?", "number", condition=one_of("f1_location", ["house", "bounded"]), min_value=1, integer=True),
+            question("F2.1", "f2_1_unhealthy", "How many inspected birds show signs of illness?", "number", condition=one_of("f1_location", ["house", "bounded"]), integer=True),
             question("F3", "f3_isolation", "Are sick birds kept apart from the rest?", "choice", options(
                 ("yes", "Yes, separate space in use"), ("none_seen", "No sick birds seen"),
                 ("mixed", "Sick birds mixed with the flock")), condition=one_of("f1_location", ["house", "bounded"])),
@@ -372,7 +394,16 @@ def build_survey(
             if item["type"] == "training_list":
                 item["display_values"] = history_topics
             elif item.get("profile_key"):
-                item["prefill"] = profile.get(item["profile_key"], "")
+                prefill = str(profile.get(item["profile_key"], "") or "").strip()
+                if item["type"] == "choice" and prefill:
+                    match = next((option for option in item.get("options", [])
+                                  if option["value"].casefold() == prefill.casefold()
+                                  or option["label"].casefold() == prefill.casefold()), None)
+                    if match:
+                        prefill = match["value"]
+                    else:
+                        item.setdefault("options", []).append({"value": prefill, "label": prefill})
+                item["prefill"] = prefill
     return {"version": SURVEY_VERSION, "topics": topics, "training_history": history_topics, "sections": sections}
 
 
@@ -425,8 +456,15 @@ def validate_answers(answers: dict[str, Any], topics: Iterable[str]) -> str | No
                 number = float(value)
             except (TypeError, ValueError):
                 return f"Enter a valid number for {item['source_id']}."
-            if number < 0:
-                return f"Enter a non-negative number for {item['source_id']}."
+            if not isfinite(number):
+                return f"Enter a valid number for {item['source_id']}."
+            minimum = item.get("min_value", 0)
+            if number < minimum:
+                if minimum == 0:
+                    return f"Enter a non-negative number for {item['source_id']}."
+                return f"{item['source_id']} must be at least {minimum:g}."
+            if item.get("integer") and not number.is_integer():
+                return f"Enter a whole number for {item['source_id']}."
             if item.get("max_value") is not None and number > item["max_value"]:
                 return f"{item['source_id']} cannot be greater than {item['max_value']:g}."
         allowed = {option["value"] for option in item.get("options", [])}
@@ -436,8 +474,21 @@ def validate_answers(answers: dict[str, Any], topics: Iterable[str]) -> str | No
         if item.get("max_selections") is not None and isinstance(value, list) and len(value) > item["max_selections"]:
             return f"Select no more than {item['max_selections']} answers for {item['source_id']}."
         exclusive = set(item.get("exclusive_values", []))
-        if isinstance(value, list) and exclusive.intersection(value) and len(value) > 1:
+        if exclusive and isinstance(value, list) and exclusive.intersection(value) and len(value) > 1:
             return f"{item['source_id']}: 'None' cannot be combined with another answer."
+    household_total = _answer(answers, "a10_total")
+    household_male = _answer(answers, "a10_male")
+    household_female = _answer(answers, "a10_female")
+    if not _is_empty(household_total):
+        total = float(household_total)
+        male = 0 if _is_empty(household_male) else float(household_male)
+        female = 0 if _is_empty(household_female) else float(household_female)
+        if male > total:
+            return "A10.2 cannot be greater than the total household size in A10.1."
+        if female > total:
+            return "A10.3 cannot be greater than the total household size in A10.1."
+        if not _is_empty(household_male) and not _is_empty(household_female) and male + female > total:
+            return "A10.2 and A10.3 together cannot be greater than the total household size in A10.1."
     damage = _answer(answers, "b10_1_damage")
     severe = _answer(answers, "b10_2_severe")
     if not _is_empty(damage) and not _is_empty(severe):
@@ -447,11 +498,11 @@ def validate_answers(answers: dict[str, Any], topics: Iterable[str]) -> str | No
         except (TypeError, ValueError):
             pass  # Active numeric questions already return their more specific error above.
     unhealthy = _answer(answers, "f2_1_unhealthy")
-    inspected = _answer(answers, "f2_1_total")
+    inspected = _answer(answers, "f2_visible")
     if not _is_empty(unhealthy) and not _is_empty(inspected):
         try:
             if float(unhealthy) > float(inspected):
-                return "F2.1 cannot be greater than the total number of birds inspected."
+                return "F2.1 cannot be greater than the number of visible birds in F2."
         except (TypeError, ValueError):
             pass
     return None
@@ -591,7 +642,8 @@ def _score_b_item(item_id: str, package: str, answers: dict[str, Any]) -> ItemRe
             return ItemResult(None)
         return ItemResult(0 if value == "none" else 2)
     if item_id == "b12_macrofauna":
-        return ItemResult({"zero": 0, "one_four": 1, "five_plus": 2}.get(value))
+        number = _number(answers, item_id)
+        return ItemResult(0 if number == 0 else 1 if number <= 4 else 2)
     raise KeyError(item_id)
 
 
@@ -694,12 +746,12 @@ def score_single_training(topic: str, answers: dict[str, Any]) -> dict[str, Any]
             item_points = 2 if count > 2 else 1 if count == 1 else 0
         elif scoring == "poultry_health":
             unhealthy = _number(answers, item_id)
-            if _answer(answers, "f2_visible") == "five_plus":
+            inspected = max(0, _number(answers, "f2_visible"))
+            if inspected >= 5:
                 item_points = 2 if unhealthy <= 1 else 1 if unhealthy <= 3 else 0
                 critical = critical or unhealthy >= 4
             else:
-                inspected = max(1, _number(answers, "f2_1_total"))
-                item_points = 0 if unhealthy > inspected / 2 else 2
+                item_points = 0 if inspected == 0 or unhealthy > inspected / 2 else 2
         else:
             item_points = scoring.get(value)
         if item_points is None:

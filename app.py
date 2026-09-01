@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import hmac
 import json
@@ -23,12 +25,14 @@ from urllib.parse import urlparse
 from flask import (
     Flask,
     abort,
+    current_app,
     flash,
     jsonify,
     make_response,
     redirect,
     render_template,
     request,
+    send_from_directory,
     session,
     url_for,
 )
@@ -74,6 +78,68 @@ DATASET_LABELS = {
     "care": "FH",
 }
 
+MAX_FOLLOWUP_PHOTOS = 6
+MAX_FOLLOWUP_PHOTO_BYTES = 8 * 1024 * 1024
+
+
+def _photo_extension(data: bytes) -> str | None:
+    if data.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+        return ".webp"
+    if len(data) >= 12 and data[4:8] == b"ftyp" and data[8:12] in {b"heic", b"heix", b"hevc", b"hevx", b"mif1"}:
+        return ".heic"
+    return None
+
+
+def prepare_followup_photos(field_name: str, encoded_value: str = "") -> list[dict[str, Any]]:
+    candidates: list[tuple[str, bytes]] = []
+    for upload in request.files.getlist(field_name):
+        if upload and upload.filename:
+            candidates.append((Path(upload.filename).name, upload.read(MAX_FOLLOWUP_PHOTO_BYTES + 1)))
+    if encoded_value:
+        try:
+            encoded_items = json.loads(encoded_value)
+        except (TypeError, ValueError):
+            raise ValueError("The offline photo data is invalid.") from None
+        if not isinstance(encoded_items, list):
+            raise ValueError("The offline photo data is invalid.")
+        for item in encoded_items:
+            try:
+                header, payload = str(item["data"]).split(",", 1)
+                if not header.startswith("data:image/") or ";base64" not in header:
+                    raise ValueError
+                data = base64.b64decode(payload, validate=True)
+                candidates.append((Path(str(item.get("name") or "photo")).name, data))
+            except (KeyError, TypeError, ValueError, binascii.Error):
+                raise ValueError("One of the offline photos is invalid.") from None
+    if len(candidates) > MAX_FOLLOWUP_PHOTOS:
+        raise ValueError(f"Upload no more than {MAX_FOLLOWUP_PHOTOS} photos for B18.")
+    prepared = []
+    for original_name, data in candidates:
+        if not data or len(data) > MAX_FOLLOWUP_PHOTO_BYTES:
+            raise ValueError("Each B18 photo must be smaller than 8 MB.")
+        extension = _photo_extension(data)
+        if not extension:
+            raise ValueError("B18 accepts JPG, PNG, WebP or HEIC photos only.")
+        prepared.append({"name": original_name or f"photo{extension}", "extension": extension, "data": data})
+    return prepared
+
+
+def persist_followup_photos(prepared: list[dict[str, Any]]) -> list[dict[str, str]]:
+    if not prepared:
+        return []
+    folder = Path(current_app.config["FOLLOWUP_PHOTO_FOLDER"])
+    folder.mkdir(parents=True, exist_ok=True)
+    stored = []
+    for item in prepared:
+        filename = f"{secrets.token_hex(20)}{item['extension']}"
+        (folder / filename).write_bytes(item["data"])
+        stored.append({"file": filename, "name": item["name"]})
+    return stored
+
 
 def ensure_bootstrap_user(connection):
     """Create the first administrator once, using deployment environment values."""
@@ -106,7 +172,8 @@ def create_app(test_config=None):
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=os.getenv("ARFSA_SECURE_COOKIES", "0") == "1",
-        MAX_CONTENT_LENGTH=16 * 1024 * 1024,
+        MAX_CONTENT_LENGTH=64 * 1024 * 1024,
+        FOLLOWUP_PHOTO_FOLDER=str(Path(app.instance_path) / "followup_photos"),
     )
     if test_config:
         app.config.update(test_config)
@@ -184,6 +251,12 @@ def create_app(test_config=None):
     @app.get("/health")
     def health():
         return {"status": "ok"}
+
+    @app.get("/followup-photos/<filename>")
+    def followup_photo(filename):
+        if not re.fullmatch(r"[a-f0-9]{40}\.(?:jpg|png|webp|heic)", filename):
+            abort(404)
+        return send_from_directory(app.config["FOLLOWUP_PHOTO_FOLDER"], filename)
 
     @app.route("/login", methods=["GET", "POST"])
     def login():
@@ -532,6 +605,11 @@ def create_app(test_config=None):
                 response["answers"] = [
                     {
                         **item,
+                        "photo_urls": [
+                            {"url": url_for("followup_photo", filename=value["file"]), "name": value.get("name") or f"Photo {index + 1}"}
+                            for index, value in enumerate(item.get("answer") or [])
+                            if isinstance(value, dict) and value.get("file")
+                        ] if item.get("type") == "photos" else [],
                         "display_answer": ", ".join(str(value) for value in item["answer"])
                         if isinstance(item["answer"], list)
                         else (str(item["answer"]) if item["answer"] not in {None, ""} else "-"),
@@ -1234,6 +1312,9 @@ def create_app(test_config=None):
                 success, message = save_followup(connection, selected_cbf, request.form, session["username"])
                 flash(message, "success" if success else "error")
                 if success:
+                    result_event_id = session.pop("last_followup_event_id", None)
+                    if result_event_id:
+                        return redirect(url_for("followup_results", event_id=result_event_id))
                     return redirect(url_for("data_entry", cbf=selected_cbf, mode=mode,
                                             group=request.form.get("group", "")))
 
@@ -1326,6 +1407,77 @@ def create_app(test_config=None):
             followup_survey=followup_survey, selected_followup_record=selected_followup_record,
             history=history, today=date.today().isoformat(), selected_event_date=selected_event_date,
             venues=venues, selected_venue=selected_venue, new_venue=new_venue,
+        )
+
+    @app.route("/data-entry/followup-results/<int:event_id>", methods=["GET", "POST"])
+    def followup_results(event_id):
+        connection = get_db()
+        assessment_row = connection.execute(
+            """SELECT fa.*, e.event_date, e.cbf_name, e.created_by, r.name AS beneficiary_name
+               FROM followup_assessments fa
+               JOIN field_events e ON e.id=fa.event_id
+               JOIN records r ON r.id=fa.record_id
+               WHERE fa.event_id=? AND e.event_type='followup'""",
+            (event_id,),
+        ).fetchone()
+        if not assessment_row:
+            abort(404)
+        if session.get("access_scope") == "ae_user" and assessment_row["cbf_name"] != session.get("cbf_name"):
+            abort(403)
+        responses = [dict(row) for row in connection.execute(
+            """SELECT fr.* FROM followup_responses fr
+               JOIN field_event_entries fee ON fee.id=fr.event_entry_id
+               WHERE fee.event_id=? ORDER BY fr.topic""",
+            (event_id,),
+        ).fetchall()]
+        if request.method == "POST":
+            allowed_actions = {item["value"] for item in NEXT_ACTION_OPTIONS}
+            selected_actions = {}
+            for response in responses:
+                action = request.form.get(f"action__{response['id']}", "")
+                if action not in allowed_actions:
+                    flash(f"Choose a valid next action for {response['topic']}.", "error")
+                    break
+                selected_actions[response["id"]] = action
+            else:
+                record = connection.execute(
+                    "SELECT raw_data FROM records WHERE id=?", (assessment_row["record_id"],)
+                ).fetchone()
+                raw = json.loads(record["raw_data"])
+                for response in responses:
+                    action = selected_actions[response["id"]]
+                    connection.execute(
+                        "UPDATE followup_responses SET next_action=? WHERE id=?",
+                        (action, response["id"]),
+                    )
+                    raw[f"Follow up {response['training_cycle']} next action - {response['topic']}"] = action
+                connection.execute(
+                    "UPDATE records SET raw_data=?, updated_at=? WHERE id=?",
+                    (json.dumps(raw, ensure_ascii=False), utc_now(), assessment_row["record_id"]),
+                )
+                rebuild_statuses(connection, assessment_row["record_id"], "training", raw)
+                log_audit(
+                    connection, session["username"], "followup_actions", "field_event", event_id,
+                    f"Confirmed next actions for {assessment_row['beneficiary_name']}",
+                    {response["topic"]: selected_actions[response["id"]] for response in responses},
+                )
+                connection.commit()
+                flash("The CBF decisions were saved and the training statuses were updated.", "success")
+                return redirect(url_for("followup_results", event_id=event_id, finalized=1))
+
+        assessment = dict(assessment_row)
+        assessment["summary"] = json.loads(assessment["summary"])
+        assessment["packages"] = [dict(row) for row in connection.execute(
+            "SELECT * FROM followup_package_results WHERE assessment_id=? ORDER BY id",
+            (assessment["id"],),
+        ).fetchall()]
+        action_labels = {item["value"]: item["label"] for item in NEXT_ACTION_OPTIONS}
+        for response in responses:
+            response["recommended_action"] = assessment["summary"].get("trainings", {}).get(response["topic"], {}).get("next_action", response["next_action"])
+            response["recommended_action_label"] = action_labels.get(response["recommended_action"], response["recommended_action"])
+        return render_template(
+            "followup_results.html", assessment=assessment, responses=responses,
+            action_options=NEXT_ACTION_OPTIONS, finalized=request.args.get("finalized") == "1",
         )
 
     @app.get("/field-app/")
@@ -1645,8 +1797,14 @@ def synchronize_field_submission(connection, cbf_name: str, submission, username
                 pairs.append((f"topic__{index}", topic))
             for question in all_questions_for_topics(survey_topics):
                 value = survey_answers.get(question["id"], "")
+                if question["id"] == "b12_macrofauna":
+                    value = {"zero": 0, "one_four": 1, "five_plus": 5}.get(value, value)
+                elif question["id"] == "f2_visible":
+                    value = {"five_plus": 5, "under_five": survey_answers.get("f2_1_total", 1)}.get(value, value)
                 field_name = f"survey_answer__{question['id']}"
-                if isinstance(value, list):
+                if question["type"] == "photos" and isinstance(value, list):
+                    pairs.append((field_name, json.dumps(value)))
+                elif isinstance(value, list):
                     pairs.extend((field_name, str(item)) for item in value)
                 elif value is not None:
                     pairs.append((field_name, str(value)))
@@ -2011,6 +2169,7 @@ def save_scored_followup(
 
     answers: dict[str, Any] = {}
     answer_records: dict[str, dict[str, Any]] = {}
+    pending_photos: dict[str, list[dict[str, Any]]] = {}
     seen_questions = set()
     for item in all_questions_for_topics(topics):
         if item["id"] in seen_questions or item["type"] == "training_list":
@@ -2019,8 +2178,18 @@ def save_scored_followup(
         field_name = f"survey_answer__{item['id']}"
         if item["type"] == "multi":
             answer: Any = [value.strip() for value in values.getlist(field_name) if value.strip()]
+        elif item["type"] == "photos":
+            try:
+                pending_photos[item["id"]] = prepare_followup_photos(field_name, values.get(field_name, ""))
+            except ValueError as error:
+                return False, str(error)
+            answer = [{"name": photo["name"]} for photo in pending_photos[item["id"]]]
         else:
             answer = values.get(field_name, "").strip()
+        if item["id"] == "b12_macrofauna":
+            answer = {"zero": 0, "one_four": 1, "five_plus": 5}.get(answer, answer)
+        elif item["id"] == "f2_visible":
+            answer = {"five_plus": 5, "under_five": values.get("survey_answer__f2_1_total", 1)}.get(answer, answer)
         if item["type"] == "number" and answer:
             answer = parse_number(answer)
         answers[item["id"]] = answer
@@ -2029,6 +2198,7 @@ def save_scored_followup(
                 "source_id": item["source_id"],
                 "question": item["label"],
                 "answer": answer,
+                "type": item["type"],
             }
 
     validation_error = validate_answers(answers, topics)
@@ -2037,6 +2207,12 @@ def save_scored_followup(
     results = score_survey(answers, topics)
     if any(topic not in results["trainings"] for topic in topics):
         return False, "A result could not be calculated for one of the applicable training types."
+
+    for question_id, prepared in pending_photos.items():
+        stored_photos = persist_followup_photos(prepared)
+        answers[question_id] = stored_photos
+        if question_id in answer_records:
+            answer_records[question_id]["answer"] = stored_photos
 
     raw = json.loads(record["raw_data"])
     cycles: dict[str, int] = {}
@@ -2172,6 +2348,8 @@ def save_scored_followup(
         },
     )
     connection.commit()
+    if client_submission_id is None:
+        session["last_followup_event_id"] = event_id
     outcome_text = f" Outcome {household.get('code')} - {household.get('label')}." if household else ""
     return True, f"Follow-up scored and saved for {record['name']}.{outcome_text}"
 

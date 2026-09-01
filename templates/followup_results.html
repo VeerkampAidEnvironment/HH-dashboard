@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Follow-up results - ARFSA{% endblock %}
+{% block content %}
+{% set outcome = assessment.summary.household_outcome %}
+<div class="page-heading"><div><p class="eyebrow">Follow-up completed</p><h1>{{ assessment.beneficiary_name }}</h1><p class="lead">Review the calculated results, then confirm what should happen for each training type.</p></div><span class="status-pill">{{ assessment.event_date|datefmt }}</span></div>
+
+<section class="result-hero panel">
+  <div><span>Household outcome</span><strong>{% if outcome %}{{ outcome.code }} — {{ outcome.label }}{% else %}Training-specific assessment{% endif %}</strong>{% if outcome %}<p>{{ outcome.action }}</p>{% endif %}</div>
+  <div class="result-kpis">
+    <article><span>RVO</span><strong>{% if assessment.rvo_passed is none %}—{% elif assessment.rvo_passed %}Passed{% else %}Not met{% endif %}</strong></article>
+    <article><span>Project</span><strong>{% if assessment.project_passed is none %}—{% elif assessment.project_passed %}Passed{% else %}Not met{% endif %}</strong></article>
+    <article><span>Breadth</span><strong>{% if assessment.breadth_total %}{{ assessment.breadth_achieved }}/{{ assessment.breadth_total }}{% else %}—{% endif %}</strong></article>
+    <article><span>Depth</span><strong>{% if assessment.depth is not none %}{{ assessment.depth|pct }}{% else %}—{% endif %}</strong></article>
+  </div>
+</section>
+
+{% if assessment.packages %}<section class="panel"><div class="section-heading"><p class="eyebrow">Package results</p><h2>Sections passed and percentages</h2></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Package</th><th>Score</th><th>Result</th><th>Recommendation</th></tr></thead><tbody>{% for package in assessment.packages %}<tr><td><strong>{{ package.package_title }}</strong></td><td>{{ package.score|pct }} <small>({{ package.points_earned|round(1) }}/{{ package.points_available|round(1) }})</small></td><td><span class="status-pill">{{ package.result_status }}{% if package.critical_failed %} · critical{% endif %}</span></td><td>{{ package.recommendation or '—' }}</td></tr>{% endfor %}</tbody></table></div></section>{% endif %}
+
+<form method="post" class="panel action-decision-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="section-heading"><p class="eyebrow">Final step</p><h2>CBF decision for each training</h2><p>The system recommendation is preselected. The CBF can confirm it or choose another action.</p></div>
+  <div class="action-decision-list">
+    {% for response in responses %}{% set training = assessment.summary.trainings[response.topic] %}
+    <article class="action-decision-card">
+      <div><h3>{{ response.topic }}</h3><div class="result-inline"><span>{{ response.adoption_rate|pct }}</span><span>{{ response.result_status }}{% if response.critical_failed %} · critical{% endif %}</span></div><p>{{ response.recommendation }}</p><small>System recommendation: <strong>{{ response.recommended_action_label }}</strong></small></div>
+      <label>CBF decision<select name="action__{{ response.id }}" required>{% for option in action_options %}<option value="{{ option.value }}" {{ 'selected' if option.value == response.next_action }}>{{ option.label }}</option>{% endfor %}</select></label>
+    </article>
+    {% endfor %}
+  </div>
+  <div class="sticky-actions"><button class="button button-primary" type="submit">Save decisions and finalize</button>{% if finalized %}<a class="button button-secondary" href="{{ url_for('record_detail', record_id=assessment.record_id) }}">Open beneficiary record</a>{% endif %}</div>
+</form>
+{% endblock %}

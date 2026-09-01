@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from datetime import date
 import json
+from io import BytesIO
 from pathlib import Path
 from urllib.parse import quote
 
@@ -24,7 +25,12 @@ class ApplicationTest(unittest.TestCase):
         os.environ["ARFSA_DATABASE"] = str(cls.database)
         from app import create_app
 
-        cls.app = create_app({"TESTING": True, "SECRET_KEY": "test-secret"})
+        cls.photo_folder = Path(cls.temp_dir.name) / "followup-photos"
+        cls.app = create_app({
+            "TESTING": True,
+            "SECRET_KEY": "test-secret",
+            "FOLLOWUP_PHOTO_FOLDER": str(cls.photo_folder),
+        })
 
     @classmethod
     def tearDownClass(cls):
@@ -852,7 +858,8 @@ class ApplicationTest(unittest.TestCase):
         response = self.client.get("/data-entry", query_string={"cbf": cbf})
         self.assertIn(b'type="radio" name="mode" value="centralized"', response.data)
         self.assertIn(b'data-auto-submit="selection"', response.data)
-        self.assertIn(b"Beneficiary group", response.data)
+        self.assertIn(b"What is the update type?", response.data)
+        self.assertNotIn(b"Beneficiary group", response.data)
 
         response = self.client.get(
             "/data-entry", query_string={"cbf": cbf, "mode": "centralized"}
@@ -882,6 +889,8 @@ class ApplicationTest(unittest.TestCase):
         self.assertIn(b"CBF follow-up monitoring", questionnaire_page.data)
         self.assertIn(b"Calculated on save", questionnaire_page.data)
         self.assertIn(b"Trainings received", questionnaire_page.data)
+        self.assertIn(b"data-survey-wizard", questionnaire_page.data)
+        self.assertIn(b"Finish this package and continue", questionnaire_page.data)
         response = self.client.post(
             "/data-entry",
             data={
@@ -997,11 +1006,22 @@ class ApplicationTest(unittest.TestCase):
             "survey_answer__i2_change": "More harvest / yield",
             "survey_answer__i3_improve": "Nothing - satisfied as is",
             "survey_answer__consent": "yes",
+            "survey_answer__b18_photos": [
+                (BytesIO(b"\x89PNG\r\n\x1a\nfirst-photo"), "best-practice.png"),
+                (BytesIO(b"\xff\xd8\xffsecond-photo"), "weak-practice.jpg"),
+            ],
         }
         for question_id, value in good_section_b_answers().items():
             data[f"survey_answer__{question_id}"] = value
         response = self.client.post("/data-entry", data=data)
         self.assertEqual(response.status_code, 302, response.data.decode("utf-8", errors="replace")[:3000])
+        self.assertIn("/data-entry/followup-results/", response.headers["Location"])
+        results_page = self.client.get(response.headers["Location"])
+        self.assertEqual(results_page.status_code, 200)
+        self.assertIn(b"Sections passed and percentages", results_page.data)
+        self.assertIn(b"Breadth", results_page.data)
+        self.assertIn(b"Depth", results_page.data)
+        self.assertIn(b"System recommendation", results_page.data)
         with self.app.app_context():
             from db import get_db
 
@@ -1022,6 +1042,37 @@ class ApplicationTest(unittest.TestCase):
                 (assessment["id"],),
             ).fetchone()[0]
             self.assertEqual(package_count, 5)
+            stored_response = connection.execute(
+                "SELECT answers FROM followup_responses WHERE record_id=? ORDER BY id DESC LIMIT 1",
+                (due["id"],),
+            ).fetchone()
+            photos = json.loads(stored_response["answers"])["b18_photos"]["answer"]
+            self.assertEqual([photo["name"] for photo in photos], ["best-practice.png", "weak-practice.jpg"])
+            self.assertTrue(all((self.photo_folder / photo["file"]).exists() for photo in photos))
+            response_rows = connection.execute(
+                """SELECT fr.id, fr.topic FROM followup_responses fr
+                   JOIN field_event_entries fee ON fee.id=fr.event_entry_id
+                   WHERE fee.event_id=?""",
+                (assessment["event_id"],),
+            ).fetchall()
+
+        photo_response = self.client.get(f"/followup-photos/{photos[0]['file']}")
+        self.assertEqual(photo_response.status_code, 200)
+        photo_response.close()
+        action_data = {"csrf_token": self.csrf()}
+        action_data.update({f"action__{row['id']}": "followup_3" for row in response_rows})
+        action_response = self.client.post(response.headers["Location"], data=action_data)
+        self.assertEqual(action_response.status_code, 302)
+        with self.app.app_context():
+            from db import get_db
+
+            selected = get_db().execute(
+                "SELECT DISTINCT next_action FROM followup_responses WHERE id IN ({})".format(
+                    ",".join("?" for _ in response_rows)
+                ),
+                tuple(row["id"] for row in response_rows),
+            ).fetchall()
+            self.assertEqual({row["next_action"] for row in selected}, {"followup_3"})
 
     def test_followup_can_request_ct_and_new_ct_restarts_waiting_period(self):
         with self.app.app_context():

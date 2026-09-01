@@ -148,6 +148,43 @@
 .field-choice:has(input:checked) { border-color: var(--ae-darkblue); background: var(--ae-darkblue-10); }
 .field-choice input { width: 17px; min-height: 17px; flex: none; accent-color: var(--ae-darkblue); }
 .field-choice:has(input:disabled:not(:checked)), .question-check:has(input:disabled:not(:checked)) { opacity: .48; cursor: not-allowed; }
+.survey-photo-upload, .field-photo-upload { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.survey-photo-upload input, .field-photo-upload input { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; }
+.survey-photo-upload > span { display: inline-flex; align-items: center; min-height: 42px; padding: 8px 15px; border-radius: 9px; background: var(--ae-darkblue); color: white; font-weight: 800; cursor: pointer; }
+.survey-photo-upload > small, .field-photo-upload > small { color: var(--muted); }
+.field-photo-upload > .button { cursor: pointer; }
+.followup-photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+.followup-photo-grid a { display: grid; gap: 5px; color: inherit; font-size: 11px; }
+.followup-photo-grid img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
+.survey-readonly-value, .field-readonly-value { display: grid; gap: 3px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-soft); }
+.survey-readonly-value small, .field-readonly-value small { color: var(--muted); font-size: 10px; }
+.workflow-window { max-width: 900px; margin-inline: auto; }
+.workflow-filter { margin-bottom: 16px; }
+.survey-wizard-step[hidden] { display: none; }
+.survey-wizard-step > summary { pointer-events: none; }
+.survey-step-actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 20px; border-top: 1px solid var(--line); background: var(--surface-soft); }
+.survey-step-actions > span { color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+.field-survey-step-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px; border-top: 1px solid var(--line); }
+.field-survey-step-actions small { color: var(--muted); font-weight: 800; text-transform: uppercase; }
+.field-survey-finalize { padding: 18px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-soft); }
+.field-survey-finalize p { margin-bottom: 0; color: var(--muted); }
+.result-hero { display: grid; gap: 20px; }
+.result-hero > div:first-child > span, .result-kpis span { display: block; color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+.result-hero > div:first-child > strong { display: block; margin-top: 5px; font-size: clamp(22px, 4vw, 34px); }
+.result-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.result-kpis article { padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }
+.result-kpis strong { display: block; margin-top: 5px; font-size: 20px; }
+.action-decision-list { display: grid; gap: 12px; }
+.action-decision-card { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(240px, .8fr); gap: 22px; align-items: end; padding: 16px; border: 1px solid var(--line); border-radius: 11px; }
+.action-decision-card h3 { margin: 0 0 7px; }
+.action-decision-card p { margin: 8px 0; color: var(--muted); }
+.result-inline { display: flex; flex-wrap: wrap; gap: 7px; }
+.result-inline span { padding: 4px 8px; border-radius: 99px; background: var(--ae-darkblue-10); font-size: 11px; font-weight: 800; }
+@media (max-width: 760px) {
+  .result-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .action-decision-card { grid-template-columns: 1fr; }
+  .survey-step-actions { align-items: stretch; flex-direction: column; }
+}
 .field-outbox { display: grid; gap: 10px; }
 .field-outbox-card { padding: 17px 18px; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .field-outbox-card.has-error { border-color: #e2aaa3; }

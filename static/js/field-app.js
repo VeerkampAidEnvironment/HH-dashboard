@@ -349,12 +349,41 @@
     if (question.required) copy.append(create("b", "field-required", "Required"));
     wrap.append(copy);
     const options = question.options || [];
-    const prefill = question.profile_key ? (farmer.profile?.[question.profile_key] || "") : "";
+    const rawPrefill = question.profile_key ? String(farmer.profile?.[question.profile_key] || "").trim() : "";
+    const matchedPrefill = options.find((option) => {
+      const value = typeof option === "object" ? option.value : option;
+      const label = typeof option === "object" ? option.label : option;
+      return String(value).toLowerCase() === rawPrefill.toLowerCase() || String(label).toLowerCase() === rawPrefill.toLowerCase();
+    });
+    const prefill = matchedPrefill ? (typeof matchedPrefill === "object" ? matchedPrefill.value : matchedPrefill) : rawPrefill;
     if (question.type === "training_list") {
       const list = create("div", "field-training-history");
       (farmer.trainingHistory || []).forEach((topic) => list.append(create("span", "", `✓ ${topic}`)));
       if (!(farmer.trainingHistory || []).length) list.append(create("em", "", "No recorded trainings"));
       wrap.append(list);
+    } else if (question.type === "readonly") {
+      const value = create("div", "field-readonly-value");
+      value.append(create("strong", "", prefill || "Not recorded"), create("small", "", "Filled from the beneficiary database"));
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = name;
+      input.value = prefill;
+      value.append(input);
+      wrap.append(value);
+    } else if (question.type === "photos") {
+      const upload = create("label", "field-photo-upload");
+      const input = document.createElement("input");
+      input.type = "file";
+      input.name = name;
+      input.accept = "image/jpeg,image/png,image/webp,image/heic,image/heif";
+      input.multiple = true;
+      const button = create("span", "button button-secondary", "Choose photos");
+      const status = create("small", "", "Up to 6 photos · JPG, PNG, WebP or HEIC");
+      input.addEventListener("change", () => {
+        status.textContent = input.files.length ? `${input.files.length} ${input.files.length === 1 ? "photo" : "photos"} selected` : "Up to 6 photos · JPG, PNG, WebP or HEIC";
+      });
+      upload.append(input, button, status);
+      wrap.append(upload);
     } else if (question.type === "textarea") {
       const input = document.createElement("textarea");
       input.name = name;
@@ -367,9 +396,9 @@
       const input = document.createElement("input");
       input.type = "number";
       input.name = name;
-      input.min = "0";
+      input.min = String(question.min_value ?? 0);
       if (question.max_value !== undefined) input.max = String(question.max_value);
-      input.step = "any";
+      input.step = question.integer ? "1" : "any";
       input.value = prefill;
       numberWrap.append(input);
       if (question.unit) numberWrap.append(create("span", "", question.unit));
@@ -449,6 +478,7 @@
       const details = create("details", "field-questionnaire");
       details.dataset.section = section.id;
       if (sectionIndex === 0) details.open = true;
+      details.hidden = sectionIndex !== 0;
       const summary = create("summary");
       const title = create("span");
       title.append(create("strong", "", `Section ${section.id} · ${section.title}`));
@@ -456,9 +486,33 @@
       summary.append(title, create("b", "", `${section.questions.length} items`));
       const questions = create("div", "field-question-list");
       section.questions.forEach((question) => questions.append(questionInput(question, farmer)));
-      details.append(summary, questions);
+      const actions = create("div", "field-survey-step-actions");
+      actions.append(create("small", "", `Package ${sectionIndex + 1} of ${sections.length}`));
+      const nextButton = create("button", "button button-primary", sectionIndex === sections.length - 1 ? "Finish final package" : "Finish this package and continue");
+      nextButton.type = "button";
+      nextButton.addEventListener("click", () => {
+        if (!validateFieldStep(details, container)) return;
+        details.hidden = true;
+        details.open = false;
+        const next = container.querySelector(`[data-section="${CSS.escape(sections[sectionIndex + 1]?.id || "")}"]`);
+        if (next) {
+          next.hidden = false;
+          next.open = true;
+          next.scrollIntoView({ behavior: "smooth", block: "start" });
+        } else {
+          finalize.hidden = false;
+          $("[data-followup-save]").hidden = false;
+          finalize.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      });
+      actions.append(nextButton);
+      details.append(summary, questions, actions);
       container.append(details);
     });
+    const finalize = create("div", "field-survey-finalize");
+    finalize.hidden = true;
+    finalize.append(create("strong", "", "All packages completed"), create("p", "", "Save the visit. The server will calculate package scores, Breadth, Depth and recommended next actions during synchronization."));
+    container.append(finalize);
     container.dataset.topics = JSON.stringify(dueTopics);
     const refresh = () => updateFieldSurveyConditions(container);
     container.addEventListener("change", (event) => {
@@ -469,7 +523,7 @@
     container.addEventListener("input", refresh);
     refresh();
     container.hidden = false;
-    $("[data-followup-save]").hidden = false;
+    $("[data-followup-save]").hidden = true;
     $("[data-followup-selection]").textContent = `${farmer.availableFollowups.length} ${farmer.availableFollowups.length === 1 ? "topic" : "topics"} due for ${farmer.name}`;
     container.scrollIntoView({ behavior: "smooth", block: "start" });
   };
@@ -477,6 +531,7 @@
   const surveyValue = (container, questionId) => {
     const node = $(`[data-survey-question="${CSS.escape(questionId)}"]`, container);
     if (!node || node.hidden) return "";
+    if ($('input[type="file"]', node)) return [];
     if ($("input[type=checkbox]", node)) return $$(`input[type=checkbox]:checked`, node).map((input) => input.value);
     return $("input[type=radio]:checked", node)?.value
       ?? $("select", node)?.value
@@ -522,17 +577,87 @@
     });
   };
 
-  const answersForSurvey = (container) => {
+  const readPhotoFiles = async (node) => {
+    const files = Array.from($('input[type="file"]', node)?.files || []);
+    if (files.length > 6) throw new Error("Upload no more than 6 photos for B18.");
+    if (files.some((file) => file.size > 8 * 1024 * 1024)) throw new Error("Each B18 photo must be smaller than 8 MB.");
+    return Promise.all(files.map((file) => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve({ name: file.name, type: file.type, data: reader.result });
+      reader.onerror = () => reject(new Error(`Could not read ${file.name}.`));
+      reader.readAsDataURL(file);
+    })));
+  };
+
+  const validateFieldStep = (step, container) => {
+    updateFieldSurveyConditions(container);
+    for (const node of $$('[data-survey-question]', step)) {
+      if (node.hidden) continue;
+      const controls = $$('input:not([type="hidden"]), select, textarea', node);
+      const invalid = controls.find((control) => !control.checkValidity());
+      if (invalid) {
+        invalid.reportValidity();
+        return false;
+      }
+      const fileInput = $('input[type="file"]', node);
+      if (fileInput?.files.length > 6) {
+        alertUser("Upload no more than 6 photos for B18.", "warning");
+        return false;
+      }
+      const value = surveyValue(container, node.dataset.surveyQuestion);
+      const empty = fileInput ? fileInput.files.length === 0 : (Array.isArray(value) ? value.length === 0 : value === "");
+      if (node.dataset.required === "true" && empty && !node.classList.contains("field-question-training_list")) {
+        alertUser(`Complete required item ${$("small", node)?.textContent || "in this package"}.`, "warning");
+        node.scrollIntoView({ behavior: "smooth", block: "center" });
+        return false;
+      }
+    }
+    const householdTotalValue = surveyValue(container, "a10_total");
+    const householdMaleValue = surveyValue(container, "a10_male");
+    const householdFemaleValue = surveyValue(container, "a10_female");
+    if (householdTotalValue !== "") {
+      const householdTotal = Number(householdTotalValue);
+      const householdMale = householdMaleValue === "" ? 0 : Number(householdMaleValue);
+      const householdFemale = householdFemaleValue === "" ? 0 : Number(householdFemaleValue);
+      if (householdMale > householdTotal) {
+        alertUser("A10.2 cannot be greater than the total household size in A10.1.", "warning");
+        return false;
+      }
+      if (householdFemale > householdTotal) {
+        alertUser("A10.3 cannot be greater than the total household size in A10.1.", "warning");
+        return false;
+      }
+      if (householdMaleValue !== "" && householdFemaleValue !== "" && householdMale + householdFemale > householdTotal) {
+        alertUser("A10.2 and A10.3 together cannot be greater than the total household size in A10.1.", "warning");
+        return false;
+      }
+    }
+    const damage = Number(surveyValue(container, "b10_1_damage"));
+    const severe = Number(surveyValue(container, "b10_2_severe"));
+    if ($('[data-survey-question="b10_2_severe"]:not([hidden])', step) && severe > damage) {
+      alertUser("B10.2 cannot be greater than the number of damaged plants in B10.1.", "warning");
+      return false;
+    }
+    const visible = Number(surveyValue(container, "f2_visible"));
+    const unhealthy = Number(surveyValue(container, "f2_1_unhealthy"));
+    if ($('[data-survey-question="f2_1_unhealthy"]:not([hidden])', step) && unhealthy > visible) {
+      alertUser("F2.1 cannot be greater than the number of visible birds in F2.", "warning");
+      return false;
+    }
+    return true;
+  };
+
+  const answersForSurvey = async (container) => {
     const answers = {};
     let firstMissing = null;
-    $$('[data-survey-question]', container).forEach((node) => {
-      if (node.hidden || !node.dataset.surveyQuestion) return;
+    for (const node of $$('[data-survey-question]', container)) {
+      if (node.hidden || !node.dataset.surveyQuestion) continue;
       const questionId = node.dataset.surveyQuestion;
-      const value = surveyValue(container, questionId);
+      const value = node.classList.contains("field-question-photos") ? await readPhotoFiles(node) : surveyValue(container, questionId);
       answers[questionId] = value;
       const empty = Array.isArray(value) ? value.length === 0 : value === "";
       if (!firstMissing && node.dataset.required === "true" && empty && !node.classList.contains("field-question-training_list")) firstMissing = node;
-    });
+    }
     return { answers, firstMissing };
   };
 
@@ -602,7 +727,14 @@
     }
     const container = $("[data-followup-questionnaires]");
     const topics = JSON.parse(container.dataset.topics || "[]");
-    const { answers, firstMissing } = answersForSurvey(container);
+    let surveyAnswers;
+    try {
+      surveyAnswers = await answersForSurvey(container);
+    } catch (error) {
+      alertUser(error.message || "One of the selected photos could not be read.", "warning");
+      return;
+    }
+    const { answers, firstMissing } = surveyAnswers;
     if (firstMissing) {
       firstMissing.closest("details")?.setAttribute("open", "");
       firstMissing.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -613,15 +745,25 @@
       alertUser("Select no more than two answers for I1.", "warning");
       return;
     }
+    if (answers.a10_total !== undefined && answers.a10_total !== "") {
+      const householdTotal = Number(answers.a10_total);
+      const householdMale = answers.a10_male === "" ? 0 : Number(answers.a10_male);
+      const householdFemale = answers.a10_female === "" ? 0 : Number(answers.a10_female);
+      if (householdMale > householdTotal || householdFemale > householdTotal ||
+          (answers.a10_male !== "" && answers.a10_female !== "" && householdMale + householdFemale > householdTotal)) {
+        alertUser("Household male and female counts cannot exceed the total household size in A10.1.", "warning");
+        return;
+      }
+    }
     if (answers.b10_1_damage !== "" && answers.b10_2_severe !== "" && Number(answers.b10_2_severe) > Number(answers.b10_1_damage)) {
       alertUser("B10.2 cannot be greater than the number of damaged plants in B10.1.", "warning");
       return;
     }
-    if (answers.f2_1_total !== undefined && answers.f2_1_total !== "" && Number(answers.f2_1_unhealthy) > Number(answers.f2_1_total)) {
-      alertUser("F2.1 cannot be greater than the total number of birds inspected.", "warning");
+    if (answers.f2_visible !== undefined && answers.f2_visible !== "" && Number(answers.f2_1_unhealthy) > Number(answers.f2_visible)) {
+      alertUser("F2.1 cannot be greater than the number of visible birds in F2.", "warning");
       return;
     }
-    await queueSubmission({
+    const followupSubmission = {
       id: submissionId(),
       type: "followup",
       environment,
@@ -634,7 +776,8 @@
       createdAt: new Date().toISOString(),
       status: "pending",
       summary: `${farmer.name} · ${topics.length} ${topics.length === 1 ? "training type" : "training types"}`,
-    });
+    };
+    await queueSubmission(followupSubmission);
     selectedFarmerId = null;
     capturedLocation = null;
     updateLocationStatus();
@@ -643,7 +786,7 @@
     renderFarmerList();
     alertUser("Follow-up saved safely on this tablet.", "success");
     openPane("home");
-    if (navigator.onLine) synchronize();
+    if (navigator.onLine) synchronize(followupSubmission.id);
   };
 
   const renderOutbox = () => {
@@ -690,7 +833,7 @@
     return value;
   };
 
-  const synchronize = async () => {
+  const synchronize = async (resultSubmissionId = "") => {
     if (syncing) return;
     const pending = currentOutbox();
     if (!pending.length) {
@@ -732,6 +875,14 @@
       if (accepted) await prepareTablet({ quiet: true });
       renderCentralizedTopics();
       renderFarmerList();
+      const resultTargetId = typeof resultSubmissionId === "string" && resultSubmissionId
+        ? resultSubmissionId
+        : (pending.length === 1 && pending[0].type === "followup" ? pending[0].id : "");
+      const resultTarget = payload.results.find((item) => item.id === resultTargetId && item.eventId && (item.status === "accepted" || item.status === "duplicate"));
+      if (resultTarget) {
+        window.location.assign(`/data-entry/followup-results/${resultTarget.eventId}`);
+        return;
+      }
       if (rejected) alertUser(`${accepted} synchronized; ${rejected} need attention. Open Pending for details.`, "warning");
       else alertUser(`${accepted} ${accepted === 1 ? "submission" : "submissions"} synchronized successfully.`, "success");
     } catch (error) {
@@ -764,7 +915,7 @@
   };
 
   $("[data-prepare]").addEventListener("click", () => prepareTablet());
-  $$('[data-sync-now]').forEach((button) => button.addEventListener("click", synchronize));
+  $$('[data-sync-now]').forEach((button) => button.addEventListener("click", () => synchronize()));
   $$('[data-field-tab]').forEach((button) => button.addEventListener("click", () => openPane(button.dataset.fieldTab)));
   $$('[data-open-pane]').forEach((button) => button.addEventListener("click", () => openPane(button.dataset.openPane)));
   $("[data-ct-group]").addEventListener("change", renderCentralizedTopics);

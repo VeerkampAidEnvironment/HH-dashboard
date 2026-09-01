@@ -11,21 +11,19 @@
   <div class="entry-step {{ 'active' if selected_cbf and mode }}"><span>3</span><div><strong>Enter details</strong><small>Only eligible beneficiaries appear</small></div></div>
 </section>{% endif %}
 
-<form class="panel entry-selector {{ 'entry-selector-initial' if not selected_cbf }}" method="get" data-auto-submit="selection">
-  {% if not selected_cbf %}<div class="entry-selector-intro"><span>Step 1</span><h2>Who is entering data?</h2><p>Select your name to continue.</p></div>{% endif %}
-  {% if cbfs|length <= 10 %}<fieldset class="switch-field"><legend>Community Based Facilitator</legend><div class="switch-group">{% for cbf in cbfs %}<label class="switch-option"><input type="radio" name="cbf" value="{{ cbf }}" {{ 'checked' if selected_cbf == cbf }} required data-submit-on-change><span>{{ cbf }}</span></label>{% endfor %}</div></fieldset>
-  {% else %}<label>Community Based Facilitator<select name="cbf" required data-submit-on-change data-enhanced-select data-select-label="Community Based Facilitator" data-search-placeholder="Search CBF by name"><option value="">Select your CBF</option>{% for cbf in cbfs %}<option value="{{ cbf }}" {{ 'selected' if selected_cbf == cbf }}>{{ cbf }}</option>{% endfor %}</select></label>{% endif %}
-  {% if selected_cbf %}<fieldset class="switch-field"><legend>Update type</legend><div class="switch-group switch-group-prominent"><label class="switch-option"><input type="radio" name="mode" value="centralized" {{ 'checked' if mode == 'centralized' }} required data-submit-on-change><span>Centralized training</span></label><label class="switch-option"><input type="radio" name="mode" value="followup" {{ 'checked' if mode == 'followup' }} required data-submit-on-change><span>Beneficiary follow-up</span></label></div></fieldset>
-  <button class="button button-primary" type="submit">Continue</button>
-  <div class="entry-group-filter">
-    {% if groups|length <= 10 %}<fieldset class="switch-field"><legend>Beneficiary group</legend><div class="switch-group switch-group-wrap"><label class="switch-option"><input type="radio" name="group" value="" {{ 'checked' if not selected_group }} data-submit-on-change><span>All groups</span></label>{% for group in groups %}<label class="switch-option"><input type="radio" name="group" value="{{ group }}" {{ 'checked' if selected_group == group }} data-submit-on-change><span>{{ group }}</span></label>{% endfor %}</div></fieldset>
-    {% else %}<label>Beneficiary group<select name="group" data-submit-on-change data-enhanced-select data-select-label="Beneficiary group" data-search-placeholder="Search beneficiary groups"><option value="">All groups</option>{% for group in groups %}<option value="{{ group }}" {{ 'selected' if selected_group == group }}>{{ group }}</option>{% endfor %}</select></label>{% endif %}
-  </div>{% endif %}
-</form>
+{% if not selected_cbf %}<form class="panel entry-selector entry-selector-initial workflow-window" method="get" data-auto-submit="selection">
+  <div class="entry-selector-intro"><span>Step 1</span><h2>Who is entering data?</h2><p>Select your name to continue.</p></div>
+  {% if cbfs|length <= 10 %}<fieldset class="switch-field"><legend>Community Based Facilitator</legend><div class="switch-group">{% for cbf in cbfs %}<label class="switch-option"><input type="radio" name="cbf" value="{{ cbf }}" required data-submit-on-change><span>{{ cbf }}</span></label>{% endfor %}</div></fieldset>
+  {% else %}<label>Community Based Facilitator<select name="cbf" required data-submit-on-change data-enhanced-select data-select-label="Community Based Facilitator" data-search-placeholder="Search CBF by name"><option value="">Select your CBF</option>{% for cbf in cbfs %}<option value="{{ cbf }}">{{ cbf }}</option>{% endfor %}</select></label>{% endif %}
+</form>{% elif not mode %}<form class="panel entry-selector workflow-window" method="get" data-auto-submit="selection">
+  <input type="hidden" name="cbf" value="{{ selected_cbf }}"><div class="entry-selector-intro"><span>Step 2</span><h2>What is the update type?</h2><p>Entering data as <strong>{{ selected_cbf }}</strong>.</p></div>
+  <fieldset class="switch-field"><legend>Update type</legend><div class="switch-group switch-group-prominent"><label class="switch-option"><input type="radio" name="mode" value="centralized" required data-submit-on-change><span>Centralized training</span></label><label class="switch-option"><input type="radio" name="mode" value="followup" required data-submit-on-change><span>Beneficiary follow-up</span></label></div></fieldset>
+</form>{% endif %}
 
 {% if selected_cbf and mode == 'centralized' %}
 <section class="entry-workspace">
   <div class="entry-workspace-heading"><div><p class="eyebrow">Centralized training</p><h2>{{ selected_cbf }}</h2><p>Select the attending beneficiaries separately under each topic. Only beneficiaries currently marked CT are shown{% if selected_group %} for {{ selected_group }}{% endif %}.</p></div><span class="status-pill status-ct">{{ selected_group or 'All groups' }}</span></div>
+  <form class="panel workflow-filter" method="get" data-auto-submit="selection"><input type="hidden" name="cbf" value="{{ selected_cbf }}"><input type="hidden" name="mode" value="centralized"><label>Beneficiary group<select name="group" data-submit-on-change><option value="">All groups</option>{% for group in groups %}<option value="{{ group }}" {{ 'selected' if selected_group == group }}>{{ group }}</option>{% endfor %}</select></label></form>
   <form method="post" class="entry-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="cbf" value="{{ selected_cbf }}"><input type="hidden" name="mode" value="centralized"><input type="hidden" name="group" value="{{ selected_group }}"><input type="hidden" name="topic_count" value="{{ topics|length }}">
     <div class="entry-event-fields">
@@ -52,16 +50,17 @@
 </section>
 {% elif selected_cbf and mode == 'followup' %}
 <section class="entry-workspace">
-  <div class="entry-workspace-heading"><div><p class="eyebrow">Beneficiary follow-up</p><h2>{{ selected_cbf }}</h2><p>Choose a date and beneficiary. Only beneficiaries with at least one follow-up currently due are available{% if selected_group %} for {{ selected_group }}{% endif %}.</p></div><span class="status-pill status-fu">{{ selected_group or 'All groups' }}</span></div>
-  <form class="panel followup-selector" method="get" data-auto-submit="selection">
-    <input type="hidden" name="cbf" value="{{ selected_cbf }}"><input type="hidden" name="mode" value="followup"><input type="hidden" name="group" value="{{ selected_group }}">
+  {% if not selected_record_id %}<div class="entry-workspace-heading"><div><p class="eyebrow">Step 3</p><h2>Which beneficiary is being followed up?</h2><p>Only beneficiaries with at least one follow-up currently due are available{% if selected_group %} for {{ selected_group }}{% endif %}.</p></div><span class="status-pill status-fu">{{ selected_cbf }}</span></div>
+  <form class="panel followup-selector workflow-window" method="get" data-auto-submit="selection">
+    <input type="hidden" name="cbf" value="{{ selected_cbf }}"><input type="hidden" name="mode" value="followup">
+    <label>Beneficiary group<select name="group" data-submit-on-change data-enhanced-select data-select-label="Beneficiary group" data-search-placeholder="Search beneficiary groups"><option value="">All groups</option>{% for group in groups %}<option value="{{ group }}" {{ 'selected' if selected_group == group }}>{{ group }}</option>{% endfor %}</select></label>
     <div class="date-priority"><div class="date-priority-heading"><div><span>Required</span><strong>Follow-up date</strong></div><button class="button button-today" type="button" data-fill-date="{{ today }}">Today</button></div><input type="date" name="event_date" value="{{ selected_event_date }}" required aria-label="Follow-up date"></div>
     {% if followup_farmers|length <= 10 %}<fieldset class="switch-field"><legend>Beneficiary</legend><div class="switch-group switch-group-wrap">{% for farmer in followup_farmers %}<label class="switch-option switch-option-farmer"><input type="radio" name="record_id" value="{{ farmer.id }}" {{ 'checked' if selected_record_id == farmer.id }} required data-submit-on-change><span>{{ farmer.name }} <small>{{ farmer.due_count }} due</small></span></label>{% else %}<span class="muted">No beneficiaries currently need follow-up.</span>{% endfor %}</div></fieldset>
     {% else %}<label>Beneficiary<select name="record_id" required data-submit-on-change data-enhanced-select data-select-label="Beneficiary" data-search-placeholder="Search by beneficiary or group"><option value="">Select beneficiary</option>{% for farmer in followup_farmers %}<option value="{{ farmer.id }}" {{ 'selected' if selected_record_id == farmer.id }}>{{ farmer.name }} — {{ farmer.group_name or 'No group' }} ({{ farmer.due_count }} due)</option>{% endfor %}</select></label>{% endif %}
     <button class="button button-primary" type="submit">Show due topics</button>
-  </form>
+  </form>{% endif %}
 
-  {% if selected_record_id and followup_survey %}<form method="post" class="panel followup-score-form adaptive-survey" data-adaptive-survey>
+  {% if selected_record_id and followup_survey %}<form method="post" enctype="multipart/form-data" class="panel followup-score-form adaptive-survey survey-wizard" data-adaptive-survey data-survey-wizard>
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="cbf" value="{{ selected_cbf }}"><input type="hidden" name="mode" value="followup"><input type="hidden" name="group" value="{{ selected_group }}"><input type="hidden" name="event_date" value="{{ selected_event_date }}"><input type="hidden" name="record_id" value="{{ selected_record_id }}"><input type="hidden" name="survey_version" value="{{ followup_survey.version }}"><input type="hidden" name="topic_count" value="{{ followup_topics|length }}">
     {% for item in followup_topics %}<input type="hidden" name="topic__{{ loop.index0 }}" value="{{ item.topic }}">{% endfor %}
     <div class="panel-heading survey-heading"><div><p class="eyebrow">CBF follow-up monitoring</p><h2>{{ selected_followup_record.name }}</h2><p>Complete one observation-led visit. Scores, package results, recommendations and follow-up intervals are calculated automatically.</p></div><span class="badge">{{ followup_survey.version }}</span></div>
@@ -73,7 +72,7 @@
     </div>
     <div class="questionnaire-topic-list survey-section-list">
       {% for section in followup_survey.sections %}
-      <details class="questionnaire-topic survey-section" data-survey-section="{{ section.id }}" {{ 'open' if loop.first }}>
+      <details class="questionnaire-topic survey-section survey-wizard-step" data-survey-section="{{ section.id }}" data-survey-step="{{ loop.index0 }}" {{ 'open' if loop.first }} {{ 'hidden' if not loop.first }}>
         <summary><div><span class="topic-number">{{ section.id }}</span><div><strong>{{ section.title }}</strong>{% if section.intro %}<small>{{ section.intro }}</small>{% endif %}</div></div><span class="badge">{{ section.questions|length }} items</span></summary>
         <div class="questionnaire-questions">
           {% for question in section.questions %}{% set field_name = 'survey_answer__' ~ question.id %}
@@ -81,10 +80,14 @@
             <div class="question-copy"><span>{{ question.source_id }}</span><div><h3>{{ question.label }}</h3>{% if question.help %}<p>{{ question.help }}</p>{% endif %}{% if question.required %}<small class="survey-required">Required</small>{% endif %}</div></div>
             {% if question.type == 'training_list' %}
               <div class="survey-readonly-list">{% for value in question.display_values %}<span>✓ {{ value }}</span>{% else %}<em>No recorded trainings</em>{% endfor %}</div>
+            {% elif question.type == 'readonly' %}
+              <div class="survey-readonly-value"><strong>{{ question.prefill or 'Not recorded' }}</strong><small>Filled from the beneficiary database</small></div><input type="hidden" name="{{ field_name }}" value="{{ question.prefill or '' }}">
             {% elif question.type == 'textarea' %}
               <textarea name="{{ field_name }}" rows="3" placeholder="Enter observations or advice">{{ question.prefill or '' }}</textarea>
             {% elif question.type == 'number' %}
-              <div class="question-number"><input type="number" name="{{ field_name }}" min="0"{% if question.max_value is defined %} max="{{ question.max_value }}"{% endif %} step="any" value="{{ question.prefill or '' }}" placeholder="Enter number" {% if question.required and not question.condition %}required{% endif %}>{% if question.unit %}<span>{{ question.unit }}</span>{% endif %}</div>
+              <div class="question-number"><input type="number" name="{{ field_name }}" min="{{ question.min_value if question.min_value is defined else 0 }}"{% if question.max_value is defined %} max="{{ question.max_value }}"{% endif %} step="{{ 1 if question.integer else 'any' }}" value="{{ question.prefill or '' }}" placeholder="Enter number" {% if question.required and not question.condition %}required{% endif %}>{% if question.unit %}<span>{{ question.unit }}</span>{% endif %}</div>
+            {% elif question.type == 'photos' %}
+              <label class="survey-photo-upload"><input type="file" name="{{ field_name }}" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple><span>Choose photos</span><small>Up to 6 photos · JPG, PNG, WebP or HEIC</small></label>
             {% elif question.type == 'multi' %}
               <div class="question-option-grid">{% for option in question.options %}<label class="question-check"><input type="checkbox" name="{{ field_name }}" value="{{ option.value }}"><span>{{ option.label }}</span></label>{% endfor %}</div>
             {% elif question.type in ['choice', 'consent'] and question.options|length <= 6 %}
@@ -97,11 +100,11 @@
           </section>
           {% endfor %}
         </div>
+        <div class="survey-step-actions"><span>Package {{ loop.index }} of {{ followup_survey.sections|length }}</span>{% if loop.last %}<button class="button button-primary" type="submit">Finish final package and calculate results</button>{% else %}<button class="button button-primary" type="button" data-survey-next>Finish this package and continue</button>{% endif %}</div>
       </details>
       {% endfor %}
     </div>
     <div class="survey-calculation-note"><strong>Calculated on save</strong><span>RVO gate · five package scores · Breadth + Depth · A-D household outcome · training results · recommendations · follow-up intervals</span></div>
-    <div class="button-row followup-submit"><button class="button button-primary" type="submit">Calculate and save follow-up</button></div>
   </form>{% elif selected_record_id %}<div class="notice success">This beneficiary no longer has any training types requiring follow-up.</div>{% endif %}
 </section>
 {% endif %}

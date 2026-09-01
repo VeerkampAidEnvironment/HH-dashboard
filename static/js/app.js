@@ -80,6 +80,82 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     form.addEventListener("input", updateSurvey);
     updateSurvey();
+
+    if (form.matches("[data-survey-wizard]")) {
+      const steps = Array.from(form.querySelectorAll("[data-survey-step]"));
+      let currentStep = 0;
+      const failQuestion = (node, message) => {
+        node.closest("details")?.setAttribute("open", "");
+        node.scrollIntoView({ behavior: "smooth", block: "center" });
+        window.alert(message);
+        node.querySelector("input:not([type=hidden]), select, textarea")?.focus();
+        return false;
+      };
+      const validateStep = (step) => {
+        updateSurvey();
+        for (const node of Array.from(step.querySelectorAll("[data-survey-question]"))) {
+          if (node.hidden) continue;
+          const controls = Array.from(node.querySelectorAll("input:not([type=hidden]), select, textarea"));
+          const invalid = controls.find((control) => !control.checkValidity());
+          if (invalid) {
+            invalid.reportValidity();
+            return false;
+          }
+          const value = valueFor(node.dataset.surveyQuestion);
+          const empty = Array.isArray(value) ? value.length === 0 : value === "";
+          if (node.dataset.required === "true" && empty && !node.classList.contains("question-training_list")) {
+            return failQuestion(node, `Complete required item ${node.querySelector(".question-copy > span")?.textContent || "in this package"}.`);
+          }
+        }
+        const householdTotalValue = valueFor("a10_total");
+        const householdMaleValue = valueFor("a10_male");
+        const householdFemaleValue = valueFor("a10_female");
+        if (householdTotalValue !== "") {
+          const householdTotal = Number(householdTotalValue);
+          const householdMale = householdMaleValue === "" ? 0 : Number(householdMaleValue);
+          const householdFemale = householdFemaleValue === "" ? 0 : Number(householdFemaleValue);
+          if (householdMale > householdTotal) {
+            return failQuestion(step.querySelector('[data-survey-question="a10_male"]'), "A10.2 cannot be greater than the total household size in A10.1.");
+          }
+          if (householdFemale > householdTotal) {
+            return failQuestion(step.querySelector('[data-survey-question="a10_female"]'), "A10.3 cannot be greater than the total household size in A10.1.");
+          }
+          if (householdMaleValue !== "" && householdFemaleValue !== "" && householdMale + householdFemale > householdTotal) {
+            return failQuestion(step.querySelector('[data-survey-question="a10_total"]'), "A10.2 and A10.3 together cannot be greater than the total household size in A10.1.");
+          }
+        }
+        const damage = Number(valueFor("b10_1_damage"));
+        const severe = Number(valueFor("b10_2_severe"));
+        if (step.querySelector('[data-survey-question="b10_2_severe"]:not([hidden])') && severe > damage) {
+          return failQuestion(step.querySelector('[data-survey-question="b10_2_severe"]'), "B10.2 cannot be greater than the number of damaged plants in B10.1.");
+        }
+        const visibleBirds = Number(valueFor("f2_visible"));
+        const unhealthyBirds = Number(valueFor("f2_1_unhealthy"));
+        if (step.querySelector('[data-survey-question="f2_1_unhealthy"]:not([hidden])') && unhealthyBirds > visibleBirds) {
+          return failQuestion(step.querySelector('[data-survey-question="f2_1_unhealthy"]'), "F2.1 cannot be greater than the number of visible birds in F2.");
+        }
+        return true;
+      };
+      steps.forEach((step, index) => {
+        step.hidden = index !== 0;
+        step.open = index === 0;
+        step.querySelector("[data-survey-next]")?.addEventListener("click", () => {
+          if (!validateStep(step)) return;
+          step.hidden = true;
+          step.open = false;
+          currentStep = index + 1;
+          const next = steps[currentStep];
+          if (next) {
+            next.hidden = false;
+            next.open = true;
+            next.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        });
+      });
+      form.addEventListener("submit", (event) => {
+        if (!validateStep(steps[currentStep] || steps.at(-1))) event.preventDefault();
+      });
+    }
   });
 
   document.querySelectorAll("[data-dashboard-cbf-multiselect]").forEach((control) => {
