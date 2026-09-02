@@ -60,7 +60,7 @@
     <button class="button button-primary" type="submit">Show due topics</button>
   </form>{% endif %}
 
-  {% if selected_record_id and followup_survey %}<form method="post" enctype="multipart/form-data" class="panel followup-score-form adaptive-survey survey-wizard" data-adaptive-survey data-survey-wizard>
+  {% if selected_record_id and followup_survey %}<form method="post" enctype="multipart/form-data" class="panel followup-score-form adaptive-survey survey-wizard" data-adaptive-survey data-survey-wizard data-package-stop-rules='{{ followup_survey.package_stop_rules|tojson }}'>
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="cbf" value="{{ selected_cbf }}"><input type="hidden" name="mode" value="followup"><input type="hidden" name="group" value="{{ selected_group }}"><input type="hidden" name="event_date" value="{{ selected_event_date }}"><input type="hidden" name="record_id" value="{{ selected_record_id }}"><input type="hidden" name="survey_version" value="{{ followup_survey.version }}"><input type="hidden" name="topic_count" value="{{ followup_topics|length }}">
     {% for item in followup_topics %}<input type="hidden" name="topic__{{ loop.index0 }}" value="{{ item.topic }}">{% endfor %}
     <div class="panel-heading survey-heading"><div><p class="eyebrow">CBF follow-up monitoring</p><h2>{{ selected_followup_record.name }}</h2><p>Complete one observation-led visit. Scores, package results, recommendations and follow-up intervals are calculated automatically.</p></div><span class="badge">{{ followup_survey.version }}</span></div>
@@ -77,7 +77,7 @@
         {% if section.instruction %}<div class="survey-section-instruction"><strong>{{ section.instruction }}</strong></div>{% endif %}
         <div class="questionnaire-questions">
           {% for question in section.questions %}{% set field_name = 'survey_answer__' ~ question.id %}
-          <section class="questionnaire-question question-{{ question.type }}" data-survey-question="{{ question.id }}" {% if question.condition %}data-condition='{{ question.condition|tojson }}'{% endif %}{% if question.skip_condition %} data-skip-condition='{{ question.skip_condition|tojson }}'{% endif %} data-required="{{ 'true' if question.required else 'false' }}"{% if question.max_selections %} data-max-selections="{{ question.max_selections }}"{% endif %}{% if question.exclusive_values %} data-exclusive-values='{{ question.exclusive_values|tojson }}'{% endif %}>
+          <section class="questionnaire-question question-{{ question.type }}" data-survey-question="{{ question.id }}" data-section-order="{{ question.section_order }}"{% if question.packages %} data-question-packages='{{ question.packages|tojson }}'{% endif %} {% if question.condition %}data-condition='{{ question.condition|tojson }}'{% endif %}{% if question.skip_condition %} data-skip-condition='{{ question.skip_condition|tojson }}'{% endif %}{% if question.guide_parent %} data-guide-parent="{{ question.guide_parent }}"{% endif %} data-required="{{ 'true' if question.required else 'false' }}"{% if question.max_selections %} data-max-selections="{{ question.max_selections }}"{% endif %}{% if question.exclusive_values %} data-exclusive-values='{{ question.exclusive_values|tojson }}'{% endif %}>
             <div class="question-copy"><span>{{ question.source_id }}</span><div><h3>{{ question.label }}</h3>{% if question.help %}<p>{{ question.help }}</p>{% endif %}{% if question.required %}<small class="survey-required">Required</small>{% endif %}</div></div>
             {% if question.type == 'training_list' %}
               <div class="survey-readonly-list">{% for value in question.display_values %}<span>✓ {{ value }}</span>{% else %}<em>No recorded trainings</em>{% endfor %}</div>
@@ -88,7 +88,14 @@
                 <div data-editable-display><strong data-editable-label>{{ question.prefill or 'Not recorded' }}</strong><small>Filled from the beneficiary database</small></div>
                 <button class="button button-ghost button-small" type="button" data-editable-open>Edit</button>
                 <div class="survey-inline-editor" data-editable-editor hidden>
+                  {% if question.edit_options is defined %}
+                  <select data-editable-input aria-label="Edit {{ question.label }}">
+                    <option value="">Not recorded</option>
+                    {% for option in question.edit_options %}<option value="{{ option.value }}" {{ 'selected' if option.value == question.prefill }}>{{ option.label }}</option>{% endfor %}
+                  </select>
+                  {% else %}
                   <input type="{{ 'tel' if question.id == 'a8_contact' else 'text' }}" value="{{ question.prefill or '' }}" data-editable-input aria-label="Edit {{ question.label }}">
+                  {% endif %}
                   <button class="button button-primary button-small" type="button" data-editable-save>Save</button>
                   <button class="button button-ghost button-small" type="button" data-editable-cancel>Cancel</button>
                 </div>
@@ -101,7 +108,7 @@
             {% elif question.type == 'number' %}
               <div class="question-number{{ ' has-unit' if question.unit }}"><input type="number" name="{{ field_name }}" min="{{ question.min_value if question.min_value is defined else 0 }}"{% if question.max_value is defined %} max="{{ question.max_value }}"{% endif %} step="{{ question.step_value if question.step_value is defined else (1 if question.integer else 'any') }}" value="{{ question.prefill if question.prefill is defined and question.prefill is not none else '' }}" placeholder="{{ 'Enter a whole number' if question.integer else 'Enter a number' }}" {% if question.required and not question.condition %}required{% endif %}>{% if question.unit %}<span aria-hidden="true">{{ question.unit }}</span>{% endif %}</div>
             {% elif question.type == 'photos' %}
-              <label class="survey-photo-upload"><input type="file" name="{{ field_name }}" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple><span>Choose photos</span><small>Up to 6 photos · JPG, PNG, WebP or HEIC</small></label>
+              <label class="survey-photo-upload" data-photo-picker><input type="file" name="{{ field_name }}" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple><span>Choose photos</span><small data-photo-status>No photos added · maximum 6</small><div class="survey-photo-preview" data-photo-preview></div></label>
             {% elif question.type == 'gps' %}
               <div class="survey-gps-capture" data-gps-tracker>
                 <input type="hidden" name="{{ field_name }}" value="">

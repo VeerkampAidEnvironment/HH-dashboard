@@ -340,8 +340,11 @@
     const name = `survey__${question.id}`;
     const wrap = create("section", `field-question field-question-${question.type}`);
     wrap.dataset.surveyQuestion = question.id;
+    wrap.dataset.sectionOrder = String(question.section_order ?? 0);
+    if (question.packages) wrap.dataset.questionPackages = JSON.stringify(question.packages);
     if (question.condition) wrap.dataset.condition = JSON.stringify(question.condition);
     if (question.skip_condition) wrap.dataset.skipCondition = JSON.stringify(question.skip_condition);
+    if (question.guide_parent) wrap.dataset.guideParent = question.guide_parent;
     wrap.dataset.required = question.required ? "true" : "false";
     if (question.max_selections) wrap.dataset.maxSelections = String(question.max_selections);
     if (question.exclusive_values) wrap.dataset.exclusiveValues = JSON.stringify(question.exclusive_values);
@@ -350,7 +353,11 @@
     if (question.help) copy.append(create("p", "", question.help));
     if (question.required) copy.append(create("b", "field-required", "Required"));
     wrap.append(copy);
-    const options = question.options || [];
+    let options = question.options || [];
+    if (question.id === "i1_helpful") {
+      const recordedTopics = new Set(farmer.trainingHistory || []);
+      options = options.filter((option) => recordedTopics.has(option.training_topic));
+    }
     const prefillSource = question.profile_key
       ? farmer.profile?.[question.profile_key]
       : (question.carry_forward ? farmer.previousAnswers?.[question.id] : "");
@@ -381,8 +388,18 @@
         editButton.type = "button";
         const editor = create("div", "survey-inline-editor");
         editor.hidden = true;
-        const editorInput = document.createElement("input");
-        editorInput.type = question.id === "a8_contact" ? "tel" : "text";
+        const hasEditOptions = Array.isArray(question.edit_options);
+        const editorInput = document.createElement(hasEditOptions ? "select" : "input");
+        if (hasEditOptions) {
+          [{ value: "", label: "Not recorded" }, ...question.edit_options].forEach((option) => {
+            const choice = document.createElement("option");
+            choice.value = option.value;
+            choice.textContent = option.label;
+            editorInput.append(choice);
+          });
+        } else {
+          editorInput.type = question.id === "a8_contact" ? "tel" : "text";
+        }
         editorInput.value = prefill;
         editorInput.setAttribute("aria-label", `Edit ${question.label}`);
         const saveButton = create("button", "button button-primary button-small", "Save");
@@ -488,17 +505,19 @@
       wrap.append(tracker);
     } else if (question.type === "photos") {
       const upload = create("label", "field-photo-upload");
+      upload.dataset.photoPicker = "";
       const input = document.createElement("input");
       input.type = "file";
       input.name = name;
       input.accept = "image/jpeg,image/png,image/webp,image/heic,image/heif";
       input.multiple = true;
       const button = create("span", "button button-secondary", "Choose photos");
-      const status = create("small", "", "Up to 6 photos · JPG, PNG, WebP or HEIC");
-      input.addEventListener("change", () => {
-        status.textContent = input.files.length ? `${input.files.length} ${input.files.length === 1 ? "photo" : "photos"} selected` : "Up to 6 photos · JPG, PNG, WebP or HEIC";
-      });
-      upload.append(input, button, status);
+      const status = create("small", "", "No photos added · maximum 6");
+      status.dataset.photoStatus = "";
+      const preview = create("div", "survey-photo-preview");
+      preview.dataset.photoPreview = "";
+      upload.append(input, button, status, preview);
+      window.arfsaSetupPhotoPicker(upload);
       wrap.append(upload);
     } else if (question.type === "textarea") {
       const input = document.createElement("textarea");
@@ -646,27 +665,33 @@
           return;
         }
         const active = questionNodes.filter((node) => !node.hidden);
-        let position = active.findIndex((node) => node.dataset.surveyQuestion === currentQuestionId);
+        const pages = active.filter((node) => !node.dataset.guideParent);
+        let position = pages.findIndex((node) => node.dataset.surveyQuestion === currentQuestionId);
         if (position < 0) position = 0;
-        const current = active[position];
+        const current = pages[position];
         if (current) currentQuestionId = current.dataset.surveyQuestion;
-        questionNodes.forEach((node) => node.classList.toggle("survey-guide-hidden", node !== current));
+        questionNodes.forEach((node) => {
+          const belongsToCurrentPage = node === current || node.dataset.guideParent === currentQuestionId;
+          node.classList.toggle("survey-guide-hidden", !belongsToCurrentPage);
+        });
         previousQuestion.hidden = position <= 0;
-        nextQuestion.hidden = !current || position >= active.length - 1;
-        actions.hidden = !current || position < active.length - 1;
-        questionProgress.textContent = current ? `Question ${position + 1} of ${active.length}` : "No applicable questions";
+        nextQuestion.hidden = !current || position >= pages.length - 1;
+        actions.hidden = !current || position < pages.length - 1;
+        questionProgress.textContent = current ? `Question ${position + 1} of ${pages.length}` : "No applicable questions";
       };
       previousQuestion.addEventListener("click", () => {
-        const active = questionNodes.filter((node) => !node.hidden);
-        const position = active.findIndex((node) => node.dataset.surveyQuestion === currentQuestionId);
-        if (position > 0) currentQuestionId = active[position - 1].dataset.surveyQuestion;
+        const pages = questionNodes.filter((node) => !node.hidden && !node.dataset.guideParent);
+        const position = pages.findIndex((node) => node.dataset.surveyQuestion === currentQuestionId);
+        if (position > 0) currentQuestionId = pages[position - 1].dataset.surveyQuestion;
         refreshQuestionGuide();
       });
       nextQuestion.addEventListener("click", () => {
         const active = questionNodes.filter((node) => !node.hidden);
-        const position = active.findIndex((node) => node.dataset.surveyQuestion === currentQuestionId);
-        if (!validateFieldGuideQuestion(active[position], container)) return;
-        if (position >= 0 && position < active.length - 1) currentQuestionId = active[position + 1].dataset.surveyQuestion;
+        const pages = active.filter((node) => !node.dataset.guideParent);
+        const position = pages.findIndex((node) => node.dataset.surveyQuestion === currentQuestionId);
+        const visiblePage = active.filter((node) => node === pages[position] || node.dataset.guideParent === currentQuestionId);
+        if (!visiblePage.every((node) => validateFieldGuideQuestion(node, container))) return;
+        if (position >= 0 && position < pages.length - 1) currentQuestionId = pages[position + 1].dataset.surveyQuestion;
         refreshQuestionGuide();
       });
       details.refreshQuestionGuide = refreshQuestionGuide;
@@ -716,10 +741,21 @@
   };
 
   const updateFieldSurveyConditions = (container) => {
+    const packageStops = window.arfsaPackageStopTriggers({
+      rules: fieldPackage?.survey?.package_stop_rules || [],
+      valueFor: (questionId) => surveyValue(container, questionId),
+      orderFor: (questionId) => Number($(`[data-survey-question="${CSS.escape(questionId)}"]`, container)?.dataset.sectionOrder || 0),
+    });
     $$('[data-survey-question]', container).forEach((node) => {
       const condition = node.dataset.condition ? JSON.parse(node.dataset.condition) : null;
       const skipCondition = node.dataset.skipCondition ? JSON.parse(node.dataset.skipCondition) : null;
-      const visible = surveyConditionMatches(container, condition) && !(skipCondition && surveyConditionMatches(container, skipCondition));
+      let packages = [];
+      try { packages = node.dataset.questionPackages ? JSON.parse(node.dataset.questionPackages) : []; } catch (_error) { packages = []; }
+      const stopped = packages.length > 0 && packages.every(
+        (packageKey) => packageStops.has(packageKey) && packageStops.get(packageKey) < Number(node.dataset.sectionOrder || 0),
+      );
+      const visible = surveyConditionMatches(container, condition)
+        && !(skipCondition && surveyConditionMatches(container, skipCondition)) && !stopped;
       node.hidden = !visible;
       $$('input, select, textarea', node).forEach((control) => { control.disabled = !visible; });
       applyFieldMultiRules(node);

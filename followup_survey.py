@@ -14,7 +14,7 @@ from statistics import mean
 from typing import Any, Iterable
 
 
-SURVEY_VERSION = "2026-09-01-r8"
+SURVEY_VERSION = "2026-09-02-r12"
 
 PIP = "Household Resource Mapping (PIP)"
 SUSTAINABLE = "Sustainable/Regenerative Agriculture"
@@ -28,6 +28,17 @@ POULTRY = "Poultry Mgt and Vaccination"
 TRAINING_TOPICS = [PIP, SWC, KITCHEN, BIO_INPUTS, POULTRY, FINANCIAL, AGROFORESTRY, SUSTAINABLE]
 SECTION_B_TOPICS = {SUSTAINABLE, SWC, AGROFORESTRY, BIO_INPUTS}
 CARRY_FORWARD_QUESTION_IDS = ("b13_synthetic_fertilizer", "b13_unit", "b13_unit_other")
+
+TRAINING_FEEDBACK_OPTIONS = [
+    {"value": "Bio-inputs", "label": "Bio-inputs", "training_topic": BIO_INPUTS},
+    {"value": "Regenerative / Sustainable Agriculture", "label": "Regenerative / Sustainable Agriculture", "training_topic": SUSTAINABLE},
+    {"value": "Tree Planting & Agroforestry", "label": "Tree Planting & Agroforestry", "training_topic": AGROFORESTRY},
+    {"value": "SWC", "label": "SWC", "training_topic": SWC},
+    {"value": "Kitchen Garden", "label": "Kitchen Garden", "training_topic": KITCHEN},
+    {"value": "Financial Literacy", "label": "Financial Literacy", "training_topic": FINANCIAL},
+    {"value": "Household Resource Mapping", "label": "Household Resource Mapping", "training_topic": PIP},
+    {"value": "Poultry Management & Vaccination", "label": "Poultry Management & Vaccination", "training_topic": POULTRY},
+]
 
 
 def options(*items: tuple[str, str] | str) -> list[dict[str, str]]:
@@ -76,6 +87,7 @@ def question(
     step_value: float | None = None,
     editable: bool = False,
     skip_condition: dict[str, Any] | None = None,
+    guide_parent: str | None = None,
 ) -> dict[str, Any]:
     item: dict[str, Any] = {
         "source_id": source_id,
@@ -112,6 +124,8 @@ def question(
         item["editable"] = True
     if skip_condition:
         item["skip_condition"] = skip_condition
+    if guide_parent:
+        item["guide_parent"] = guide_parent
     return item
 
 
@@ -136,7 +150,7 @@ FOOD_GROUPS = options(
     ("bananas", "Bananas or plantain"),
     ("fruit", "Fruit"),
     ("coffee", "Coffee"),
-    ("cash_crop", "Other food groups"),
+    ("cash_crop", "other cash crops (Tea, Sugarcane, Cocoa, Cotton, Tobacco)"),
 )
 
 
@@ -258,9 +272,10 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
             question("B13", "b13_synthetic_fertilizer", "Amount of synthetic fertilizer applied last season", "number", required=False, carry_forward=True, help_text="Comparison value only; not scored. Enter the amount, then select its unit."),
             question("B13.1", "b13_unit", "Unit used for the synthetic fertilizer amount", "choice", options(
                 ("kilogram", "Kilogram"), ("liter", "Liter"), ("bag", "Bag"), ("other", "Other (free text)")),
-                condition={"question": "b13_synthetic_fertilizer", "operator": "not_empty"}, carry_forward=True),
+                condition={"question": "b13_synthetic_fertilizer", "operator": "not_empty"}, carry_forward=True,
+                guide_parent="b13_synthetic_fertilizer"),
             question("B13.1a", "b13_unit_other", "Specify the other unit", "text",
-                condition=eq("b13_unit", "other"), carry_forward=True),
+                condition=eq("b13_unit", "other"), carry_forward=True, guide_parent="b13_synthetic_fertilizer"),
             question("B14", "b14_manure_loads", "Wheelbarrow-loads of manure or compost applied last season", "number", required=False, integer=True, help_text="Comparison value only; not scored."),
             question("B15", "b15_gap", "Main gap observed", "textarea", required=False),
             question("B16", "b16_advice", "Immediate recommendation or advice given", "textarea", required=False),
@@ -288,13 +303,13 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
         "instruction": "D1. For each food group, indicate: own production, bought, both, or not consumed.",
         "questions": [
             question("D1a", "d1_dark_leafy", "Dark green leafy vegetables (dodo, nightshade, sukuma, spider plant)", "choice", FOOD_SOURCE_OPTIONS, required=False, help_text="Food-source inventory; not scored."),
-            question("D1b", "d1_other_vegetables", "Other vegetables (tomato, cabbage, onion, eggplant)", "choice", FOOD_SOURCE_OPTIONS, required=False),
-            question("D1c", "d1_beans_pulses", "Beans & pulses", "choice", FOOD_SOURCE_OPTIONS, required=False),
-            question("D1d", "d1_roots_tubers", "Roots and tubers (cassava, potato)", "choice", FOOD_SOURCE_OPTIONS, required=False),
-            question("D1e", "d1_cereals", "Cereals (barley, millet, rice, sorghum)", "choice", FOOD_SOURCE_OPTIONS, required=False),
-            question("D1f", "d1_bananas", "Bananas", "choice", FOOD_SOURCE_OPTIONS, required=False),
-            question("D1g", "d1_fruits", "Fruits", "choice", FOOD_SOURCE_OPTIONS, required=False),
-            question("D1h", "d1_eggs_poultry", "Eggs & poultry", "choice", FOOD_SOURCE_OPTIONS, required=False),
+            question("D1b", "d1_other_vegetables", "Other vegetables (tomato, cabbage, onion, eggplant)", "choice", FOOD_SOURCE_OPTIONS, required=False, guide_parent="d1_dark_leafy"),
+            question("D1c", "d1_beans_pulses", "Beans & pulses", "choice", FOOD_SOURCE_OPTIONS, required=False, guide_parent="d1_dark_leafy"),
+            question("D1d", "d1_roots_tubers", "Roots and tubers (cassava, potato)", "choice", FOOD_SOURCE_OPTIONS, required=False, guide_parent="d1_dark_leafy"),
+            question("D1e", "d1_cereals", "Cereals (barley, millet, rice, sorghum)", "choice", FOOD_SOURCE_OPTIONS, required=False, guide_parent="d1_dark_leafy"),
+            question("D1f", "d1_bananas", "Bananas", "choice", FOOD_SOURCE_OPTIONS, required=False, guide_parent="d1_dark_leafy"),
+            question("D1g", "d1_fruits", "Fruits", "choice", FOOD_SOURCE_OPTIONS, required=False, guide_parent="d1_dark_leafy"),
+            question("D1h", "d1_eggs_poultry", "Eggs & poultry", "choice", FOOD_SOURCE_OPTIONS, required=False, guide_parent="d1_dark_leafy"),
             question("D2", "d2_garden_cover", "How much of the kitchen garden is covered by growing vegetables?", "choice", options(
                 ("mostly_veg", "Vegetables cover most of the garden"), ("equal", "Vegetables and bare ground/weeds are roughly equal"),
                 ("mostly_bare", "Mostly bare ground or weeds"))),
@@ -375,9 +390,8 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
     {
         "id": "I", "title": "Beneficiary Feedback on Trainings", "always": True,
         "questions": [
-            question("I1", "i1_helpful", "Which training topics helped the most? Select up to two.", "multi", options(
-                "Bio-inputs", "Regenerative / Sustainable Agriculture", "Tree Planting & Agroforestry", "SWC",
-                "Kitchen Garden", "Financial Literacy", "Household Resource Mapping", "Poultry Management & Vaccination"), max_selections=2),
+            question("I1", "i1_helpful", "Which training topics helped the most? Select up to two.", "multi",
+                     TRAINING_FEEDBACK_OPTIONS, max_selections=2),
             question("I2", "i2_change", "What is the biggest change noticed since starting these practices?", "choice", options(
                 "More harvest / yield", "More food variety at home", "Spending less on inputs", "Less soil erosion / land damage",
                 "Better animal / poultry health", "Saving more money", "No noticeable change yet", "Other")),
@@ -388,6 +402,78 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
         ],
     },
 ]
+
+
+# Package membership controls adaptive stopping after a critical answer. Shared
+# questions remain visible while at least one package that needs them is active.
+QUESTION_PACKAGE_KEYS = {
+    "b1_food_groups": ["crop_diversification"],
+    "b5_preparation": ["reduced_disturbance", "erosion_water", "soil_cover_fertility"],
+    "b5_1_old_marks": ["reduced_disturbance"], "b5_2_extent": ["reduced_disturbance"],
+    "b2_cover": ["crop_diversification", "erosion_water", "soil_cover_fertility"],
+    "b2_1_mulch": ["erosion_water", "soil_cover_fertility"],
+    "b2_1_living": ["erosion_water", "soil_cover_fertility"],
+    "b3_features": ["erosion_water"], "b3_1_rills": ["erosion_water"],
+    "b3_2_roots": ["erosion_water"], "b3_3_soil": ["erosion_water"],
+    "b4_structures": ["erosion_water"], "b4_1_width": ["erosion_water"],
+    "b4_2_contour": ["erosion_water"], "b6_weeds": ["reduced_disturbance"],
+    "b7_arrangement": ["crop_diversification", "pest_management"],
+    "b8_trees": ["crop_diversification", "erosion_water", "soil_cover_fertility"],
+    "b8_1_under": ["crop_diversification", "erosion_water", "soil_cover_fertility"],
+    "b8_2_arrangement": ["crop_diversification", "erosion_water", "soil_cover_fertility"],
+    "b9_traces": ["crop_diversification", "soil_cover_fertility", "pest_management"],
+    "b9_previous_crop": ["crop_diversification", "soil_cover_fertility", "pest_management"],
+    "b9_differs": ["crop_diversification", "soil_cover_fertility", "pest_management"],
+    "b9_1_farmer": ["crop_diversification", "soil_cover_fertility", "pest_management"],
+    "b10_pest_method": ["pest_management"], "b10_1_damage": ["pest_management"],
+    "b10_2_severe": ["pest_management"], "b10_3_chemical_change": ["pest_management"],
+    "b11_inputs": ["soil_cover_fertility"], "b11_1_location": ["soil_cover_fertility"],
+    "b11_2_method": ["soil_cover_fertility"], "b12_macrofauna": ["soil_cover_fertility"],
+}
+
+PACKAGE_STOP_RULES = [
+    {"packages": ["crop_diversification"], "question": "b1_food_groups", "operator": "count_excluding_lte",
+     "excluded": ["coffee", "cash_crop"], "threshold": 2, "critical": True},
+    {"packages": ["reduced_disturbance", "erosion_water", "soil_cover_fertility"],
+     "question": "b5_preparation", "operator": "equals", "value": "fully_tilled", "critical": True},
+    {"packages": ["erosion_water"], "operator": "count_matches_gte", "threshold": 2, "critical": True,
+     "matches": [{"question": "b3_1_rills", "value": "deep"},
+                 {"question": "b3_2_roots", "value": "widespread"},
+                 {"question": "b3_3_soil", "value": "ridge"}]},
+    {"packages": ["erosion_water"], "question": "b4_structures", "operator": "contains",
+     "value": "none", "critical": True},
+    {"packages": ["pest_management"], "question": "b10_pest_method", "operator": "not_in",
+     "values": ["biological", "both"], "critical": True},
+    {"packages": ["pest_management"], "question": "b10_1_damage", "operator": "number_gte",
+     "threshold": 6, "critical": True},
+    {"packages": ["pest_management"], "question": "b10_2_severe", "operator": "number_gte",
+     "threshold": 3, "critical": True},
+    {"packages": ["pip"], "question": "c1_map_drawn", "operator": "equals", "value": "no", "critical": True},
+    {"packages": ["financial"], "question": "e3_within_means", "operator": "equals", "value": "no", "critical": True},
+    {"packages": ["poultry"], "question": "f1_location", "operator": "equals", "value": "free", "critical": True},
+    # No visible birds ends the poultry section but is not itself a critical failure.
+    {"packages": ["poultry"], "question": "f1_location", "operator": "equals", "value": "none", "critical": False},
+    {"packages": ["poultry"], "question": "f2_1_unhealthy", "operator": "number_gte_if",
+     "threshold": 4, "if_question": "f2_visible", "if_threshold": 5, "critical": True},
+    {"packages": ["poultry"], "question": "f3_isolation", "operator": "equals", "value": "mixed", "critical": True},
+]
+
+for _section in SURVEY_SECTIONS:
+    for _order, _item in enumerate(_section["questions"]):
+        _item["section_order"] = _order
+        if _item["id"] in QUESTION_PACKAGE_KEYS:
+            _item["packages"] = QUESTION_PACKAGE_KEYS[_item["id"]]
+        elif _section["id"] == "C":
+            _item["packages"] = ["pip"]
+        elif _section["id"] == "E":
+            _item["packages"] = ["financial"]
+        elif _section["id"] == "F":
+            _item["packages"] = ["poultry"]
+
+QUESTION_ORDER = {
+    item["id"]: item["section_order"]
+    for section in SURVEY_SECTIONS for item in section["questions"]
+}
 
 
 def received_training_topics(raw: dict[str, Any]) -> list[str]:
@@ -412,16 +498,24 @@ def build_survey(
     *,
     training_history: Iterable[str] | None = None,
     previous_answers: dict[str, Any] | None = None,
+    editable_options: dict[str, Iterable[str]] | None = None,
 ) -> dict[str, Any]:
     topics = [topic for topic in TRAINING_TOPICS if topic in set(topics)]
     profile = profile or {}
     previous_answers = previous_answers or {}
-    history_topics = [topic for topic in TRAINING_TOPICS if topic in set(training_history or topics)]
+    editable_options = editable_options or {}
+    history_source = topics if training_history is None else training_history
+    history_topics = [topic for topic in TRAINING_TOPICS if topic in set(history_source)]
     sections = survey_sections_for_topics(topics)
     for section in sections:
         for item in section["questions"]:
             if item["type"] == "training_list":
                 item["display_values"] = history_topics
+            elif item["id"] == "i1_helpful":
+                item["options"] = [
+                    option for option in item["options"]
+                    if option["training_topic"] in history_topics
+                ]
             elif item.get("profile_key") or item.get("carry_forward"):
                 source_value = profile.get(item["profile_key"], "") if item.get("profile_key") else previous_answers.get(item["id"], "")
                 prefill = str(source_value if source_value is not None else "").strip()
@@ -434,7 +528,19 @@ def build_survey(
                     else:
                         item.setdefault("options", []).append({"value": prefill, "label": prefill})
                 item["prefill"] = prefill
-    return {"version": SURVEY_VERSION, "topics": topics, "training_history": history_topics, "sections": sections}
+                if item.get("editable") and item["id"] in editable_options:
+                    values = [
+                        str(value).strip() for value in editable_options[item["id"]]
+                        if value is not None and str(value).strip()
+                    ]
+                    if prefill:
+                        values.append(prefill)
+                    unique_values = {value.casefold(): value for value in values}
+                    item["edit_options"] = options(*sorted(unique_values.values(), key=str.casefold))
+    return {
+        "version": SURVEY_VERSION, "topics": topics, "training_history": history_topics,
+        "sections": sections, "package_stop_rules": deepcopy(PACKAGE_STOP_RULES),
+    }
 
 
 def all_questions_for_topics(topics: Iterable[str]) -> list[dict[str, Any]]:
@@ -448,14 +554,64 @@ def _answer(answers: dict[str, Any], key: str, default: Any = "") -> Any:
     return value
 
 
+def _rule_trigger_order(rule: dict[str, Any], answers: dict[str, Any]) -> int | None:
+    operator = rule["operator"]
+    if operator == "count_matches_gte":
+        matches = [
+            QUESTION_ORDER[item["question"]] for item in rule["matches"]
+            if _answer(answers, item["question"]) == item["value"]
+        ]
+        threshold = int(rule["threshold"])
+        return sorted(matches)[threshold - 1] if len(matches) >= threshold else None
+    question_id = rule["question"]
+    value = _answer(answers, question_id)
+    if _is_empty(value):
+        return None
+    triggered = False
+    if operator == "equals":
+        triggered = value == rule["value"]
+    elif operator == "contains":
+        triggered = isinstance(value, list) and rule["value"] in value
+    elif operator == "not_in":
+        triggered = value not in rule["values"]
+    elif operator == "count_excluding_lte":
+        triggered = isinstance(value, list) and len(set(value).difference(rule["excluded"])) <= rule["threshold"]
+    elif operator in {"number_gte", "number_gte_if"}:
+        try:
+            triggered = float(value) >= float(rule["threshold"])
+            if operator == "number_gte_if":
+                triggered = triggered and float(_answer(answers, rule["if_question"])) >= float(rule["if_threshold"])
+        except (TypeError, ValueError):
+            triggered = False
+    return QUESTION_ORDER[question_id] if triggered else None
+
+
+def package_stop_triggers(answers: dict[str, Any], *, critical_only: bool = False) -> dict[str, int]:
+    triggers: dict[str, int] = {}
+    for rule in PACKAGE_STOP_RULES:
+        if critical_only and not rule["critical"]:
+            continue
+        order = _rule_trigger_order(rule, answers)
+        if order is None:
+            continue
+        for package in rule["packages"]:
+            triggers[package] = min(triggers.get(package, order), order)
+    return triggers
+
+
 def question_is_active(item: dict[str, Any], answers: dict[str, Any]) -> bool:
     skip_condition = item.get("skip_condition")
     if skip_condition and _condition_matches(skip_condition, answers):
         return False
     condition = item.get("condition")
-    if not condition:
-        return True
-    return _condition_matches(condition, answers)
+    if condition and not _condition_matches(condition, answers):
+        return False
+    packages = item.get("packages", [])
+    if packages:
+        triggers = package_stop_triggers(answers)
+        if all(package in triggers and triggers[package] < item["section_order"] for package in packages):
+            return False
+    return True
 
 
 def _condition_matches(condition: dict[str, Any], answers: dict[str, Any]) -> bool:
@@ -480,8 +636,17 @@ def _is_empty(value: Any) -> bool:
     return value is None or value == "" or value == []
 
 
-def validate_answers(answers: dict[str, Any], topics: Iterable[str]) -> str | None:
+def validate_answers(
+    answers: dict[str, Any], topics: Iterable[str], *, training_history: Iterable[str] | None = None,
+) -> str | None:
     """Validate active questions. Hidden conditional answers are ignored."""
+    helpful_training_values = None
+    if training_history is not None:
+        recorded_topics = set(training_history)
+        helpful_training_values = {
+            option["value"] for option in TRAINING_FEEDBACK_OPTIONS
+            if option["training_topic"] in recorded_topics
+        }
     for item in all_questions_for_topics(topics):
         if item["type"] == "training_list" or not question_is_active(item, answers):
             continue
@@ -512,6 +677,9 @@ def validate_answers(answers: dict[str, Any], topics: Iterable[str]) -> str | No
         submitted = value if isinstance(value, list) else [value]
         if allowed and any(option not in allowed for option in submitted):
             return f"An answer for {item['source_id']} is invalid."
+        if item["id"] == "i1_helpful" and helpful_training_values is not None \
+                and any(option not in helpful_training_values for option in submitted):
+            return "I1 can only include trainings recorded for this beneficiary."
         if item.get("max_selections") is not None and isinstance(value, list) and len(value) > item["max_selections"]:
             return f"Select no more than {item['max_selections']} answers for {item['source_id']}."
         exclusive = set(item.get("exclusive_values", []))
@@ -690,6 +858,8 @@ def _score_b_item(item_id: str, package: str, answers: dict[str, Any]) -> ItemRe
 
 def _result(points: float, available: float, critical: bool) -> dict[str, Any]:
     score = round((points / available * 100) if available else 0, 1)
+    if critical:
+        score = 0
     status = "Failed" if critical else "Achieved" if score >= 50 else "Partial"
     return {
         "points_earned": points,

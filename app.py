@@ -1289,10 +1289,11 @@ def create_app(test_config=None):
         if selected_cbf:
             village_where.append("cbf_name=?")
             village_params.append(selected_cbf)
-        venue_values.extend(row[0] for row in connection.execute(
+        village_values = [row[0] for row in connection.execute(
             f"SELECT DISTINCT TRIM(village) AS venue FROM records WHERE {' AND '.join(village_where)}",
             village_params,
-        ).fetchall())
+        ).fetchall()]
+        venue_values.extend(village_values)
         # Keep the saved spelling for display while ignoring duplicate casing.
         venues = sorted({venue.casefold(): venue for venue in venue_values}.values(), key=str.casefold)
         selected_venue = request.values.get("location_choice", "").strip()
@@ -1392,6 +1393,7 @@ def create_app(test_config=None):
                     followup_profile(selected_followup_record, raw),
                     training_history=received_training_topics(raw),
                     previous_answers=carry_forward_answers_by_record(connection, [selected_record_id]).get(selected_record_id, {}),
+                    editable_options={"a6_village": village_values, "a8_group": groups},
                 )
             else:
                 selected_record_id = None
@@ -1756,7 +1758,13 @@ def build_field_app_package(connection, cbf_name: str) -> dict:
         "questionnaires": {
             topic: questionnaire_for_topic(topic) for topic in TRAINING_TOPICS
         },
-        "survey": build_survey(TRAINING_TOPICS),
+        "survey": build_survey(
+            TRAINING_TOPICS,
+            editable_options={
+                "a6_village": [row["village"] for row in records if row["village"]],
+                "a8_group": [row["group_name"] for row in records if row["group_name"]],
+            },
+        ),
         "groups": sorted(
             {row["group_name"] for row in records if row["group_name"]}, key=str.casefold
         ),
@@ -2271,7 +2279,10 @@ def save_scored_followup(
                 "type": item["type"],
             }
 
-    validation_error = validate_answers(answers, topics)
+    raw = json.loads(record["raw_data"])
+    validation_error = validate_answers(
+        answers, topics, training_history=received_training_topics(raw),
+    )
     if validation_error:
         return False, validation_error
     results = score_survey(answers, topics)
@@ -2292,7 +2303,6 @@ def save_scored_followup(
         if question_id in answer_records:
             answer_records[question_id]["answer"] = stored_photos
 
-    raw = json.loads(record["raw_data"])
     cycles: dict[str, int] = {}
     for topic in topics:
         cycle = next((number for number in range(1, 4)

@@ -981,7 +981,10 @@ class ApplicationTest(unittest.TestCase):
         self.assertIn(b"Training-type results", detail.data)
 
     def test_adaptive_section_b_persists_package_breadth_depth_and_outcome(self):
-        from followup_survey import SECTION_B_TOPICS, SURVEY_VERSION
+        from followup_survey import (
+            SECTION_B_TOPICS, SURVEY_VERSION, TRAINING_FEEDBACK_OPTIONS,
+            received_training_topics,
+        )
         from tests.test_followup_survey import good_section_b_answers
 
         with self.app.app_context():
@@ -989,7 +992,7 @@ class ApplicationTest(unittest.TestCase):
 
             placeholders = ",".join("?" for _ in SECTION_B_TOPICS)
             due = get_db().execute(
-                f"""SELECT r.id, r.cbf_name, ts.topic FROM records r
+                f"""SELECT r.id, r.cbf_name, r.raw_data, ts.topic FROM records r
                     JOIN topic_statuses ts ON ts.record_id=r.id
                     WHERE r.dataset='training' AND r.archived_at IS NULL
                     AND TRIM(r.cbf_name)<>'' AND ts.status_code='FU'
@@ -997,12 +1000,17 @@ class ApplicationTest(unittest.TestCase):
                 tuple(SECTION_B_TOPICS),
             ).fetchone()
         self.assertIsNotNone(due)
+        recorded_topics = set(received_training_topics(json.loads(due["raw_data"])))
+        helpful_training = next(
+            option["value"] for option in TRAINING_FEEDBACK_OPTIONS
+            if option["training_topic"] in recorded_topics
+        )
         data = {
             "csrf_token": self.csrf(), "cbf": due["cbf_name"], "mode": "followup",
             "event_date": date.today().isoformat(), "record_id": str(due["id"]),
             "survey_version": SURVEY_VERSION, "topic_count": "1", "topic__0": due["topic"],
             "survey_answer__h1_radio": "no",
-            "survey_answer__i1_helpful": "Regenerative / Sustainable Agriculture",
+            "survey_answer__i1_helpful": helpful_training,
             "survey_answer__i2_change": "More harvest / yield",
             "survey_answer__i3_improve": "Nothing - satisfied as is",
             "survey_answer__consent": "yes",

@@ -1,3 +1,104 @@
+window.arfsaPackageStopTriggers = ({ rules = [], valueFor, orderFor }) => {
+  const triggers = new Map();
+  const setTrigger = (packages, order) => {
+    (packages || []).forEach((packageKey) => {
+      if (!triggers.has(packageKey) || order < triggers.get(packageKey)) triggers.set(packageKey, order);
+    });
+  };
+  rules.forEach((rule) => {
+    let triggerOrder = null;
+    if (rule.operator === "count_matches_gte") {
+      const matches = (rule.matches || [])
+        .filter((item) => valueFor(item.question) === item.value)
+        .map((item) => orderFor(item.question))
+        .sort((a, b) => a - b);
+      if (matches.length >= Number(rule.threshold)) triggerOrder = matches[Number(rule.threshold) - 1];
+    } else {
+      const value = valueFor(rule.question);
+      const empty = Array.isArray(value) ? value.length === 0 : value === "" || value === null || value === undefined;
+      if (empty) return;
+      let triggered = false;
+      if (rule.operator === "equals") triggered = value === rule.value;
+      else if (rule.operator === "contains") triggered = Array.isArray(value) && value.includes(rule.value);
+      else if (rule.operator === "not_in") triggered = !(rule.values || []).includes(value);
+      else if (rule.operator === "count_excluding_lte") {
+        triggered = Array.isArray(value)
+          && new Set(value.filter((item) => !(rule.excluded || []).includes(item))).size <= Number(rule.threshold);
+      } else if (rule.operator === "number_gte") triggered = Number(value) >= Number(rule.threshold);
+      else if (rule.operator === "number_gte_if") {
+        triggered = Number(value) >= Number(rule.threshold)
+          && Number(valueFor(rule.if_question)) >= Number(rule.if_threshold);
+      }
+      if (triggered) triggerOrder = orderFor(rule.question);
+    }
+    if (triggerOrder !== null && triggerOrder !== undefined) setTrigger(rule.packages, triggerOrder);
+  });
+  return triggers;
+};
+
+window.arfsaSetupPhotoPicker = (picker) => {
+  if (!picker || picker.dataset.photoReady === "true") return;
+  const input = picker.querySelector('input[type="file"]');
+  const status = picker.querySelector("[data-photo-status]");
+  const preview = picker.querySelector("[data-photo-preview]");
+  if (!input || !status || !preview) return;
+  picker.dataset.photoReady = "true";
+  let selectedFiles = Array.from(input.files || []);
+  let previewUrls = [];
+  const fileKey = (file) => `${file.name}::${file.size}::${file.lastModified}`;
+  const synchronizeInput = () => {
+    const transfer = new DataTransfer();
+    selectedFiles.forEach((file) => transfer.items.add(file));
+    input.files = transfer.files;
+    input._arfsaFiles = [...selectedFiles];
+  };
+  const render = (limitReached = false) => {
+    previewUrls.forEach((url) => URL.revokeObjectURL(url));
+    previewUrls = [];
+    preview.replaceChildren();
+    selectedFiles.forEach((file, index) => {
+      const card = document.createElement("div");
+      card.className = "survey-photo-card";
+      const image = document.createElement("img");
+      const url = URL.createObjectURL(file);
+      previewUrls.push(url);
+      image.src = url;
+      image.alt = `Preview of ${file.name}`;
+      image.addEventListener("error", () => card.classList.add("preview-unavailable"), { once: true });
+      const name = document.createElement("span");
+      name.textContent = file.name;
+      name.title = file.name;
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "survey-photo-remove";
+      remove.textContent = "Remove";
+      remove.setAttribute("aria-label", `Remove ${file.name}`);
+      remove.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        selectedFiles.splice(index, 1);
+        synchronizeInput();
+        render();
+      });
+      card.append(image, name, remove);
+      preview.append(card);
+    });
+    if (limitReached) status.textContent = `${selectedFiles.length} photos added · maximum 6 reached`;
+    else if (selectedFiles.length) status.textContent = `${selectedFiles.length} ${selectedFiles.length === 1 ? "photo" : "photos"} added · click Remove to delete`;
+    else status.textContent = "No photos added · maximum 6";
+  };
+  input.addEventListener("change", () => {
+    const combined = [...selectedFiles, ...Array.from(input.files || [])];
+    const unique = combined.filter((file, index, files) => files.findIndex((candidate) => fileKey(candidate) === fileKey(file)) === index);
+    const limitReached = unique.length > 6;
+    selectedFiles = unique.slice(0, 6);
+    synchronizeInput();
+    render(limitReached || selectedFiles.length === 6);
+  });
+  window.addEventListener("beforeunload", () => previewUrls.forEach((url) => URL.revokeObjectURL(url)));
+  render();
+};
+
 window.arfsaConfirmPackage = ({ finalPackage = false } = {}) => new Promise((resolve) => {
   const previousFocus = document.activeElement;
   const overlay = document.createElement("div");
@@ -52,6 +153,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const menuButton = document.querySelector("[data-menu-toggle]");
   const navigation = document.querySelector("[data-main-nav]");
   menuButton?.addEventListener("click", () => navigation?.classList.toggle("open"));
+  document.querySelectorAll("[data-photo-picker]").forEach(window.arfsaSetupPhotoPicker);
 
   document.querySelectorAll("form[data-confirm]").forEach((form) => {
     form.addEventListener("submit", (event) => {
@@ -71,6 +173,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.querySelectorAll("[data-adaptive-survey]").forEach((form) => {
     const questionNodes = Array.from(form.querySelectorAll("[data-survey-question]"));
+    let packageStopRules = [];
+    try { packageStopRules = JSON.parse(form.dataset.packageStopRules || "[]"); } catch (_error) { packageStopRules = []; }
     let refreshQuestionGuides = () => {};
     const applyMultiRules = (node, changedControl = null) => {
       const boxes = Array.from(node.querySelectorAll('input[type="checkbox"]'));
@@ -110,12 +214,22 @@ document.addEventListener("DOMContentLoaded", () => {
       return false;
     };
     const updateSurvey = () => {
+      const packageStops = window.arfsaPackageStopTriggers({
+        rules: packageStopRules,
+        valueFor,
+        orderFor: (questionId) => Number(form.querySelector(`[data-survey-question="${CSS.escape(questionId)}"]`)?.dataset.sectionOrder || 0),
+      });
       questionNodes.forEach((node) => {
         let condition = null;
         let skipCondition = null;
         try { condition = node.dataset.condition ? JSON.parse(node.dataset.condition) : null; } catch (_error) { condition = null; }
         try { skipCondition = node.dataset.skipCondition ? JSON.parse(node.dataset.skipCondition) : null; } catch (_error) { skipCondition = null; }
-        const visible = conditionMatches(condition) && !(skipCondition && conditionMatches(skipCondition));
+        let packages = [];
+        try { packages = node.dataset.questionPackages ? JSON.parse(node.dataset.questionPackages) : []; } catch (_error) { packages = []; }
+        const stopped = packages.length > 0 && packages.every(
+          (packageKey) => packageStops.has(packageKey) && packageStops.get(packageKey) < Number(node.dataset.sectionOrder || 0),
+        );
+        const visible = conditionMatches(condition) && !(skipCondition && conditionMatches(skipCondition)) && !stopped;
         node.hidden = !visible;
         node.querySelectorAll("input, select, textarea").forEach((control) => {
           control.disabled = !visible;
@@ -331,27 +445,33 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
           }
           const active = nodes.filter((node) => !node.hidden);
-          let position = active.findIndex((node) => node.dataset.surveyQuestion === currentQuestionId);
+          const pages = active.filter((node) => !node.dataset.guideParent);
+          let position = pages.findIndex((node) => node.dataset.surveyQuestion === currentQuestionId);
           if (position < 0) position = 0;
-          const current = active[position];
+          const current = pages[position];
           if (current) currentQuestionId = current.dataset.surveyQuestion;
-          nodes.forEach((node) => node.classList.toggle("survey-guide-hidden", node !== current));
+          nodes.forEach((node) => {
+            const belongsToCurrentPage = node === current || node.dataset.guideParent === currentQuestionId;
+            node.classList.toggle("survey-guide-hidden", !belongsToCurrentPage);
+          });
           previousButton.hidden = position <= 0;
-          nextQuestionButton.hidden = !current || position >= active.length - 1;
-          packageActions.hidden = !current || position < active.length - 1;
-          progress.textContent = current ? `Question ${position + 1} of ${active.length}` : "No applicable questions";
+          nextQuestionButton.hidden = !current || position >= pages.length - 1;
+          packageActions.hidden = !current || position < pages.length - 1;
+          progress.textContent = current ? `Question ${position + 1} of ${pages.length}` : "No applicable questions";
         };
         previousButton.addEventListener("click", () => {
-          const active = nodes.filter((node) => !node.hidden);
-          const position = active.findIndex((node) => node.dataset.surveyQuestion === currentQuestionId);
-          if (position > 0) currentQuestionId = active[position - 1].dataset.surveyQuestion;
+          const pages = nodes.filter((node) => !node.hidden && !node.dataset.guideParent);
+          const position = pages.findIndex((node) => node.dataset.surveyQuestion === currentQuestionId);
+          if (position > 0) currentQuestionId = pages[position - 1].dataset.surveyQuestion;
           refreshGuide();
         });
         nextQuestionButton.addEventListener("click", () => {
           const active = nodes.filter((node) => !node.hidden);
-          const position = active.findIndex((node) => node.dataset.surveyQuestion === currentQuestionId);
-          if (!validateGuideQuestion(active[position])) return;
-          if (position >= 0 && position < active.length - 1) currentQuestionId = active[position + 1].dataset.surveyQuestion;
+          const pages = active.filter((node) => !node.dataset.guideParent);
+          const position = pages.findIndex((node) => node.dataset.surveyQuestion === currentQuestionId);
+          const visiblePage = active.filter((node) => node === pages[position] || node.dataset.guideParent === currentQuestionId);
+          if (!visiblePage.every((node) => validateGuideQuestion(node))) return;
+          if (position >= 0 && position < pages.length - 1) currentQuestionId = pages[position + 1].dataset.surveyQuestion;
           refreshGuide();
         });
         step.refreshQuestionGuide = refreshGuide;
