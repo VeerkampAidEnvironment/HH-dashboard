@@ -14,7 +14,7 @@ from statistics import mean
 from typing import Any, Iterable
 
 
-SURVEY_VERSION = "2026-09-01-r7"
+SURVEY_VERSION = "2026-09-01-r8"
 
 PIP = "Household Resource Mapping (PIP)"
 SUSTAINABLE = "Sustainable/Regenerative Agriculture"
@@ -180,44 +180,44 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
         "intro": "Conduct this as one continuous walking interview. Physical observation takes precedence over self-report.",
         "questions": [
             question("B1", "b1_food_groups", "Walking the plot, which crops or species are planted?", "multi", FOOD_GROUPS),
-            question("B5", "b5_preparation", "Looking at the soil surface, how was this plot prepared?", "choice", options(
+            question("B2", "b5_preparation", "Looking at the soil surface, how was this plot prepared?", "choice", options(
                 ("fully_tilled", "Fully tilled"), ("minimum", "Minimally tilled - 1 or 2 times per year"),
                 ("holes", "Planting holes or strips"), ("undisturbed", "Undisturbed between rows"))),
-            question("B2", "b2_cover", "What is mostly covering the soil surface between plants?", "choice", options(
+            question("B2.1", "b5_1_old_marks", "Are old furrow or ridge marks visible?", "choice", options(
+                ("none", "No old marks"), ("visible", "Old furrows visible - recent transition"),
+                ("new_plot", "Newly opened plot; no previous cultivation to compare")), condition=one_of("b5_preparation", ["minimum", "holes", "undisturbed"]), skip_condition=eq("b5_preparation", "fully_tilled")),
+            question("B2.2", "b5_2_extent", "Is this preparation method used across the whole plot?", "choice", options(
+                ("whole", "Whole plot"), ("part", "Part of the plot only"), ("varies", "Varies across sections")), condition=one_of("b5_preparation", ["minimum", "holes", "undisturbed"]), skip_condition=eq("b5_preparation", "fully_tilled")),
+            question("B3", "b2_cover", "What is mostly covering the soil surface between plants?", "choice", options(
                 ("bare", "Bare soil"), ("mulch", "Crop residue or mulch"),
                 ("living", "Living ground cover"), ("other", "Other"))),
-            question("B2.1", "b2_1_mulch", "What do you observe about the mulch?", "choice", options(
+            question("B3.1", "b2_1_mulch", "What do you observe about the mulch?", "choice", options(
                 ("full", "Full cover, at least 3 cm thick"), ("over_80", "More than 80% cover and at least 1 cm thick"),
                 ("over_50", "Scattered, above 50% covered"), ("under_50", "Less than 50% covered")), condition=eq("b2_cover", "mulch")),
-            question("B2.1", "b2_1_living", "What do you observe about the living cover?", "choice", options(
+            question("B3.1", "b2_1_living", "What do you observe about the living cover?", "choice", options(
                 ("dense", "Dense deliberate cover crop with little bare ground"),
                 ("patchy", "Patchy cover or a mix of planted and volunteer growth"),
                 ("sparse", "Sparse or mostly volunteer weeds")), condition=eq("b2_cover", "living")),
-            question("B3", "b3_features", "Which erosion features are visible?", "multi", options(
+            question("B4", "b3_features", "Which erosion features are visible?", "multi", options(
                 ("rills", "Rills or small channels"), ("gully", "Gully too wide or deep to step across"),
                 ("roots", "Exposed plant or tree roots"), ("loose_soil", "Loose soil deposited at a slope or plot edge"),
                 ("compacted", "Bare compacted patches"), ("none", "None")), required=False, exclusive_values=["none"],
                 skip_condition=eq("b5_preparation", "fully_tilled")),
-            question("B3.1", "b3_1_rills", "What is the depth of the rills?", "choice", options(
+            question("B4.1", "b3_1_rills", "What is the depth of the rills?", "choice", options(
                 ("shallow", "Ankle-height or less"), ("deep", "Deeper than an ankle")), condition=contains("b3_features", "rills"), skip_condition=eq("b5_preparation", "fully_tilled")),
-            question("B3.2", "b3_2_roots", "How widespread are the exposed roots?", "choice", options(
+            question("B4.2", "b3_2_roots", "How widespread are the exposed roots?", "choice", options(
                 ("isolated", "Isolated - 1 or 2 plants"), ("widespread", "Widespread")), condition=contains("b3_features", "roots"), skip_condition=eq("b5_preparation", "fully_tilled")),
-            question("B3.3", "b3_3_soil", "What is the occurrence of the loose soil?", "choice", options(
+            question("B4.3", "b3_3_soil", "What is the occurrence of the loose soil?", "choice", options(
                 ("scatter", "Thin scatter"), ("ridge", "Built-up ridge")), condition=contains("b3_features", "loose_soil"), skip_condition=eq("b5_preparation", "fully_tilled")),
-            question("B4", "b4_structures", "Which soil and water conservation structures are visible?", "multi", options(
+            question("B5", "b4_structures", "Which soil and water conservation structures are visible?", "multi", options(
                 ("grass", "Grass strips"), ("trash", "Trash lines"), ("stone", "Stone bunds"),
                 ("trenches", "Trenches"), ("terracing", "Bench terracing"), ("none", "None")), exclusive_values=["none"], skip_condition=eq("b5_preparation", "fully_tilled")),
-            question("B4.1", "b4_1_width", "Do the structures run across the full width of the plot?", "choice", options(
+            question("B5.1", "b4_1_width", "Do the structures run across the full width of the plot?", "choice", options(
                 ("full", "Full width"), ("partial", "Partial"), ("single", "Single structure only")),
                 condition={"question": "b4_structures", "operator": "has_any_except", "value": "none"}, skip_condition=eq("b5_preparation", "fully_tilled")),
-            question("B4.2", "b4_2_contour", "Do the structures follow the contour of the land?", "choice", options(
+            question("B5.2", "b4_2_contour", "Do the structures follow the contour of the land?", "choice", options(
                 ("yes", "Yes"), ("no", "No"), ("unsure", "Unsure")),
                 condition={"question": "b4_structures", "operator": "has_any_except", "value": "none"}, skip_condition=eq("b5_preparation", "fully_tilled")),
-            question("B5.1", "b5_1_old_marks", "Are old furrow or ridge marks visible?", "choice", options(
-                ("none", "No old marks"), ("visible", "Old furrows visible - recent transition"),
-                ("new_plot", "Newly opened plot; no previous cultivation to compare")), condition=one_of("b5_preparation", ["minimum", "holes", "undisturbed"]), skip_condition=eq("b5_preparation", "fully_tilled")),
-            question("B5.2", "b5_2_extent", "Is this preparation method used across the whole plot?", "choice", options(
-                ("whole", "Whole plot"), ("part", "Part of the plot only"), ("varies", "Varies across sections")), condition=one_of("b5_preparation", ["minimum", "holes", "undisturbed"]), skip_condition=eq("b5_preparation", "fully_tilled")),
             question("B6", "b6_weeds", "How are weeds typically managed during the season?", "choice", options(
                 ("spot", "Hand-pulling or spot-hoeing"), ("few_full", "Full-bed hoeing a few times per year"),
                 ("frequent_full", "Frequent full-bed hoeing"), ("herbicide", "Herbicide")), skip_condition=eq("b5_preparation", "fully_tilled")),
