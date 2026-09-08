@@ -18,7 +18,7 @@ except ModuleNotFoundError:  # Import utilities can run in the spreadsheet runti
     session = None
 
 
-DATABASE_SCHEMA_VERSION = 1
+DATABASE_SCHEMA_VERSION = 2
 
 
 SCHEMA = """
@@ -120,6 +120,24 @@ CREATE TABLE IF NOT EXISTS audit_log (
     changes TEXT
 );
 
+CREATE TABLE IF NOT EXISTS audit_undo_rows (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    audit_id INTEGER NOT NULL REFERENCES audit_log(id) ON DELETE CASCADE,
+    change_order INTEGER NOT NULL,
+    table_name TEXT NOT NULL,
+    row_key TEXT NOT NULL,
+    before_row TEXT,
+    after_row TEXT,
+    UNIQUE(audit_id, change_order)
+);
+
+CREATE TABLE IF NOT EXISTS audit_reverts (
+    original_audit_id INTEGER PRIMARY KEY REFERENCES audit_log(id),
+    revert_audit_id INTEGER NOT NULL REFERENCES audit_log(id),
+    reverted_at TEXT NOT NULL,
+    reverted_by TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS field_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     event_type TEXT NOT NULL CHECK(event_type IN ('centralized', 'followup')),
@@ -204,6 +222,7 @@ CREATE INDEX IF NOT EXISTS idx_followup_responses_record ON followup_responses(r
 CREATE INDEX IF NOT EXISTS idx_followup_assessments_record ON followup_assessments(record_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_followup_packages_assessment ON followup_package_results(assessment_id);
 CREATE INDEX IF NOT EXISTS idx_users_active ON users(is_active, username);
+CREATE INDEX IF NOT EXISTS idx_audit_undo_audit ON audit_undo_rows(audit_id, change_order);
 """
 
 
@@ -225,12 +244,29 @@ def test_database_path(username: str) -> Path:
     return primary_database_path().parent / "test-environments" / f"{(safe_name or 'user')[:30]}-{suffix}.db"
 
 
+def _test_database_contains_user(path: Path, username: str) -> bool:
+    """Return whether an existing test snapshot can authenticate this user."""
+    connection = None
+    try:
+        connection = sqlite3.connect(path)
+        row = connection.execute(
+            "SELECT 1 FROM users WHERE username = ? COLLATE NOCASE",
+            (username,),
+        ).fetchone()
+        return row is not None
+    except sqlite3.DatabaseError:
+        return False
+    finally:
+        if connection is not None:
+            connection.close()
+
+
 def ensure_test_database(username: str, *, reset: bool = False) -> Path:
     """Create a consistent per-user SQLite snapshot without writing to live data."""
     target = test_database_path(username)
     if reset and target.exists():
         target.unlink()
-    if target.exists():
+    if target.exists() and _test_database_contains_user(target, username):
         return target
     target.parent.mkdir(parents=True, exist_ok=True)
     source_connection = sqlite3.connect(primary_database_path())
@@ -261,10 +297,15 @@ def connect(path: str | Path | None = None) -> sqlite3.Connection:
 
 def get_db() -> sqlite3.Connection:
     if "db" not in g:
-        g.db = connect()
+        target = None
+        if has_request_context() and session and session.get("test_environment"):
+            username = str(session.get("username") or session.get("user_id") or "user")
+            target = ensure_test_database(username)
+        g.db = connect(target)
         schema_version = g.db.execute("PRAGMA user_version").fetchone()[0]
         if schema_version < DATABASE_SCHEMA_VERSION:
             init_db(g.db)
+        prepare_audit_capture(g.db)
     return g.db
 
 
@@ -369,6 +410,93 @@ def get_setting(connection: sqlite3.Connection, key: str, default=None):
         return row["value"]
 
 
+AUDIT_CAPTURE_EXCLUDED_TABLES = {"audit_log", "audit_undo_rows", "audit_reverts"}
+
+
+class AuditRevertError(ValueError):
+    """Raised when an audited action cannot be safely reversed."""
+
+
+def _quote_identifier(value: str) -> str:
+    return '"' + value.replace('"', '""') + '"'
+
+
+def _audit_row_json(*values) -> str:
+    return json.dumps(
+        {str(values[index]): values[index + 1] for index in range(0, len(values), 2)},
+        ensure_ascii=False,
+    )
+
+
+def prepare_audit_capture(connection: sqlite3.Connection) -> None:
+    """Track every row changed during this request until it is attached to an audit entry."""
+    connection.create_function("_arfsa_audit_row_json", -1, _audit_row_json)
+    connection.execute(
+        """CREATE TEMP TABLE IF NOT EXISTS arfsa_audit_capture (
+               id INTEGER PRIMARY KEY AUTOINCREMENT,
+               table_name TEXT NOT NULL,
+               row_key TEXT NOT NULL,
+               before_row TEXT,
+               after_row TEXT
+           )"""
+    )
+    table_names = [
+        row[0] for row in connection.execute(
+            "SELECT name FROM main.sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()
+        if row[0] not in AUDIT_CAPTURE_EXCLUDED_TABLES
+    ]
+    for table_name in table_names:
+        quoted_table = _quote_identifier(table_name)
+        columns = connection.execute(f"PRAGMA main.table_info({quoted_table})").fetchall()
+        primary_keys = [row[1] for row in sorted(columns, key=lambda row: row[5]) if row[5]]
+        if not primary_keys:
+            continue
+        column_names = [row[1] for row in columns]
+
+        def packed(alias: str, names: list[str]) -> str:
+            arguments = ", ".join(
+                f"'{name.replace(chr(39), chr(39) * 2)}', {alias}.{_quote_identifier(name)}"
+                for name in names
+            )
+            return f"_arfsa_audit_row_json({arguments})"
+
+        table_literal = table_name.replace("'", "''")
+        trigger_base = "arfsa_audit_" + "".join(
+            character if character.isalnum() else "_" for character in table_name
+        )
+        trigger_definitions = (
+            (
+                "insert", "AFTER INSERT", packed("NEW", primary_keys), "NULL",
+                packed("NEW", column_names),
+            ),
+            (
+                "update", "AFTER UPDATE", packed("NEW", primary_keys), packed("OLD", column_names),
+                packed("NEW", column_names),
+            ),
+            (
+                "delete", "AFTER DELETE", packed("OLD", primary_keys), packed("OLD", column_names),
+                "NULL",
+            ),
+        )
+        for suffix, timing, row_key, before_row, after_row in trigger_definitions:
+            trigger_name = _quote_identifier(f"{trigger_base}_{suffix}")
+            connection.execute(
+                f"""CREATE TEMP TRIGGER IF NOT EXISTS {trigger_name}
+                       {timing} ON main.{quoted_table}
+                       BEGIN
+                         INSERT INTO arfsa_audit_capture(table_name, row_key, before_row, after_row)
+                         VALUES('{table_literal}', {row_key}, {before_row}, {after_row});
+                       END"""
+            )
+
+
+def _audit_capture_is_available(connection: sqlite3.Connection) -> bool:
+    return connection.execute(
+        "SELECT 1 FROM sqlite_temp_master WHERE type='table' AND name='arfsa_audit_capture'"
+    ).fetchone() is not None
+
+
 def log_audit(
     connection: sqlite3.Connection,
     username: str,
@@ -377,8 +505,8 @@ def log_audit(
     entity_id: int | None,
     summary: str,
     changes=None,
-) -> None:
-    connection.execute(
+) -> int:
+    cursor = connection.execute(
         "INSERT INTO audit_log(occurred_at, username, action, entity_type, entity_id, summary, changes) "
         "VALUES(?, ?, ?, ?, ?, ?, ?)",
         (
@@ -391,6 +519,160 @@ def log_audit(
             json.dumps(changes, ensure_ascii=False, default=str) if changes is not None else None,
         ),
     )
+    audit_id = cursor.lastrowid
+    if _audit_capture_is_available(connection):
+        captures = connection.execute(
+            """SELECT id, table_name, row_key, before_row, after_row
+               FROM arfsa_audit_capture ORDER BY id"""
+        ).fetchall()
+        connection.executemany(
+            """INSERT INTO audit_undo_rows(
+                   audit_id, change_order, table_name, row_key, before_row, after_row
+               ) VALUES(?, ?, ?, ?, ?, ?)""",
+            [
+                (
+                    audit_id, capture["id"], capture["table_name"], capture["row_key"],
+                    capture["before_row"], capture["after_row"],
+                )
+                for capture in captures
+            ],
+        )
+        connection.execute("DELETE FROM arfsa_audit_capture")
+    return audit_id
+
+
+def _table_definition(connection: sqlite3.Connection, table_name: str) -> tuple[list[str], list[str]]:
+    if table_name in AUDIT_CAPTURE_EXCLUDED_TABLES:
+        raise AuditRevertError("This audit entry contains a protected internal change.")
+    available = connection.execute(
+        "SELECT 1 FROM main.sqlite_master WHERE type='table' AND name=?", (table_name,)
+    ).fetchone()
+    if not available:
+        raise AuditRevertError(f"The affected table {table_name!r} no longer exists.")
+    quoted_table = _quote_identifier(table_name)
+    columns = connection.execute(f"PRAGMA main.table_info({quoted_table})").fetchall()
+    column_names = [row[1] for row in columns]
+    primary_keys = [row[1] for row in sorted(columns, key=lambda row: row[5]) if row[5]]
+    if not primary_keys:
+        raise AuditRevertError(f"The affected table {table_name!r} has no primary key.")
+    return column_names, primary_keys
+
+
+def _primary_key_values(row: dict, primary_keys: list[str]) -> list:
+    if any(key not in row for key in primary_keys):
+        raise AuditRevertError("The stored reversal data is incomplete.")
+    return [row[key] for key in primary_keys]
+
+
+def _current_row(
+    connection: sqlite3.Connection, table_name: str, columns: list[str],
+    primary_keys: list[str], expected: dict,
+) -> dict | None:
+    quoted_table = _quote_identifier(table_name)
+    where = " AND ".join(f"{_quote_identifier(key)} IS ?" for key in primary_keys)
+    selected = ", ".join(_quote_identifier(column) for column in columns)
+    row = connection.execute(
+        f"SELECT {selected} FROM {quoted_table} WHERE {where}",
+        _primary_key_values(expected, primary_keys),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def _restore_audit_row(connection: sqlite3.Connection, capture) -> None:
+    table_name = capture["table_name"]
+    columns, primary_keys = _table_definition(connection, table_name)
+    before = json.loads(capture["before_row"]) if capture["before_row"] else None
+    after = json.loads(capture["after_row"]) if capture["after_row"] else None
+    identity = after or before
+    current = _current_row(connection, table_name, columns, primary_keys, identity)
+    if current != after:
+        raise AuditRevertError(
+            f"A later change affected {table_name}. Revert the newer action first."
+        )
+
+    quoted_table = _quote_identifier(table_name)
+    if before is None:
+        where = " AND ".join(f"{_quote_identifier(key)} IS ?" for key in primary_keys)
+        connection.execute(
+            f"DELETE FROM {quoted_table} WHERE {where}",
+            _primary_key_values(after, primary_keys),
+        )
+        return
+    if after is None:
+        names = [column for column in columns if column in before]
+        quoted_names = ", ".join(_quote_identifier(name) for name in names)
+        placeholders = ", ".join("?" for _ in names)
+        connection.execute(
+            f"INSERT INTO {quoted_table}({quoted_names}) VALUES({placeholders})",
+            [before[name] for name in names],
+        )
+        return
+
+    assignments = ", ".join(f"{_quote_identifier(column)}=?" for column in columns)
+    where = " AND ".join(f"{_quote_identifier(key)} IS ?" for key in primary_keys)
+    connection.execute(
+        f"UPDATE {quoted_table} SET {assignments} WHERE {where}",
+        [before.get(column) for column in columns] + _primary_key_values(after, primary_keys),
+    )
+
+
+def revert_audit_action(
+    connection: sqlite3.Connection, audit_id: int, username: str, current_user_id: int | None = None,
+) -> int:
+    """Atomically restore every database row changed by one audited action."""
+    connection.execute("SAVEPOINT revert_audit_action")
+    try:
+        original = connection.execute(
+            "SELECT * FROM audit_log WHERE id=?", (audit_id,)
+        ).fetchone()
+        if not original:
+            raise AuditRevertError("That audit entry no longer exists.")
+        if original["action"] == "revert":
+            raise AuditRevertError("A reversal entry cannot itself be reverted.")
+        if connection.execute(
+            "SELECT 1 FROM audit_reverts WHERE original_audit_id=?", (audit_id,)
+        ).fetchone():
+            raise AuditRevertError("This action has already been reverted.")
+        captures = connection.execute(
+            """SELECT * FROM audit_undo_rows WHERE audit_id=?
+               ORDER BY change_order DESC, id DESC""",
+            (audit_id,),
+        ).fetchall()
+        if not captures:
+            raise AuditRevertError(
+                "This older action predates complete reversal snapshots and cannot be fully reverted automatically."
+            )
+
+        if current_user_id is not None:
+            for capture in captures:
+                if capture["table_name"] != "users":
+                    continue
+                before = json.loads(capture["before_row"]) if capture["before_row"] else None
+                after = json.loads(capture["after_row"]) if capture["after_row"] else None
+                affected_id = (after or before or {}).get("id")
+                if affected_id != current_user_id:
+                    continue
+                if before is None or not before.get("is_active") or not before.get("is_admin"):
+                    raise AuditRevertError("For safety, you cannot revert an action that would lock your own account.")
+
+        for capture in captures:
+            _restore_audit_row(connection, capture)
+        revert_id = log_audit(
+            connection, username, "revert", "audit_log", audit_id,
+            f"Reverted audit entry #{audit_id}: {original['summary']}",
+            {"reverted_audit_id": audit_id, "original_action": original["action"]},
+        )
+        connection.execute(
+            """INSERT INTO audit_reverts(original_audit_id, revert_audit_id, reverted_at, reverted_by)
+               VALUES(?, ?, ?, ?)""",
+            (audit_id, revert_id, utc_now(), username),
+        )
+        connection.execute("RELEASE SAVEPOINT revert_audit_action")
+        return revert_id
+    except Exception:
+        connection.execute("ROLLBACK TO SAVEPOINT revert_audit_action")
+        connection.execute("RELEASE SAVEPOINT revert_audit_action")
+        raise
 
 
 def register_db(app) -> None:

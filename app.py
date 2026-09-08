@@ -41,12 +41,14 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from bulk_import import BulkImportError, append_care_database, append_farmer_database
 from db import (
+    AuditRevertError,
     close_db,
     ensure_test_database,
     get_db,
     get_setting,
     log_audit,
     register_db,
+    revert_audit_action,
     set_setting,
     utc_now,
 )
@@ -164,6 +166,153 @@ def admin_required(view):
             abort(403)
         return view(*args, **kwargs)
     return wrapped
+
+
+def followup_photo_files(connection, event_id: int) -> set[str]:
+    """Collect validated photo filenames belonging only to one follow-up event."""
+    rows = connection.execute(
+        """SELECT fr.answers FROM followup_responses fr
+           JOIN field_event_entries fee ON fee.id=fr.event_entry_id
+           WHERE fee.event_id=?""",
+        (event_id,),
+    ).fetchall()
+    filenames = set()
+
+    def visit(value):
+        if isinstance(value, dict):
+            filename = value.get("file")
+            if isinstance(filename, str) and re.fullmatch(r"[a-f0-9]{40}\.(?:jpg|png|webp|heic)", filename):
+                filenames.add(filename)
+            for nested in value.values():
+                visit(nested)
+        elif isinstance(value, list):
+            for nested in value:
+                visit(nested)
+
+    for row in rows:
+        try:
+            visit(json.loads(row["answers"]))
+        except (json.JSONDecodeError, TypeError):
+            continue
+    return filenames
+
+
+def delete_historical_field_event(connection, audit_id: int, username: str) -> tuple[int, set[str]]:
+    """Remove a pre-snapshot field event and clear its derived training/follow-up values."""
+    connection.execute("SAVEPOINT delete_historical_field_event")
+    try:
+        original = connection.execute(
+            """SELECT * FROM audit_log WHERE id=? AND action='field_entry'
+               AND entity_type='field_event'""",
+            (audit_id,),
+        ).fetchone()
+        if not original:
+            raise AuditRevertError("This historical entry is not a field event that can be deleted.")
+        event_id = original["entity_id"]
+        event = connection.execute("SELECT * FROM field_events WHERE id=?", (event_id,)).fetchone()
+        if not event:
+            raise AuditRevertError("This field event has already been removed.")
+        if connection.execute(
+            "SELECT 1 FROM audit_reverts WHERE original_audit_id=?", (audit_id,)
+        ).fetchone():
+            raise AuditRevertError("This action has already been reverted.")
+
+        photos = followup_photo_files(connection, event_id)
+        entries = connection.execute(
+            """SELECT fee.record_id, fee.topic, fr.training_cycle, fr.adoption_rate,
+                      fr.next_action
+               FROM field_event_entries fee
+               LEFT JOIN followup_responses fr ON fr.event_entry_id=fee.id
+               WHERE fee.event_id=? ORDER BY fee.id""",
+            (event_id,),
+        ).fetchall()
+        if not entries:
+            raise AuditRevertError("No data remains for this historical field event.")
+
+        records_to_update = {}
+        for entry in entries:
+            record_id = entry["record_id"]
+            if record_id not in records_to_update:
+                record = connection.execute(
+                    "SELECT dataset, raw_data FROM records WHERE id=?", (record_id,)
+                ).fetchone()
+                if not record:
+                    raise AuditRevertError("An affected beneficiary record no longer exists.")
+                records_to_update[record_id] = {
+                    "dataset": record["dataset"], "raw": json.loads(record["raw_data"]),
+                }
+            raw = records_to_update[record_id]["raw"]
+            topic = entry["topic"]
+            if event["event_type"] == "followup":
+                cycle = entry["training_cycle"]
+                if cycle is None:
+                    cycle = next(
+                        (
+                            number for number in range(1, 4)
+                            if str(raw.get(f"Follow up {number} - {topic}") or "")[:10] == event["event_date"]
+                        ),
+                        None,
+                    )
+                if cycle is None:
+                    raise AuditRevertError(
+                        f"The original follow-up cycle for {topic} can no longer be identified."
+                    )
+                recorded_date = str(raw.get(f"Follow up {cycle} - {topic}") or "")[:10]
+                if recorded_date and recorded_date != event["event_date"]:
+                    raise AuditRevertError(
+                        f"A newer change affected the {topic} follow-up. Revert that newer work first."
+                    )
+                raw[f"Follow up {cycle} - {topic}"] = ""
+                raw[f"Follow up {cycle} score - {topic}"] = ""
+                raw[f"Follow up {cycle} next action - {topic}"] = ""
+            else:
+                cycle = next(
+                    (
+                        number for number in range(1, 4)
+                        if str(raw.get(f"Training {number} - {topic}") or "")[:10] == event["event_date"]
+                    ),
+                    None,
+                )
+                if cycle is None:
+                    raise AuditRevertError(
+                        f"The original training cycle for {topic} can no longer be identified."
+                    )
+                raw[f"Training {cycle} - {topic}"] = ""
+
+        connection.execute("DELETE FROM field_events WHERE id=?", (event_id,))
+        for record_id, update in records_to_update.items():
+            connection.execute(
+                "UPDATE records SET raw_data=?, updated_at=? WHERE id=?",
+                (json.dumps(update["raw"], ensure_ascii=False), utc_now(), record_id),
+            )
+            rebuild_statuses(connection, record_id, update["dataset"], update["raw"])
+
+        related_audit_ids = [
+            row[0] for row in connection.execute(
+                """SELECT id FROM audit_log
+                   WHERE entity_type='field_event' AND entity_id=?
+                   AND action IN ('field_entry', 'followup_actions')""",
+                (event_id,),
+            ).fetchall()
+        ]
+        revert_id = log_audit(
+            connection, username, "revert", "audit_log", audit_id,
+            f"Deleted historical field event #{event_id}: {original['summary']}",
+            {"reverted_audit_ids": related_audit_ids, "deleted_field_event_id": event_id},
+        )
+        for related_id in related_audit_ids:
+            connection.execute(
+                """INSERT OR IGNORE INTO audit_reverts(
+                       original_audit_id, revert_audit_id, reverted_at, reverted_by
+                   ) VALUES(?, ?, ?, ?)""",
+                (related_id, revert_id, utc_now(), username),
+            )
+        connection.execute("RELEASE SAVEPOINT delete_historical_field_event")
+        return revert_id, photos
+    except Exception:
+        connection.execute("ROLLBACK TO SAVEPOINT delete_historical_field_event")
+        connection.execute("RELEASE SAVEPOINT delete_historical_field_event")
+        raise
 
 
 def create_app(test_config=None):
@@ -1110,18 +1259,25 @@ def create_app(test_config=None):
     def audit():
         selected_user = request.args.get("user", "").strip()
         connection = get_db()
+        audit_select = """SELECT a.*, COALESCE(u.display_name, a.username) AS display_name,
+                                  COUNT(aur.id) AS undo_row_count,
+                                  ar.revert_audit_id, ar.reverted_at, ar.reverted_by,
+                                  CASE WHEN a.action='field_entry' AND a.entity_type='field_event'
+                                            AND EXISTS(SELECT 1 FROM field_events fe WHERE fe.id=a.entity_id)
+                                       THEN 1 ELSE 0 END AS historical_event_deletable
+                           FROM audit_log a
+                           LEFT JOIN users u ON u.username=a.username COLLATE NOCASE
+                           LEFT JOIN audit_undo_rows aur ON aur.audit_id=a.id
+                           LEFT JOIN audit_reverts ar ON ar.original_audit_id=a.id"""
         if selected_user:
             rows = connection.execute(
-                """SELECT a.*, COALESCE(u.display_name, a.username) AS display_name
-                   FROM audit_log a LEFT JOIN users u ON u.username=a.username COLLATE NOCASE
-                   WHERE a.username=? COLLATE NOCASE ORDER BY a.id DESC LIMIT 500""",
+                audit_select + """ WHERE a.username=? COLLATE NOCASE
+                                    GROUP BY a.id ORDER BY a.id DESC LIMIT 500""",
                 (selected_user,),
             ).fetchall()
         else:
             rows = connection.execute(
-                """SELECT a.*, COALESCE(u.display_name, a.username) AS display_name
-                   FROM audit_log a LEFT JOIN users u ON u.username=a.username COLLATE NOCASE
-                   ORDER BY a.id DESC LIMIT 500"""
+                audit_select + " GROUP BY a.id ORDER BY a.id DESC LIMIT 500"
             ).fetchall()
         entries = []
         for row in rows:
@@ -1137,6 +1293,52 @@ def create_app(test_config=None):
                ORDER BY display_name COLLATE NOCASE"""
         ).fetchall()
         return render_template("audit.html", entries=entries, usernames=usernames, selected_user=selected_user)
+
+    @app.post("/audit/<int:audit_id>/revert")
+    @admin_required
+    def audit_revert(audit_id):
+        connection = get_db()
+        photo_files = set()
+        try:
+            entry = connection.execute(
+                """SELECT a.*, COUNT(aur.id) AS undo_row_count
+                   FROM audit_log a LEFT JOIN audit_undo_rows aur ON aur.audit_id=a.id
+                   WHERE a.id=? GROUP BY a.id""",
+                (audit_id,),
+            ).fetchone()
+            if not entry:
+                raise AuditRevertError("That audit entry no longer exists.")
+            if entry["entity_type"] == "field_event" and entry["entity_id"] is not None:
+                photo_files = followup_photo_files(connection, entry["entity_id"])
+            if not entry["undo_row_count"] and entry["action"] == "field_entry" \
+                    and entry["entity_type"] == "field_event":
+                _revert_id, photo_files = delete_historical_field_event(
+                    connection, audit_id, session["username"]
+                )
+            else:
+                revert_audit_action(
+                    connection, audit_id, session["username"], session.get("user_id")
+                )
+            connection.commit()
+            photo_folder = Path(current_app.config["FOLLOWUP_PHOTO_FOLDER"])
+            for filename in photo_files:
+                try:
+                    (photo_folder / filename).unlink(missing_ok=True)
+                except OSError:
+                    current_app.logger.warning("Could not remove reverted follow-up photo %s", filename)
+            flash(f"Audit action #{audit_id} was fully reverted.", "success")
+        except AuditRevertError as error:
+            connection.rollback()
+            flash(str(error), "error")
+        except sqlite3.DatabaseError:
+            connection.rollback()
+            current_app.logger.exception("Could not revert audit action %s", audit_id)
+            flash(
+                "The action could not be safely reverted. A newer dependent change may need to be reverted first.",
+                "error",
+            )
+        selected_user = request.form.get("user", "").strip()
+        return redirect(url_for("audit", user=selected_user) if selected_user else url_for("audit"))
 
     @app.route("/users", methods=["GET", "POST"])
     @admin_required

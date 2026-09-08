@@ -56,7 +56,7 @@ class ApplicationTest(unittest.TestCase):
     def test_existing_test_database_is_migrated_before_use(self):
         from db import ensure_test_database
 
-        username = "legacy-schema-check"
+        username = "admin"
         legacy_path = ensure_test_database(username, reset=True)
         with closing(sqlite3.connect(legacy_path)) as connection:
             connection.execute("DROP TABLE followup_package_results")
@@ -77,7 +77,33 @@ class ApplicationTest(unittest.TestCase):
             }
             self.assertIn("followup_assessments", tables)
             self.assertIn("followup_package_results", tables)
-            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 1)
+            self.assertIn("audit_undo_rows", tables)
+            self.assertIn("audit_reverts", tables)
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 2)
+
+    def test_deleted_or_stale_test_database_is_rebuilt_before_account_check(self):
+        from db import ensure_test_database
+
+        username = "admin"
+        test_path = ensure_test_database(username, reset=True)
+        with closing(sqlite3.connect(test_path)) as connection:
+            connection.execute("DELETE FROM users WHERE username = ? COLLATE NOCASE", (username,))
+            connection.commit()
+
+        with self.client.session_transaction() as current_session:
+            current_session["test_environment"] = True
+
+        response = self.client.get("/data-entry")
+        self.assertEqual(response.status_code, 200)
+        with self.client.session_transaction() as current_session:
+            self.assertTrue(current_session.get("authenticated"))
+            self.assertEqual(current_session.get("username"), username)
+        with closing(sqlite3.connect(test_path)) as connection:
+            restored_user = connection.execute(
+                "SELECT is_active FROM users WHERE username = ? COLLATE NOCASE", (username,)
+            ).fetchone()
+            self.assertIsNotNone(restored_user)
+            self.assertEqual(restored_user[0], 1)
 
     def test_main_pages_and_filters_render(self):
         endpoints = [
@@ -518,6 +544,87 @@ class ApplicationTest(unittest.TestCase):
         audit = self.client.get("/audit")
         self.assertIn(b"Created TEST FARMER", audit.data)
 
+    def test_audit_revert_restores_complete_action_and_enforces_reverse_order(self):
+        created = self.client.post(
+            "/records/new",
+            data={
+                "csrf_token": self.csrf(), "dataset": "training",
+                "field__Name": "AUDIT REVERSAL FARMER", "field__Sex": "F",
+            },
+        )
+        self.assertEqual(created.status_code, 302)
+        with self.app.app_context():
+            from db import get_db
+
+            connection = get_db()
+            create_audit = connection.execute(
+                """SELECT id, entity_id FROM audit_log
+                   WHERE summary='Created AUDIT REVERSAL FARMER' ORDER BY id DESC LIMIT 1"""
+            ).fetchone()
+            self.assertGreater(connection.execute(
+                "SELECT COUNT(*) FROM audit_undo_rows WHERE audit_id=?", (create_audit["id"],)
+            ).fetchone()[0], 1)
+            record_id = create_audit["entity_id"]
+
+        archived = self.client.post(
+            f"/records/{record_id}/archive", data={"csrf_token": self.csrf()}
+        )
+        self.assertEqual(archived.status_code, 302)
+        with self.app.app_context():
+            from db import get_db
+
+            archive_audit_id = get_db().execute(
+                """SELECT id FROM audit_log WHERE action='archive' AND entity_type='record'
+                   AND entity_id=? ORDER BY id DESC LIMIT 1""",
+                (record_id,),
+            ).fetchone()[0]
+
+        refused = self.client.post(
+            f"/audit/{create_audit['id']}/revert",
+            data={"csrf_token": self.csrf()}, follow_redirects=True,
+        )
+        self.assertIn(b"Revert the newer action first", refused.data)
+        with self.app.app_context():
+            from db import get_db
+
+            self.assertIsNotNone(get_db().execute(
+                "SELECT 1 FROM records WHERE id=?", (record_id,)
+            ).fetchone())
+
+        reverted_archive = self.client.post(
+            f"/audit/{archive_audit_id}/revert", data={"csrf_token": self.csrf()}
+        )
+        self.assertEqual(reverted_archive.status_code, 302)
+        with self.app.app_context():
+            from db import get_db
+
+            self.assertIsNone(get_db().execute(
+                "SELECT archived_at FROM records WHERE id=?", (record_id,)
+            ).fetchone()[0])
+
+        reverted_create = self.client.post(
+            f"/audit/{create_audit['id']}/revert", data={"csrf_token": self.csrf()}
+        )
+        self.assertEqual(reverted_create.status_code, 302)
+        with self.app.app_context():
+            from db import get_db
+
+            connection = get_db()
+            self.assertIsNone(connection.execute(
+                "SELECT 1 FROM records WHERE id=?", (record_id,)
+            ).fetchone())
+            reversal = connection.execute(
+                "SELECT revert_audit_id FROM audit_reverts WHERE original_audit_id=?",
+                (create_audit["id"],),
+            ).fetchone()
+            self.assertIsNotNone(reversal)
+            self.assertEqual(connection.execute(
+                "SELECT action FROM audit_log WHERE id=?", (reversal["revert_audit_id"],)
+            ).fetchone()[0], "revert")
+
+        audit_page = self.client.get("/audit")
+        self.assertIn(b"Reverted in #", audit_page.data)
+
     def test_individual_user_login_and_audit_attribution(self):
         response = self.client.post(
             "/users",
@@ -688,6 +795,34 @@ class ApplicationTest(unittest.TestCase):
         self.assertIn(known_village.encode(), venue_page.data)
         self.assertIn(b'+ Add a new meeting venue', venue_page.data)
         self.assertIn(b'data-new-venue-field', venue_page.data)
+
+        with self.app.app_context():
+            from db import get_db
+
+            connection = get_db()
+            event_id = connection.execute(
+                "SELECT id FROM field_events WHERE location='Test training venue'"
+            ).fetchone()[0]
+            audit_id = connection.execute(
+                """SELECT id FROM audit_log WHERE action='field_entry'
+                   AND entity_type='field_event' AND entity_id=?""",
+                (event_id,),
+            ).fetchone()[0]
+        reverted = self.client.post(
+            f"/audit/{audit_id}/revert", data={"csrf_token": self.csrf()}
+        )
+        self.assertEqual(reverted.status_code, 302)
+        with self.app.app_context():
+            from db import get_db
+
+            connection = get_db()
+            self.assertIsNone(connection.execute(
+                "SELECT 1 FROM field_events WHERE id=?", (event_id,)
+            ).fetchone())
+            raw = json.loads(connection.execute(
+                "SELECT raw_data FROM records WHERE id=?", (eligible["id"],)
+            ).fetchone()[0])
+            self.assertFalse(raw.get(f"Training 1 - {eligible['topic']}"))
 
     def test_field_app_shell_manifest_and_bootstrap_are_ae_only(self):
         with self.app.app_context():
@@ -1130,13 +1265,72 @@ class ApplicationTest(unittest.TestCase):
         with self.app.app_context():
             from db import get_db
 
-            selected = get_db().execute(
+            connection = get_db()
+            selected = connection.execute(
                 "SELECT DISTINCT next_action FROM followup_responses WHERE id IN ({})".format(
                     ",".join("?" for _ in response_rows)
                 ),
                 tuple(row["id"] for row in response_rows),
             ).fetchall()
             self.assertEqual({row["next_action"] for row in selected}, {"followup_3"})
+            response_cycles = connection.execute(
+                """SELECT topic, training_cycle FROM followup_responses
+                   WHERE id IN ({})""".format(",".join("?" for _ in response_rows)),
+                tuple(row["id"] for row in response_rows),
+            ).fetchall()
+            related_audits = connection.execute(
+                """SELECT id, action FROM audit_log WHERE entity_type='field_event'
+                   AND entity_id=? AND action IN ('field_entry', 'followup_actions')""",
+                (assessment["event_id"],),
+            ).fetchall()
+            field_entry_audit_id = next(
+                row["id"] for row in related_audits if row["action"] == "field_entry"
+            )
+            connection.executemany(
+                "DELETE FROM audit_undo_rows WHERE audit_id=?",
+                [(row["id"],) for row in related_audits],
+            )
+            connection.commit()
+
+        audit_page = self.client.get("/audit")
+        self.assertIn(b"Delete event data", audit_page.data)
+        deleted = self.client.post(
+            f"/audit/{field_entry_audit_id}/revert", data={"csrf_token": self.csrf()}
+        )
+        self.assertEqual(deleted.status_code, 302)
+        with self.app.app_context():
+            from db import get_db
+
+            connection = get_db()
+            self.assertIsNone(connection.execute(
+                "SELECT 1 FROM field_events WHERE id=?", (assessment["event_id"],)
+            ).fetchone())
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM followup_assessments WHERE event_id=?",
+                (assessment["event_id"],),
+            ).fetchone()[0], 0)
+            self.assertEqual(connection.execute(
+                """SELECT COUNT(*) FROM followup_responses fr
+                   JOIN field_event_entries fee ON fee.id=fr.event_entry_id
+                   WHERE fee.event_id=?""",
+                (assessment["event_id"],),
+            ).fetchone()[0], 0)
+            raw = json.loads(connection.execute(
+                "SELECT raw_data FROM records WHERE id=?", (due["id"],)
+            ).fetchone()[0])
+            for stored_cycle in response_cycles:
+                topic, cycle = stored_cycle["topic"], stored_cycle["training_cycle"]
+                self.assertEqual(raw[f"Follow up {cycle} - {topic}"], "")
+                self.assertEqual(raw[f"Follow up {cycle} score - {topic}"], "")
+                self.assertEqual(raw[f"Follow up {cycle} next action - {topic}"], "")
+            self.assertEqual(connection.execute(
+                """SELECT COUNT(*) FROM audit_reverts
+                   WHERE original_audit_id IN ({})""".format(
+                    ",".join("?" for _ in related_audits)
+                ),
+                tuple(row["id"] for row in related_audits),
+            ).fetchone()[0], len(related_audits))
+        self.assertTrue(all(not (self.photo_folder / photo["file"]).exists() for photo in photos))
 
     def test_followup_can_request_ct_and_new_ct_restarts_waiting_period(self):
         with self.app.app_context():

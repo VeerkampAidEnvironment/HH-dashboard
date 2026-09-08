@@ -2,7 +2,7 @@
 {% block title %}Audit log - ARFSA{% endblock %}
 {% block content %}
 <div class="page-heading">
-  <div><p class="eyebrow">Accountability</p><h1>Audit log</h1><p class="lead">The latest additions, edits, archives, training entries, follow-ups and identity decisions, attributed to the signed-in user.</p></div>
+  <div><p class="eyebrow">Accountability</p><h1>Audit log</h1><p class="lead">The latest additions, edits, archives, training entries, follow-ups and identity decisions, attributed to the signed-in user. Administrators can fully revert captured actions; newer dependent actions must be reverted first.</p></div>
 </div>
 <div class="panel audit-filter-panel">
   <form method="get" class="compact-filter-form">
@@ -16,7 +16,7 @@
   </form>
 </div>
 <div class="panel"><div class="table-wrap"><table class="data-table">
-  <thead><tr><th>When</th><th>User</th><th>Action</th><th>Entity</th><th>Summary</th></tr></thead>
+  <thead><tr><th>When</th><th>User</th><th>Action</th><th>Entity</th><th>Summary</th><th>Reversal</th></tr></thead>
   <tbody>{% for item in entries %}<tr>
     <td>{{ item.occurred_at[:19].replace('T',' ') }}</td><td><strong>{{ item.display_name }}</strong></td><td><span class="status-pill">{{ item.action }}</span></td><td>{{ item.entity_type }} #{{ item.entity_id or '-' }}</td>
     <td>{{ item.summary }}
@@ -36,7 +36,29 @@
           {% for person in updates %}<tr><td><a href="{{ url_for('record_detail', record_id=person.record_id) }}">{{ person.uid }}</a></td><td><strong>{{ person.name }}</strong></td><td>{{ person.field_count }}</td><td>{{ person.fields|join(', ') }}</td></tr>{% endfor %}
         </tbody></table></div>{% endif %}
       </details>{% endif %}
+    </td><td>
+      {% if item.revert_audit_id %}
+        <span class="status-pill">Reverted in #{{ item.revert_audit_id }}</span>
+      {% elif item.action == 'revert' %}
+        <span class="muted">Reversal record</span>
+      {% elif item.undo_row_count and session.get('is_admin') %}
+        <form method="post" action="{{ url_for('audit_revert', audit_id=item.id) }}" data-confirm="Fully revert audit action #{{ item.id }}? Every database row changed by this action will be restored. If newer work depends on it, the reversal will be refused.">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="user" value="{{ selected_user }}">
+          <button class="button button-secondary button-small" type="submit">Revert action</button>
+        </form>
+      {% elif item.historical_event_deletable and session.get('is_admin') %}
+        <form method="post" action="{{ url_for('audit_revert', audit_id=item.id) }}" data-confirm="Delete this complete historical field event? Its follow-up or training entries, scores, assessments, and confirmed actions will be removed and the beneficiary status recalculated.">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="user" value="{{ selected_user }}">
+          <button class="button button-secondary button-small" type="submit">Delete event data</button>
+        </form>
+      {% elif item.undo_row_count %}
+        <span class="muted">Administrator only</span>
+      {% else %}
+        <span class="muted" title="This entry was recorded before complete reversal snapshots were introduced.">Historical — no snapshot</span>
+      {% endif %}
     </td>
-  </tr>{% else %}<tr><td colspan="5" class="empty-cell">No changes match this selection.</td></tr>{% endfor %}</tbody>
+  </tr>{% else %}<tr><td colspan="6" class="empty-cell">No changes match this selection.</td></tr>{% endfor %}</tbody>
 </table></div></div>
 {% endblock %}
