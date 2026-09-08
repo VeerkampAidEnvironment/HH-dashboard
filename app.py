@@ -45,7 +45,6 @@ from db import (
     ensure_test_database,
     get_db,
     get_setting,
-    init_db,
     log_audit,
     register_db,
     set_setting,
@@ -59,6 +58,7 @@ from followup_survey import (
     build_survey,
     question_is_active,
     received_training_topics,
+    resolve_locked_answers,
     score_survey,
     validate_answers,
 )
@@ -186,7 +186,6 @@ def create_app(test_config=None):
     register_db(app)
     with app.app_context():
         connection = get_db()
-        init_db(connection)
         ensure_bootstrap_user(connection)
         ensure_care_structure(connection)
 
@@ -1641,7 +1640,7 @@ def followup_profile(record, raw: dict) -> dict[str, str]:
 
 
 def carry_forward_answers_by_record(connection, record_ids: list[int]) -> dict[int, dict[str, Any]]:
-    """Return the latest saved B13 quantity/unit group for each requested beneficiary."""
+    """Return the latest saved carry-forward answers for each requested beneficiary."""
     if not record_ids:
         return {}
     placeholders = ",".join("?" for _ in record_ids)
@@ -1653,18 +1652,15 @@ def carry_forward_answers_by_record(connection, record_ids: list[int]) -> dict[i
     carried: dict[int, dict[str, Any]] = {}
     for row in rows:
         record_id = row["record_id"]
-        if record_id in carried:
-            continue
         try:
             payload = json.loads(row["answers"])
         except (TypeError, ValueError, json.JSONDecodeError):
             continue
-        if "b13_synthetic_fertilizer" not in payload:
-            continue
-        carried[record_id] = {
-            question_id: payload.get(question_id, {}).get("answer", "")
-            for question_id in CARRY_FORWARD_QUESTION_IDS
-        }
+        record_answers = carried.setdefault(record_id, {})
+        for question_id in CARRY_FORWARD_QUESTION_IDS:
+            if question_id not in record_answers and question_id in payload:
+                record_answers[question_id] = payload[question_id].get("answer", "")
+    carried = {record_id: answers for record_id, answers in carried.items() if answers}
     return carried
 
 
@@ -2240,12 +2236,15 @@ def save_scored_followup(
     if any(topic not in due_topics for topic in topics):
         return False, "One or more training types are no longer due. Reload the survey and try again."
 
+    raw = json.loads(record["raw_data"])
+    training_history = received_training_topics(raw)
     answers: dict[str, Any] = {}
     answer_records: dict[str, dict[str, Any]] = {}
     pending_photos: dict[str, list[dict[str, Any]]] = {}
     seen_questions = set()
     for item in all_questions_for_topics(topics):
-        if item["id"] in seen_questions or item["type"] == "training_list":
+        if item["id"] in seen_questions or item["type"] == "training_list" \
+                or (item.get("training_topic") and item["training_topic"] not in training_history):
             continue
         seen_questions.add(item["id"])
         field_name = f"survey_answer__{item['id']}"
@@ -2279,9 +2278,30 @@ def save_scored_followup(
                 "type": item["type"],
             }
 
-    raw = json.loads(record["raw_data"])
+    answers = resolve_locked_answers(answers, topics)
+    for item in all_questions_for_topics(topics):
+        if item.get("locked_to") and question_is_active(item, answers):
+            answer_records[item["id"]] = {
+                "source_id": item["source_id"],
+                "question": item["label"],
+                "answer": answers[item["id"]],
+                "type": item["type"],
+            }
+
+    household_male = answers.get("a10_male")
+    household_female = answers.get("a10_female")
+    if household_male not in {None, ""} or household_female not in {None, ""}:
+        household_total = (household_male or 0) + (household_female or 0)
+        answers["a10_total"] = household_total
+        answer_records["a10_total"] = {
+            "source_id": "A10.1",
+            "question": "People living in the household - total (calculated)",
+            "answer": household_total,
+            "type": "calculated",
+        }
+
     validation_error = validate_answers(
-        answers, topics, training_history=received_training_topics(raw),
+        answers, topics, training_history=training_history,
     )
     if validation_error:
         return False, validation_error
@@ -2339,7 +2359,7 @@ def save_scored_followup(
         "household_total": answers.get("a10_total"),
         "household_male": answers.get("a10_male"),
         "household_female": answers.get("a10_female"),
-        "training_history": received_training_topics(raw),
+        "training_history": training_history,
     })
 
     household = results.get("household_outcome") or {}

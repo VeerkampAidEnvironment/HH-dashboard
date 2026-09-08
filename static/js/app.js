@@ -21,9 +21,13 @@ window.arfsaPackageStopTriggers = ({ rules = [], valueFor, orderFor }) => {
       if (rule.operator === "equals") triggered = value === rule.value;
       else if (rule.operator === "contains") triggered = Array.isArray(value) && value.includes(rule.value);
       else if (rule.operator === "not_in") triggered = !(rule.values || []).includes(value);
-      else if (rule.operator === "count_excluding_lte") {
-        triggered = Array.isArray(value)
-          && new Set(value.filter((item) => !(rule.excluded || []).includes(item))).size <= Number(rule.threshold);
+      else if (rule.operator === "crop_gate_failed") {
+        const eligible = new Set(Array.isArray(value)
+          ? value.filter((item) => !(rule.excluded || []).includes(item))
+          : []);
+        const representedGroups = Object.values(rule.groups || {})
+          .filter((crops) => crops.some((crop) => eligible.has(crop))).length;
+        triggered = eligible.size < Number(rule.min_crops) || representedGroups < Number(rule.min_groups);
       } else if (rule.operator === "number_gte") triggered = Number(value) >= Number(rule.threshold);
       else if (rule.operator === "number_gte_if") {
         triggered = Number(value) >= Number(rule.threshold)
@@ -220,6 +224,16 @@ document.addEventListener("DOMContentLoaded", () => {
         orderFor: (questionId) => Number(form.querySelector(`[data-survey-question="${CSS.escape(questionId)}"]`)?.dataset.sectionOrder || 0),
       });
       questionNodes.forEach((node) => {
+        if (node.dataset.lockedTo) {
+          const lockedValue = valueFor(node.dataset.lockedTo);
+          node.querySelectorAll('input[type="radio"], input[type="checkbox"]').forEach((control) => {
+            control.checked = Array.isArray(lockedValue) ? lockedValue.includes(control.value) : control.value === lockedValue;
+          });
+          const select = node.querySelector("select");
+          if (select) select.value = lockedValue;
+          const input = node.querySelector('input:not([type="radio"]):not([type="checkbox"]), textarea');
+          if (input) input.value = lockedValue;
+        }
         let condition = null;
         let skipCondition = null;
         try { condition = node.dataset.condition ? JSON.parse(node.dataset.condition) : null; } catch (_error) { condition = null; }
@@ -232,7 +246,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const visible = conditionMatches(condition) && !(skipCondition && conditionMatches(skipCondition)) && !stopped;
         node.hidden = !visible;
         node.querySelectorAll("input, select, textarea").forEach((control) => {
-          control.disabled = !visible;
+          control.disabled = !visible || Boolean(node.dataset.lockedTo);
           if (!visible) control.required = false;
           else if (node.dataset.required === "true" && control.type !== "checkbox") {
             if (control.type !== "radio" || control === node.querySelector("input[type=radio]")) control.required = true;
@@ -392,23 +406,6 @@ document.addEventListener("DOMContentLoaded", () => {
           const empty = Array.isArray(value) ? value.length === 0 : value === "";
           if (node.dataset.required === "true" && empty && !node.classList.contains("question-training_list")) {
             return failQuestion(node, `Complete required item ${node.querySelector(".question-copy > span")?.textContent || "in this package"}.`);
-          }
-        }
-        const householdTotalValue = valueFor("a10_total");
-        const householdMaleValue = valueFor("a10_male");
-        const householdFemaleValue = valueFor("a10_female");
-        if (householdTotalValue !== "") {
-          const householdTotal = Number(householdTotalValue);
-          const householdMale = householdMaleValue === "" ? 0 : Number(householdMaleValue);
-          const householdFemale = householdFemaleValue === "" ? 0 : Number(householdFemaleValue);
-          if (householdMale > householdTotal) {
-            return failQuestion(step.querySelector('[data-survey-question="a10_male"]'), "A10.2 cannot be greater than the total household size in A10.1.");
-          }
-          if (householdFemale > householdTotal) {
-            return failQuestion(step.querySelector('[data-survey-question="a10_female"]'), "A10.3 cannot be greater than the total household size in A10.1.");
-          }
-          if (householdMaleValue !== "" && householdFemaleValue !== "" && householdMale + householdFemale > householdTotal) {
-            return failQuestion(step.querySelector('[data-survey-question="a10_total"]'), "A10.2 and A10.3 together cannot be greater than the total household size in A10.1.");
           }
         }
         const damage = Number(valueFor("b10_1_damage"));

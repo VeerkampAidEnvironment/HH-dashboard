@@ -201,6 +201,12 @@
 .result-kpis article { padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }
 .result-kpis strong { display: block; margin-top: 5px; font-size: 20px; }
 .action-decision-list { display: grid; gap: 12px; }
+.failure-comment-list { display: grid; gap: 10px; }
+.failure-comment-card { padding: 14px 16px; border: 1px solid #ecc7c2; border-radius: 11px; background: #fff8f7; }
+.failure-comment-card > div { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: baseline; }
+.failure-comment-card > div strong { color: #8c3228; }
+.failure-comment-card > div span { color: var(--muted); font-size: 12px; font-weight: 700; }
+.failure-comment-card p { margin: 7px 0 0; }
 .action-decision-card { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(240px, .8fr); gap: 22px; align-items: end; padding: 16px; border: 1px solid var(--line); border-radius: 11px; }
 .action-decision-card h3 { margin: 0 0 7px; }
 .action-decision-card p { margin: 8px 0; color: var(--muted); }

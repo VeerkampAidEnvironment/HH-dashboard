@@ -14,7 +14,7 @@ from statistics import mean
 from typing import Any, Iterable
 
 
-SURVEY_VERSION = "2026-09-02-r12"
+SURVEY_VERSION = "2026-09-08-r21"
 
 PIP = "Household Resource Mapping (PIP)"
 SUSTAINABLE = "Sustainable/Regenerative Agriculture"
@@ -27,17 +27,27 @@ POULTRY = "Poultry Mgt and Vaccination"
 
 TRAINING_TOPICS = [PIP, SWC, KITCHEN, BIO_INPUTS, POULTRY, FINANCIAL, AGROFORESTRY, SUSTAINABLE]
 SECTION_B_TOPICS = {SUSTAINABLE, SWC, AGROFORESTRY, BIO_INPUTS}
-CARRY_FORWARD_QUESTION_IDS = ("b13_synthetic_fertilizer", "b13_unit", "b13_unit_other")
+CARRY_FORWARD_QUESTION_IDS = (
+    "b13_synthetic_fertilizer", "b13_unit", "b13_unit_other",
+    "e5_savings", "e5_savings_share",
+)
 
-TRAINING_FEEDBACK_OPTIONS = [
-    {"value": "Bio-inputs", "label": "Bio-inputs", "training_topic": BIO_INPUTS},
-    {"value": "Regenerative / Sustainable Agriculture", "label": "Regenerative / Sustainable Agriculture", "training_topic": SUSTAINABLE},
-    {"value": "Tree Planting & Agroforestry", "label": "Tree Planting & Agroforestry", "training_topic": AGROFORESTRY},
-    {"value": "SWC", "label": "SWC", "training_topic": SWC},
-    {"value": "Kitchen Garden", "label": "Kitchen Garden", "training_topic": KITCHEN},
-    {"value": "Financial Literacy", "label": "Financial Literacy", "training_topic": FINANCIAL},
-    {"value": "Household Resource Mapping", "label": "Household Resource Mapping", "training_topic": PIP},
-    {"value": "Poultry Management & Vaccination", "label": "Poultry Management & Vaccination", "training_topic": POULTRY},
+HELPFULNESS_OPTIONS = [
+    {"value": "none", "label": "Didn't help"},
+    {"value": "little", "label": "Helped a little"},
+    {"value": "somewhat", "label": "Helped somewhat"},
+    {"value": "lot", "label": "Helped a lot"},
+    {"value": "very_much", "label": "Helped very much"},
+]
+I1_RATING_QUESTIONS = [
+    ("I1a", "i1_bio_inputs", "Bio-inputs", BIO_INPUTS),
+    ("I1b", "i1_sustainable", "Regenerative / Sustainable Agriculture", SUSTAINABLE),
+    ("I1c", "i1_agroforestry", "Tree Planting & Agroforestry", AGROFORESTRY),
+    ("I1d", "i1_swc", "SWC", SWC),
+    ("I1e", "i1_kitchen", "Kitchen Garden", KITCHEN),
+    ("I1f", "i1_financial", "Financial Literacy", FINANCIAL),
+    ("I1g", "i1_pip", "Household Resource Mapping", PIP),
+    ("I1h", "i1_poultry", "Poultry Mgt & Vaccination", POULTRY),
 ]
 
 
@@ -88,6 +98,8 @@ def question(
     editable: bool = False,
     skip_condition: dict[str, Any] | None = None,
     guide_parent: str | None = None,
+    locked_to: str | None = None,
+    training_topic: str | None = None,
 ) -> dict[str, Any]:
     item: dict[str, Any] = {
         "source_id": source_id,
@@ -126,6 +138,10 @@ def question(
         item["skip_condition"] = skip_condition
     if guide_parent:
         item["guide_parent"] = guide_parent
+    if locked_to:
+        item["locked_to"] = locked_to
+    if training_topic:
+        item["training_topic"] = training_topic
     return item
 
 
@@ -141,17 +157,31 @@ def contains(question_id: str, value: Any) -> dict[str, Any]:
     return {"question": question_id, "operator": "contains", "value": value}
 
 
-FOOD_GROUPS = options(
-    ("dark_leafy", "Dark green leafy vegetables"),
-    ("other_vegetables", "Other vegetables"),
-    ("beans_pulses", "Beans and pulses"),
-    ("roots_tubers", "Roots and tubers"),
-    ("cereals", "Cereals and grains"),
-    ("bananas", "Bananas or plantain"),
-    ("fruit", "Fruit"),
-    ("coffee", "Coffee"),
-    ("cash_crop", "other cash crops (Tea, Sugarcane, Cocoa, Cotton, Tobacco)"),
+CROP_OPTIONS = options(
+    ("apples", "Apples"), ("avocado", "Avocado"), ("bananas_matooke", "Bananas/matooke"),
+    ("barley", "Barley"), ("beans", "Beans"), ("black_nightshade", "Black nightshade"),
+    ("cabbage", "Cabbage"), ("carrots", "Carrots"), ("cassava", "Cassava"),
+    ("coffee", "Coffee"), ("cow_peas", "Cow peas"), ("dodo_amaranth", "Dodo/amaranth"),
+    ("egg_plants", "Egg plants"), ("garlic", "Garlic"), ("groundnuts", "Groundnuts"),
+    ("guavas", "Guavas"), ("irish_potatoes", "Irish potatoes"), ("jackfruits", "Jackfruits"),
+    ("lemons", "Lemons"), ("loquat", "Loquat"), ("maize", "Maize"), ("mangoes", "Mangoes"),
+    ("millet", "Millet"), ("nakati", "Nakati"), ("onions", "Onions"), ("oranges", "Oranges"),
+    ("sorghum", "Sorghum"), ("soya_bean", "Soya bean"), ("spider_plant", "Spider plant"),
+    ("spinach", "Spinach"), ("sukuma_wiki", "Sukuma wiki"),
+    ("sweet_potatoes", "Sweet potatoes"), ("tomatoes", "Tomatoes"),
+    ("watermelon", "Watermelon"), ("yams", "Yams"),
 )
+CROP_OPTIONS_WITH_OTHER = CROP_OPTIONS + options(("other", "Other (specify)"))
+CASH_ONLY_CROPS = {"coffee", "barley"}
+CROP_GROUPS = {
+    "cereals_grains": {"maize", "sorghum", "millet"},
+    "roots_tubers": {"irish_potatoes", "sweet_potatoes", "yams", "cassava"},
+    "bananas_plantain": {"bananas_matooke"},
+    "beans_pulses": {"beans", "cow_peas", "groundnuts", "soya_bean"},
+    "dark_green_leafy": {"sukuma_wiki", "dodo_amaranth", "black_nightshade", "spider_plant", "spinach", "nakati"},
+    "other_vegetables": {"cabbage", "onions", "tomatoes", "egg_plants", "carrots", "garlic"},
+    "fruit": {"mangoes", "jackfruits", "oranges", "lemons", "apples", "loquat", "guavas", "avocado", "watermelon"},
+}
 
 
 SURVEY_SECTIONS: list[dict[str, Any]] = [
@@ -172,7 +202,7 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
                 "Direct Reach", "Indirect Reach"), profile_key="beneficiary_type", required=False),
             question("A8.2", "a8_contact", "Contact of the beneficiary", "readonly", profile_key="phone", required=False, editable=True),
             question("A8.3", "a8_gender", "Gender", "choice", options(
-                ("F", "F – Female"), ("M", "M – Male"), ("D", "D – Diverse")), profile_key="sex", required=False),
+                ("F", "F – Female"), ("M", "M – Male")), profile_key="sex", required=False),
             question("A8.4", "a8_pwd", "Person with a disability (PWD)", "choice", YES_NO, profile_key="pwd", required=False),
             question("A8.5", "a8_age_group", "Age group", "choice", options(
                 ("Y", "Youth"), ("A", "Adult"), ("E", "Elderly")), profile_key="age_group", required=False),
@@ -182,7 +212,6 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
                 ("secondary_o", "Secondary O-level"), ("secondary_a", "Secondary A-level"),
                 ("certificate", "Certificate"), ("diploma", "Diploma"), ("degree", "Degree"),
                 ("other", "Other")), required=False, profile_key="education"),
-            question("A10.1", "a10_total", "People living in the household - total", "number", required=False, min_value=1, integer=True),
             question("A10.2", "a10_male", "People living in the household - male", "number", required=False, min_value=0, integer=True),
             question("A10.3", "a10_female", "People living in the household - female", "number", required=False, min_value=0, integer=True),
             question("A11", "a11_trainings", "Trainings received", "training_list", required=False,
@@ -193,15 +222,21 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
         "id": "B", "title": "Regenerative / sustainable farming practices", "topics": sorted(SECTION_B_TOPICS),
         "intro": "Conduct this as one continuous walking interview. Physical observation takes precedence over self-report.",
         "questions": [
-            question("B1", "b1_food_groups", "Walking the plot, which crops or species are planted?", "multi", FOOD_GROUPS),
+            question("B1", "b1_food_groups", "Walking the plot, which of the following crops do you see planted? (tick all that apply)", "multi", CROP_OPTIONS_WITH_OTHER),
+            question("B1.a", "b1_other_crop", "Specify the other crop", "text",
+                condition=contains("b1_food_groups", "other"), guide_parent="b1_food_groups"),
             question("B2", "b5_preparation", "Looking at the soil surface, how was this plot prepared?", "choice", options(
                 ("fully_tilled", "Fully tilled"), ("minimum", "Minimally tilled - 1 or 2 times per year"),
                 ("holes", "Planting holes or strips"), ("undisturbed", "Undisturbed between rows"))),
+            question("B2.2", "b5_2_extent", "Estimate what share of the plot uses the preparation method", "choice", options(
+                ("whole", "Whole plot — no full-tillage sections visible"),
+                ("most", "Most of the plot, small full-tillage sections remain"),
+                ("half", "About half the plot"),
+                ("less_than_half", "Less than half, or isolated patches only")),
+                condition=one_of("b5_preparation", ["minimum", "holes", "undisturbed"]), skip_condition=eq("b5_preparation", "fully_tilled")),
             question("B2.1", "b5_1_old_marks", "Are old furrow or ridge marks visible?", "choice", options(
                 ("none", "No old marks"), ("visible", "Old furrows visible - recent transition"),
                 ("new_plot", "Newly opened plot; no previous cultivation to compare")), condition=one_of("b5_preparation", ["minimum", "holes", "undisturbed"]), skip_condition=eq("b5_preparation", "fully_tilled")),
-            question("B2.2", "b5_2_extent", "Is this preparation method used across the whole plot?", "choice", options(
-                ("whole", "Whole plot"), ("part", "Part of the plot only"), ("varies", "Varies across sections")), condition=one_of("b5_preparation", ["minimum", "holes", "undisturbed"]), skip_condition=eq("b5_preparation", "fully_tilled")),
             question("B3", "b2_cover", "What is mostly covering the soil surface between plants?", "choice", options(
                 ("bare", "Bare soil"), ("mulch", "Crop residue or mulch"),
                 ("living", "Living ground cover"), ("other", "Other"))),
@@ -226,8 +261,11 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
             question("B5", "b4_structures", "Which soil and water conservation structures are visible?", "multi", options(
                 ("grass", "Grass strips"), ("trash", "Trash lines"), ("stone", "Stone bunds"),
                 ("trenches", "Trenches"), ("terracing", "Bench terracing"), ("none", "None")), exclusive_values=["none"], skip_condition=eq("b5_preparation", "fully_tilled")),
-            question("B5.1", "b4_1_width", "Do the structures run across the full width of the plot?", "choice", options(
-                ("full", "Full width"), ("partial", "Partial"), ("single", "Single structure only")),
+            question("B5.1", "b4_1_width", "What share of the plot's width is covered by the structure(s)?", "choice", options(
+                ("full", "Full width — reaches both edges of the plot"),
+                ("most", "Most of the width, small uncovered sections remain"),
+                ("half", "About half the width"),
+                ("less_than_half", "Less than half, or a short isolated section only")),
                 condition={"question": "b4_structures", "operator": "has_any_except", "value": "none"}, skip_condition=eq("b5_preparation", "fully_tilled")),
             question("B5.2", "b4_2_contour", "Do the structures follow the contour of the land?", "choice", options(
                 ("yes", "Yes"), ("no", "No"), ("unsure", "Unsure")),
@@ -237,19 +275,23 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
                 ("frequent_full", "Frequent full-bed hoeing"), ("herbicide", "Herbicide")), skip_condition=eq("b5_preparation", "fully_tilled")),
             question("B7", "b7_arrangement", "How are crops arranged on this plot?", "choice", options(
                 ("single", "Single crop in uniform rows"), ("mixed", "Mixed crops interplanted"), ("other", "Other"))),
-            question("B8", "b8_trees", "Are trees or shrubs within or bordering this plot?", "choice", YES_NO),
-            question("B8.1", "b8_1_under", "Is anything planted directly next to or underneath the trees?", "choice", YES_NO, condition=eq("b8_trees", "yes")),
-            question("B8.2", "b8_2_arrangement", "How are the trees arranged?", "choice", options(
-                ("boundary", "Boundary"), ("compound", "Compound"), ("intercropping", "Intercropping"),
-                ("woodlot", "Woodlots"), ("other", "Other")), condition=eq("b8_trees", "yes")),
+            question("B8", "b8_trees", "Which of the following describe the trees or shrubs on this plot? (tick all that apply)", "multi", options(
+                ("boundary", "Along the plot boundary"),
+                ("compound", "Near the homestead / compound"),
+                ("intercropping", "Interspersed among the crops (intercropped)"),
+                ("woodlot", "In a dedicated woodlot or block"),
+                ("underplanting", "Something planted directly next to or underneath the trees"),
+                ("other", "Other"),
+                ("none", "No trees or shrubs present (select only if none of the above apply)")),
+                exclusive_values=["none"]),
             question("B9", "b9_traces", "Can a previous crop be identified from residue, stubble or physical traces?", "choice", options(
                 ("identified", "Yes - previous crop identified"), ("unidentified", "Traces visible, crop not identifiable"),
                 ("none", "No traces of a previous crop"))),
-            question("B9.a", "b9_previous_crop", "Name the previous crop", "text", condition=eq("b9_traces", "identified")),
+            question("B9.a", "b9_previous_crop", "Select the previous crop", "choice", CROP_OPTIONS, condition=eq("b9_traces", "identified")),
             question("B9.b", "b9_differs", "Is the identified crop different from the current crop?", "choice", YES_NO, condition=eq("b9_traces", "identified")),
             question("B9.1", "b9_1_farmer", "Was a different crop grown here last season? [Ask the producer]", "choice", options(
                 ("yes", "Yes"), ("no", "No"), ("unsure", "Unsure"))),
-            question("B10", "b10_pest_method", "Do you see pest damage or a pest-management method in use?", "choice", options(
+            question("B10", "b10_pest_method", "Which pest-management method can be observed?", "choice", options(
                 ("biological", "Biological or manual method"), ("both", "Both synthetic and biological/manual"),
                 ("synthetic", "Synthetic pesticide only"), ("none", "No evidence"))),
             question("B10.1", "b10_1_damage", "Of 10 plants inspected, how many show pest or disease damage?", "number", condition=one_of("b10_pest_method", ["biological", "both"]), unit="/ 10", max_value=10, integer=True),
@@ -258,12 +300,15 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
                 ("increased", "Increased"), ("same", "Stayed the same"), ("reduced", "Reduced"),
                 ("never_used", "Did not use chemical pesticide before")), condition=one_of("b10_pest_method", ["biological", "both"])),
             question("B11", "b11_inputs", "Which soil-fertility inputs have physical evidence?", "multi", options(
-                ("manure", "Manure or compost visible"), ("heap", "Compost heap or manure pile present"),
-                ("bio", "Bio-fertilizer preparation materials present"), ("synthetic", "Empty synthetic-fertilizer bags or containers"),
+                ("manure", "Manure or compost visible"),
+                ("bio", "Bio-fertilizer preparation materials present"), ("synthetic", "Traces of synthetic fertilizer (bags, containers ...)"),
                 ("none", "None")), exclusive_values=["none"], skip_condition=eq("b5_preparation", "fully_tilled")),
-            question("B11.1", "b11_1_location", "Where is the manure or compost mostly applied?", "choice", options(
-                ("whole", "Across the whole plot evenly"), ("holes", "In planting holes or around plants"),
-                ("section", "One section only")), condition=contains("b11_inputs", "manure"), skip_condition=eq("b5_preparation", "fully_tilled")),
+            question("B11.1", "b11_1_location", "What share of the plot receives this manure or compost?", "choice", options(
+                ("whole", "Whole plot, evenly"),
+                ("most", "Most of the plot, some sections uncovered"),
+                ("half", "About half the plot"),
+                ("section", "One section only, or a small isolated area")),
+                condition=contains("b11_inputs", "manure"), skip_condition=eq("b5_preparation", "fully_tilled")),
             question("B11.2", "b11_2_method", "How is the fertility input mostly applied?", "choice", options(
                 ("surface", "Spread on the surface"), ("mixed", "Dug or mixed into soil"), ("holes", "Placed in planting holes"),
                 ("liquid_base", "Liquid poured at plant base"), ("liquid_leaf", "Liquid sprayed on leaves"),
@@ -271,12 +316,18 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
             question("B12", "b12_macrofauna", "In a 30 cm x 30 cm x 30 cm quadrant, how many earthworms or other macrofauna are found?", "number", integer=True, help_text="Enter the observed count freely: 0, 1, 2 … 10 or more.", skip_condition=eq("b5_preparation", "fully_tilled")),
             question("B13", "b13_synthetic_fertilizer", "Amount of synthetic fertilizer applied last season", "number", required=False, carry_forward=True, help_text="Comparison value only; not scored. Enter the amount, then select its unit."),
             question("B13.1", "b13_unit", "Unit used for the synthetic fertilizer amount", "choice", options(
-                ("kilogram", "Kilogram"), ("liter", "Liter"), ("bag", "Bag"), ("other", "Other (free text)")),
-                condition={"question": "b13_synthetic_fertilizer", "operator": "not_empty"}, carry_forward=True,
+                ("kilogram", "Kilogram"), ("liter", "Liter"), ("bag", "Bag"), ("basin", "Basin"),
+                ("other", "Other (free text)")), carry_forward=True,
                 guide_parent="b13_synthetic_fertilizer"),
             question("B13.1a", "b13_unit_other", "Specify the other unit", "text",
                 condition=eq("b13_unit", "other"), carry_forward=True, guide_parent="b13_synthetic_fertilizer"),
-            question("B14", "b14_manure_loads", "Wheelbarrow-loads of manure or compost applied last season", "number", required=False, integer=True, help_text="Comparison value only; not scored."),
+            question("B14", "b14_manure_loads", "Amount of manure or compost applied last season", "number", required=False, help_text="Comparison value only; not scored. Enter the amount, then select its unit."),
+            question("B14.1", "b14_unit", "Unit used for the manure or compost amount", "choice", options(
+                ("kilogram", "Kilogram"), ("liter", "Liter"), ("bag", "Bag"), ("basin", "Basin"),
+                ("other", "Other (free text)")),
+                guide_parent="b14_manure_loads", locked_to="b13_unit"),
+            question("B14.1a", "b14_unit_other", "Specify the other unit", "text",
+                condition=eq("b13_unit", "other"), guide_parent="b14_manure_loads", locked_to="b13_unit_other"),
             question("B15", "b15_gap", "Main gap observed", "textarea", required=False),
             question("B16", "b16_advice", "Immediate recommendation or advice given", "textarea", required=False),
             question("B18", "b18_photos", "Upload photos of the best or weakest practice", "photos", required=False, help_text="You can add several photos."),
@@ -300,9 +351,8 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
     {
         "id": "D", "title": "Kitchen Garden and Vegetable Growing", "topics": [KITCHEN],
         "intro": "For each food group, indicate: own production, bought, both, or not consumed.",
-        "instruction": "D1. For each food group, indicate: own production, bought, both, or not consumed.",
         "questions": [
-            question("D1a", "d1_dark_leafy", "Dark green leafy vegetables (dodo, nightshade, sukuma, spider plant)", "choice", FOOD_SOURCE_OPTIONS, required=False, help_text="Food-source inventory; not scored."),
+            question("D1a", "d1_dark_leafy", "Dark green leafy vegetables (dodo, nightshade, sukuma, spider plant)", "choice", FOOD_SOURCE_OPTIONS, required=False, help_text="D1. For each food group, indicate: own production, bought, both, or not consumed. Food-source inventory; not scored."),
             question("D1b", "d1_other_vegetables", "Other vegetables (tomato, cabbage, onion, eggplant)", "choice", FOOD_SOURCE_OPTIONS, required=False, guide_parent="d1_dark_leafy"),
             question("D1c", "d1_beans_pulses", "Beans & pulses", "choice", FOOD_SOURCE_OPTIONS, required=False, guide_parent="d1_dark_leafy"),
             question("D1d", "d1_roots_tubers", "Roots and tubers (cassava, potato)", "choice", FOOD_SOURCE_OPTIONS, required=False, guide_parent="d1_dark_leafy"),
@@ -316,9 +366,14 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
             question("D3", "d3_weeds", "Are weeds taller than the vegetable plants?", "choice", options(
                 ("no", "No"), ("patches", "Yes, in patches"), ("most", "Yes, across most of the garden"))),
             question("D4", "d4_unhealthy", "Of 10 vegetable plants, how many are wilted, yellowing or dead?", "number", unit="/ 10", max_value=10, integer=True),
-            question("D5", "d5_structures", "Which kitchen-garden structures are visible?", "multi", options("Sack", "Keyhole wall", "Raised bed edge", "Fencing"), required=False),
-            question("D6", "d6_seed_storage", "Is seed stored for next season, and can it be seen?", "choice", options(
-                ("visible", "Yes, storage container or hanging bundle visible"), ("claimed", "Beneficiary says yes, nothing visible"), ("no", "No"))),
+            question("D5", "d5_structures", "Which kitchen-garden structures are visible?", "multi", options(
+                ("keyhole", "Keyhole wall/garden"),
+                ("raised_bed", "Raised bed edge"),
+                ("fencing", "Fencing"),
+                ("vertical", "vertical gardens"),
+                ("container", "sack/bucket /bag/tire gardening")), required=False),
+            question("D6", "d6_seed_storage", "Is seed from this garden stored for the next season?", "choice", options(
+                ("visible", "Yes, storage container or hanging bundle visible"), ("claimed", "Farmer says yes, nothing visible"), ("no", "No"))),
             question("D7", "d7_gap", "Main gap observed", "textarea", required=False),
             question("D8", "d8_advice", "Immediate recommendation or advice", "textarea", required=False),
             question("D10", "d10_photos", "Upload photos of the best or weakest kitchen-garden practice", "photos", required=False, help_text="You can add several photos."),
@@ -327,17 +382,33 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
     {
         "id": "E", "title": "Financial Literacy", "topics": [FINANCIAL],
         "questions": [
-            question("E1", "e1_budget", "Does the household have a budget, plan or financial record?", "choice", options(
-                ("shown", "Yes, shown"), ("not_shown", "Says yes, not shown"), ("no", "No"))),
-            question("E2", "e2_decisions", "Who makes financial decisions in the household?", "choice", options(
+            question("E1", "e1_budget", "Ask to see the household's financial record book, budget, or log, in any format.", "choice", options(
+                ("complete", "Shown — contains entries for both income and expenses"),
+                ("incomplete", "Shown — but incomplete (only one of income/expenses, or sporadic entries)"),
+                ("claimed", "Claimed to exist, not shown"),
+                ("none", "None kept"))),
+            question("E1.1", "e1_frequency", "Based on the dates recorded, how frequently do entries appear?", "choice", options(
+                ("monthly", "At least monthly, consistently"),
+                ("gaps", "Present but with gaps of several months"),
+                ("rare", "Rare — one or two isolated entries only")), condition=one_of("e1_budget", ["complete", "incomplete"])),
+            question("E1.2", "e1_12_months", "Are there dated entries visible reaching back at least 12 months?", "choice", options(
+                ("yes", "Yes"), ("no", "No — book is more recent, or has gaps")),
+                condition=one_of("e1_budget", ["complete", "incomplete"])),
+            question("E1.2.1", "e1_income_change", "Compare the earliest entry from around 12 months ago to the most recent entry. Is there a visible increase in recorded income?", "choice", options(
+                ("increase", "Clear increase"),
+                ("same", "About the same, or unclear from the entries"),
+                ("decrease", "Decrease")), condition=eq("e1_12_months", "yes")),
+            question("E2", "e2_decisions", "Who makes financial decisions in your household — for example, the last major purchase?", "choice", options(
                 ("respondent", "Respondent alone"), ("spouse", "Spouse alone"), ("both", "Both"),
-                ("single", "Single-adult household - not applicable"))),
-            question("E3", "e3_within_means", "Does the household live within its means?", "choice", YES_NO),
+                ("single", "Single-adult household — no second adult"))),
+            question("E3", "e3_within_means", "Do you live within your means (spending within what you earn or have)?", "choice", YES_NO),
             question("E4", "e4_invested", "Were investments made in the last 12 months?", "choice", YES_NO),
-            question("E4.1", "e4_1_investments", "What was invested in since training?", "multi", options("Farming", "Land", "Business", "Other"), condition=eq("e4_invested", "yes")),
-            question("E5", "e5_savings", "Average amount saved per month", "number", unit="UGX", integer=True, step_value=100,
-                     help_text="Enter the amount in steps of UGX 100."),
-            question("E6", "e6_saving_place", "Where is part of the income saved?", "choice", options(
+            question("E4.1", "e4_1_investments", "What have you invested in since the training?", "multi", options("Farming", "Land", "Business", "Other"), condition=eq("e4_invested", "yes")),
+            question("E5", "e5_savings", "How much do you save on average per month?", "number", unit="UGX", integer=True, step_value=100, carry_forward=True,
+                     help_text="Enter the average monthly amount in steps of UGX 100. Saved for future visits."),
+            question("E5.1", "e5_savings_share", "What share of income is being saved?", "number", unit="%", max_value=100, carry_forward=True,
+                     help_text="Enter the percentage of income saved. Saved for future visits.", guide_parent="e5_savings"),
+            question("E6", "e6_saving_place", "Where do you save part of your income?", "choice", options(
                 ("bank", "Bank / SACCO"), ("group", "Saving group"), ("mobile", "Mobile money"),
                 ("home", "At home"), ("other", "Other"))),
             question("E7", "e7_records", "Are income and expense records kept?", "choice", YES_NO),
@@ -346,8 +417,8 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
             question("E8.1", "e8_1_frequency", "How often are the records updated?", "choice", options(
                 ("never", "Never"), ("daily", "Daily"), ("weekly", "Weekly"), ("monthly", "Monthly"),
                 ("annually", "Annually"), ("other", "Other")), condition=one_of("e8_book", ["shown", "not_shown"])),
-            question("E8.2", "e8_2_help", "How has record keeping helped?", "multi", options(
-                "Track income and expenses", "Improve planning and budgeting", "Make better investment decisions", "Calculate profit or loss", "Other"), required=False, condition=one_of("e8_book", ["shown", "not_shown"])),
+            question("E8.2", "e8_2_help", "How has record keeping helped you?", "multi", options(
+                "Easy tracking of income and expenses", "Improved planning and budgeting", "Better investment decisions", "To calculate profit or loss", "Other"), required=False, condition=one_of("e8_book", ["shown", "not_shown"])),
             question("E9", "e9_gap", "Main gap observed", "textarea", required=False),
             question("E10", "e10_advice", "Immediate recommendation or advice", "textarea", required=False),
             question("E12", "e12_photos", "Upload photos of the financial record or practice", "photos", required=False, help_text="You can add several photos."),
@@ -384,19 +455,35 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
             question("H1", "h1_radio", "Do you listen to the radio?", "choice", YES_NO),
             question("H1.1", "h1_1_hh_show", "Have you listened to a Harvesting Health radio talk show?", "choice", YES_NO, condition=eq("h1_radio", "yes")),
             question("H1.2", "h1_2_practised", "Have you practised something learned from it?", "choice", YES_NO, condition=eq("h1_1_hh_show", "yes")),
-            question("H1.2a", "h1_2_example", "What did you practise?", "textarea", condition=eq("h1_2_practised", "yes"), required=False),
+            question("H1.3", "h1_3_practised", "What did you practise? (tick all that apply)", "multi", options(
+                ("crop_diversification", "Crop diversification / mixed cropping"),
+                ("soil_water_conservation", "Soil and water conservation structures (grass strips, trenches, bunds)"),
+                ("reduced_tillage", "Reduced tillage / minimum disturbance"),
+                ("pest_disease_management", "Pest and disease management"),
+                ("soil_fertility", "Soil fertility / manure and compost use"),
+                ("pip", "Household resource mapping (PIP)"),
+                ("kitchen_garden", "Kitchen garden / vegetable growing"),
+                ("financial_literacy", "Financial literacy / saving and budgeting"),
+                ("poultry_management", "Poultry management"),
+                ("tree_nursery", "Tree nursery establishment")),
+                condition=eq("h1_2_practised", "yes"), required=False,
+                help_text="Narrative only; not scored."),
         ],
     },
     {
         "id": "I", "title": "Beneficiary Feedback on Trainings", "always": True,
+        "intro": "I1 is shown automatically for each training the farmer received. These ratings are not scored.",
         "questions": [
-            question("I1", "i1_helpful", "Which training topics helped the most? Select up to two.", "multi",
-                     TRAINING_FEEDBACK_OPTIONS, max_selections=2),
+            *[
+                question(source_id, question_id, f"{label}: How much has this training helped you?", "choice",
+                         HELPFULNESS_OPTIONS, training_topic=training_topic)
+                for source_id, question_id, label, training_topic in I1_RATING_QUESTIONS
+            ],
             question("I2", "i2_change", "What is the biggest change noticed since starting these practices?", "choice", options(
                 "More harvest / yield", "More food variety at home", "Spending less on inputs", "Less soil erosion / land damage",
                 "Better animal / poultry health", "Saving more money", "No noticeable change yet", "Other")),
             question("I3", "i3_improve", "What would make the trainings more useful?", "choice", options(
-                "More hands-on demonstrations", "More frequent follow-up visits", "Materials in local language",
+                "More hands-on demonstrations", "More frequent follow-up visits", "Provide materials in local language",
                 "Cover new or different topics", "Nothing - satisfied as is", "Other")),
             question("Consent", "consent", "Permission received to document and share practices for learning and communication", "consent", options(("yes", "Permission received"))),
         ],
@@ -419,8 +506,6 @@ QUESTION_PACKAGE_KEYS = {
     "b4_2_contour": ["erosion_water"], "b6_weeds": ["reduced_disturbance"],
     "b7_arrangement": ["crop_diversification", "pest_management"],
     "b8_trees": ["crop_diversification", "erosion_water", "soil_cover_fertility"],
-    "b8_1_under": ["crop_diversification", "erosion_water", "soil_cover_fertility"],
-    "b8_2_arrangement": ["crop_diversification", "erosion_water", "soil_cover_fertility"],
     "b9_traces": ["crop_diversification", "soil_cover_fertility", "pest_management"],
     "b9_previous_crop": ["crop_diversification", "soil_cover_fertility", "pest_management"],
     "b9_differs": ["crop_diversification", "soil_cover_fertility", "pest_management"],
@@ -432,8 +517,10 @@ QUESTION_PACKAGE_KEYS = {
 }
 
 PACKAGE_STOP_RULES = [
-    {"packages": ["crop_diversification"], "question": "b1_food_groups", "operator": "count_excluding_lte",
-     "excluded": ["coffee", "cash_crop"], "threshold": 2, "critical": True},
+    {"packages": ["crop_diversification"], "question": "b1_food_groups", "operator": "crop_gate_failed",
+     "excluded": sorted(CASH_ONLY_CROPS),
+     "groups": {group: sorted(crops) for group, crops in CROP_GROUPS.items()},
+     "min_crops": 3, "min_groups": 2, "critical": True},
     {"packages": ["reduced_disturbance", "erosion_water", "soil_cover_fertility"],
      "question": "b5_preparation", "operator": "equals", "value": "fully_tilled", "critical": True},
     {"packages": ["erosion_water"], "operator": "count_matches_gte", "threshold": 2, "critical": True,
@@ -449,7 +536,9 @@ PACKAGE_STOP_RULES = [
     {"packages": ["pest_management"], "question": "b10_2_severe", "operator": "number_gte",
      "threshold": 3, "critical": True},
     {"packages": ["pip"], "question": "c1_map_drawn", "operator": "equals", "value": "no", "critical": True},
+    {"packages": ["financial"], "question": "e1_income_change", "operator": "equals", "value": "decrease", "critical": True},
     {"packages": ["financial"], "question": "e3_within_means", "operator": "equals", "value": "no", "critical": True},
+    {"packages": ["financial"], "question": "e4_invested", "operator": "equals", "value": "no", "critical": True},
     {"packages": ["poultry"], "question": "f1_location", "operator": "equals", "value": "free", "critical": True},
     # No visible birds ends the poultry section but is not itself a critical failure.
     {"packages": ["poultry"], "question": "f1_location", "operator": "equals", "value": "none", "critical": False},
@@ -508,14 +597,13 @@ def build_survey(
     history_topics = [topic for topic in TRAINING_TOPICS if topic in set(history_source)]
     sections = survey_sections_for_topics(topics)
     for section in sections:
+        section["questions"] = [
+            item for item in section["questions"]
+            if not item.get("training_topic") or item["training_topic"] in history_topics
+        ]
         for item in section["questions"]:
             if item["type"] == "training_list":
                 item["display_values"] = history_topics
-            elif item["id"] == "i1_helpful":
-                item["options"] = [
-                    option for option in item["options"]
-                    if option["training_topic"] in history_topics
-                ]
             elif item.get("profile_key") or item.get("carry_forward"):
                 source_value = profile.get(item["profile_key"], "") if item.get("profile_key") else previous_answers.get(item["id"], "")
                 prefill = str(source_value if source_value is not None else "").strip()
@@ -574,8 +662,10 @@ def _rule_trigger_order(rule: dict[str, Any], answers: dict[str, Any]) -> int | 
         triggered = isinstance(value, list) and rule["value"] in value
     elif operator == "not_in":
         triggered = value not in rule["values"]
-    elif operator == "count_excluding_lte":
-        triggered = isinstance(value, list) and len(set(value).difference(rule["excluded"])) <= rule["threshold"]
+    elif operator == "crop_gate_failed":
+        eligible = set(value or []).difference(rule["excluded"]) if isinstance(value, list) else set()
+        represented_groups = sum(bool(eligible.intersection(crops)) for crops in rule["groups"].values())
+        triggered = len(eligible) < rule["min_crops"] or represented_groups < rule["min_groups"]
     elif operator in {"number_gte", "number_gte_if"}:
         try:
             triggered = float(value) >= float(rule["threshold"])
@@ -636,18 +726,26 @@ def _is_empty(value: Any) -> bool:
     return value is None or value == "" or value == []
 
 
+def resolve_locked_answers(answers: dict[str, Any], topics: Iterable[str]) -> dict[str, Any]:
+    """Return answers with read-only linked fields copied from their source fields."""
+    resolved = dict(answers)
+    for item in all_questions_for_topics(topics):
+        if item.get("locked_to"):
+            resolved[item["id"]] = _answer(resolved, item["locked_to"])
+    return resolved
+
+
 def validate_answers(
     answers: dict[str, Any], topics: Iterable[str], *, training_history: Iterable[str] | None = None,
 ) -> str | None:
     """Validate active questions. Hidden conditional answers are ignored."""
-    helpful_training_values = None
-    if training_history is not None:
-        recorded_topics = set(training_history)
-        helpful_training_values = {
-            option["value"] for option in TRAINING_FEEDBACK_OPTIONS
-            if option["training_topic"] in recorded_topics
-        }
+    topics = list(topics)
+    answers = resolve_locked_answers(answers, topics)
+    recorded_topics = set(training_history) if training_history is not None else None
     for item in all_questions_for_topics(topics):
+        if recorded_topics is not None and item.get("training_topic") \
+                and item["training_topic"] not in recorded_topics:
+            continue
         if item["type"] == "training_list" or not question_is_active(item, answers):
             continue
         value = _answer(answers, item["id"])
@@ -677,27 +775,11 @@ def validate_answers(
         submitted = value if isinstance(value, list) else [value]
         if allowed and any(option not in allowed for option in submitted):
             return f"An answer for {item['source_id']} is invalid."
-        if item["id"] == "i1_helpful" and helpful_training_values is not None \
-                and any(option not in helpful_training_values for option in submitted):
-            return "I1 can only include trainings recorded for this beneficiary."
         if item.get("max_selections") is not None and isinstance(value, list) and len(value) > item["max_selections"]:
             return f"Select no more than {item['max_selections']} answers for {item['source_id']}."
         exclusive = set(item.get("exclusive_values", []))
         if exclusive and isinstance(value, list) and exclusive.intersection(value) and len(value) > 1:
             return f"{item['source_id']}: 'None' cannot be combined with another answer."
-    household_total = _answer(answers, "a10_total")
-    household_male = _answer(answers, "a10_male")
-    household_female = _answer(answers, "a10_female")
-    if not _is_empty(household_total):
-        total = float(household_total)
-        male = 0 if _is_empty(household_male) else float(household_male)
-        female = 0 if _is_empty(household_female) else float(household_female)
-        if male > total:
-            return "A10.2 cannot be greater than the total household size in A10.1."
-        if female > total:
-            return "A10.3 cannot be greater than the total household size in A10.1."
-        if not _is_empty(household_male) and not _is_empty(household_female) and male + female > total:
-            return "A10.2 and A10.3 together cannot be greater than the total household size in A10.1."
     damage = _answer(answers, "b10_1_damage")
     severe = _answer(answers, "b10_2_severe")
     if not _is_empty(damage) and not _is_empty(severe):
@@ -765,8 +847,10 @@ def _number(answers: dict[str, Any], key: str) -> float:
 def _score_b_item(item_id: str, package: str, answers: dict[str, Any]) -> ItemResult:
     value = _answer(answers, item_id)
     if item_id == "b1_food_groups":
-        count = len(set(value or []).difference({"coffee", "cash_crop"}))
-        return ItemResult(2 if count > 2 else 0, critical=count <= 2)
+        eligible = set(value or []).difference(CASH_ONLY_CROPS)
+        represented_groups = sum(bool(eligible.intersection(crops)) for crops in CROP_GROUPS.values())
+        passed = len(eligible) >= 3 and represented_groups >= 2
+        return ItemResult(2 if passed else 0, critical=not passed)
     if item_id == "b2_cover":
         return ItemResult(2 if value in {"mulch", "living"} else 0)
     if item_id == "b2_detail":
@@ -784,7 +868,11 @@ def _score_b_item(item_id: str, package: str, answers: dict[str, Any]) -> ItemRe
     if item_id == "b4_1_width":
         if not question_is_active({"condition": {"question": "b4_structures", "operator": "has_any_except", "value": "none"}}, answers):
             return ItemResult(None)
-        return ItemResult({"full": 2, "partial": 1, "single": 0}.get(value))
+        return ItemResult({
+            "full": 2, "most": 1, "half": 0, "less_than_half": 0,
+            # Retain the former values for historical assessments.
+            "partial": 1, "single": 0,
+        }.get(value))
     if item_id == "b4_2_contour":
         if not question_is_active({"condition": {"question": "b4_structures", "operator": "has_any_except", "value": "none"}}, answers):
             return ItemResult(None)
@@ -799,21 +887,39 @@ def _score_b_item(item_id: str, package: str, answers: dict[str, Any]) -> ItemRe
     if item_id == "b5_2_extent":
         if _answer(answers, "b5_preparation") not in {"minimum", "holes", "undisturbed"}:
             return ItemResult(None)
-        return ItemResult(2 if value == "whole" else 0)
+        return ItemResult({
+            "whole": 2, "most": 1, "half": 0, "less_than_half": 0,
+            # Retain the former values for historical assessments.
+            "part": 0, "varies": 0,
+        }.get(value))
     if item_id == "b6_weeds":
         return ItemResult({"spot": 2, "few_full": 1, "frequent_full": 0, "herbicide": 0}.get(value))
     if item_id == "b7_arrangement":
         return ItemResult(2 if value == "mixed" else 0)
     if item_id == "b8_trees":
-        return ItemResult(2 if value == "yes" else 0)
+        if isinstance(value, list):
+            return ItemResult(2 if set(value).difference({"none"}) else 0)
+        return ItemResult(2 if value == "yes" else 0)  # Historical B8 yes/no answers.
     if item_id == "b8_1_under":
-        if _answer(answers, "b8_trees") != "yes":
+        trees = _answer(answers, "b8_trees")
+        if isinstance(trees, list):
+            if "none" in trees:
+                return ItemResult(None)
+            return ItemResult(2 if "underplanting" in trees else 1)
+        if trees != "yes":
             return ItemResult(None)
-        return ItemResult(2 if value == "yes" else 1)
+        return ItemResult(2 if value == "yes" else 1)  # Historical B8.1 answers.
     if item_id == "b8_2_arrangement":
-        if _answer(answers, "b8_trees") != "yes":
-            return ItemResult(None)
-        return ItemResult(2 if value in {"boundary", "intercropping", "woodlot"} else 0)
+        trees = _answer(answers, "b8_trees")
+        if isinstance(trees, list):
+            if "none" in trees:
+                return ItemResult(None)
+            selected = set(trees)
+        else:
+            if trees != "yes":
+                return ItemResult(None)
+            selected = {value} if isinstance(value, str) else set(value or [])
+        return ItemResult(2 if selected.intersection({"boundary", "intercropping", "woodlot"}) else 0)
     if item_id == "b9_traces":
         if package == "soil_cover_fertility":
             return ItemResult(2 if value in {"identified", "unidentified"} else 0)
@@ -838,14 +944,18 @@ def _score_b_item(item_id: str, package: str, answers: dict[str, Any]) -> ItemRe
     if item_id == "b10_3_chemical_change":
         if _answer(answers, "b10_pest_method") not in {"biological", "both"}:
             return ItemResult(None)
-        return ItemResult(2 if value in {"same", "reduced"} else 0)
+        return ItemResult({"increased": 0, "same": 2, "reduced": 2, "never_used": None}.get(value))
     if item_id == "b11_inputs":
         selected = set(value or [])
         return ItemResult(2 if selected.intersection({"manure", "heap", "bio"}) else 0)
     if item_id == "b11_1_location":
         if "manure" not in set(_answer(answers, "b11_inputs", []) or []):
             return ItemResult(None)
-        return ItemResult(2 if value in {"whole", "holes"} else 1)
+        return ItemResult({
+            "whole": 2, "most": 2, "half": 1, "section": 0,
+            # Retain the former value for historical assessments.
+            "holes": 2,
+        }.get(value))
     if item_id == "b11_2_method":
         if not set(_answer(answers, "b11_inputs", []) or []).intersection({"manure", "bio"}):
             return ItemResult(None)
@@ -936,13 +1046,15 @@ SECTION_ITEMS = {
         ("d2_garden_cover", {"mostly_veg": 2, "equal": 1, "mostly_bare": 0}, set()),
         ("d3_weeds", {"no": 2, "patches": 1, "most": 0}, set()),
         ("d4_unhealthy", "d4_count", set()),
-        ("d6_seed_storage", {"visible": 2, "claimed": 1, "no": 0}, set()),
+        ("d6_seed_storage", {"visible": 2, "claimed": 0, "no": 0}, set()),
     ],
     FINANCIAL: [
-        ("e1_budget", {"shown": 2, "not_shown": 1, "no": 0}, set()),
+        ("e1_budget", {"complete": 2, "incomplete": 1, "claimed": 0, "none": 0}, set()),
+        ("e1_frequency", {"monthly": 2, "gaps": 1, "rare": 0}, set()),
+        ("e1_income_change", {"increase": 2, "same": 1, "decrease": 0}, {"decrease"}),
         ("e2_decisions", {"respondent": 0, "spouse": 0, "both": 2, "single": None}, set()),
         ("e3_within_means", {"yes": 2, "no": 0}, {"no"}),
-        ("e4_invested", {"yes": 2, "no": 0}, set()),
+        ("e4_invested", {"yes": 2, "no": 0}, {"no"}),
         ("e4_1_investments", "multi_any", set()),
         ("e5_savings", "positive", set()),
         ("e6_saving_place", {"bank": 2, "group": 2, "mobile": 2, "home": 1, "other": 1}, set()),
@@ -1008,13 +1120,167 @@ def rvo_result(answers: dict[str, Any]) -> dict[str, Any]:
         "Soil & water conservation structures": bool(set(_answer(answers, "b4_structures", []) or []).difference({"none"})),
         "Conservation / minimum tillage": _answer(answers, "b5_preparation") in {"minimum", "holes", "undisturbed"},
         "Intercropping": _answer(answers, "b7_arrangement") == "mixed",
-        "Agroforestry": _answer(answers, "b8_trees") == "yes",
+        "Agroforestry": (
+            bool(set(_answer(answers, "b8_trees", []) or []).difference({"none"}))
+            if isinstance(_answer(answers, "b8_trees"), list)
+            else _answer(answers, "b8_trees") == "yes"
+        ),
         "Crop rotation": _answer(answers, "b9_traces") == "identified" and _answer(answers, "b9_differs") == "yes",
         "Organic manure / bio-fertilizer": bool(set(_answer(answers, "b11_inputs", []) or []).intersection({"manure", "heap", "bio"})),
         "Integrated pest management": _answer(answers, "b10_pest_method") in {"biological", "both"},
     }
     count = sum(practices.values())
     return {"passed": count >= 2, "count": count, "total": 8, "practices": practices}
+
+
+def collect_failure_comments(answers: dict[str, Any], topics: Iterable[str]) -> list[dict[str, Any]]:
+    """Return the questionnaire's shareable comments for answers that scored as failures."""
+    topics = [topic for topic in TRAINING_TOPICS if topic in set(topics)]
+    selected_topics = set(topics)
+    questions = {item["id"]: item for item in all_questions_for_topics(topics)}
+    comments: list[dict[str, Any]] = []
+
+    def add(question_id: str, triggered: bool, comment: str, package_keys: Iterable[str]) -> None:
+        item = questions.get(question_id)
+        if not triggered or not item or not question_is_active(item, answers):
+            return
+        package_titles = [PACKAGE_TITLES.get(key, key) for key in package_keys]
+        comments.append({
+            "source_id": item["source_id"],
+            "question_id": question_id,
+            "question": item["label"],
+            "comment": comment,
+            "packages": package_titles,
+        })
+
+    if selected_topics.intersection(SECTION_B_TOPICS):
+        crops = set(_answer(answers, "b1_food_groups", []) or []).difference(CASH_ONLY_CROPS)
+        groups = sum(bool(crops.intersection(group_crops)) for group_crops in CROP_GROUPS.values())
+        add("b1_food_groups", len(crops) < 3 or groups < 2,
+            "Fewer than 3 crops or 2 food groups were found on the plot - food and nutritional diversity is limited.",
+            ["crop_diversification"])
+        add("b5_preparation", _answer(answers, "b5_preparation") == "fully_tilled",
+            "The plot was fully tilled - the preparation method most likely to increase erosion risk and soil disturbance.",
+            ["reduced_disturbance", "erosion_water", "soil_cover_fertility"])
+        add("b5_2_extent", _answer(answers, "b5_2_extent") in {"half", "less_than_half", "part", "varies"},
+            "The reduced-disturbance method is not used consistently across the whole plot.",
+            ["reduced_disturbance"])
+        add("b2_cover", _answer(answers, "b2_cover") in {"bare", "other"},
+            "The soil surface is left bare between plants, with no residue, mulch, or living cover protecting it.",
+            ["erosion_water", "soil_cover_fertility", "crop_diversification"])
+        add("b2_1_mulch", _answer(answers, "b2_1_mulch") == "under_50",
+            "Where mulch is present, it covers less than half the surface - not enough to meaningfully protect the soil.",
+            ["soil_cover_fertility", "erosion_water"])
+        severe_erosion = sum([
+            _answer(answers, "b3_1_rills") == "deep",
+            _answer(answers, "b3_2_roots") == "widespread",
+            _answer(answers, "b3_3_soil") == "ridge",
+        ]) >= 2
+        add("b3_features", severe_erosion,
+            "Active soil erosion was observed (deep rills, widespread exposed roots, or built-up loose soil) - this plot is losing soil.",
+            ["erosion_water"])
+        structures = set(_answer(answers, "b4_structures", []) or [])
+        add("b4_structures", not structures.difference({"none"}),
+            "No soil and water conservation structures - grass strips, bunds, trenches, or similar - were found on this plot.",
+            ["erosion_water"])
+        add("b4_1_width", _answer(answers, "b4_1_width") in {"half", "less_than_half", "single"},
+            "The observed conservation structures seem to be incomplete.", ["erosion_water"])
+        add("b4_2_contour", _answer(answers, "b4_2_contour") in {"no", "unsure"},
+            "The structures present do not clearly follow the contour of the land, which reduces how well they slow water flow.",
+            ["erosion_water"])
+        add("b6_weeds", _answer(answers, "b6_weeds") in {"frequent_full", "herbicide"},
+            "Weed control relies on frequent full-bed hoeing or herbicide, both of which increase soil disturbance or chemical input.",
+            ["reduced_disturbance"])
+        add("b7_arrangement", _answer(answers, "b7_arrangement") in {"single", "other"},
+            "Only a single crop was seen growing in uniform rows - no interplanting was observed.",
+            ["crop_diversification", "pest_management"])
+        trees = _answer(answers, "b8_trees", [])
+        selected_trees = set(trees or []) if isinstance(trees, list) else ({trees} if trees else set())
+        no_trees = not selected_trees.difference({"none", "no"})
+        add("b8_trees", no_trees,
+            "No trees or shrubs were found on or bordering this plot.",
+            ["crop_diversification", "erosion_water", "soil_cover_fertility"])
+        add("b8_trees", not no_trees and not selected_trees.intersection({"boundary", "intercropping", "woodlot"}),
+            "Trees present are confined to the homestead area or an unclear arrangement, not integrated with the cropped plot.",
+            ["crop_diversification", "erosion_water"])
+        add("b9_traces", _answer(answers, "b9_traces") == "none",
+            "No evidence of crop rotation was found.",
+            ["crop_diversification", "pest_management", "soil_cover_fertility"])
+        add("b9_1_farmer", _answer(answers, "b9_1_farmer") in {"no", "unsure"},
+            "The farmer reported growing the same crop as last season, with no supporting rotation evidence.",
+            ["crop_diversification", "pest_management", "soil_cover_fertility"])
+        add("b10_pest_method", _answer(answers, "b10_pest_method") in {"synthetic", "none"},
+            "Pest management relies on synthetic pesticide alone, or no pest management method was observed.",
+            ["pest_management"])
+        add("b10_1_damage", _number(answers, "b10_1_damage") >= 6,
+            "The current pest management is not working.", ["pest_management"])
+        add("b10_2_severe", _number(answers, "b10_2_severe") >= 3,
+            "The current pest management is not working; several plants show severe damage.", ["pest_management"])
+        add("b10_3_chemical_change", _answer(answers, "b10_3_chemical_change") == "increased",
+            "Use of chemical pesticide has increased.", ["pest_management"])
+        fertility = set(_answer(answers, "b11_inputs", []) or [])
+        add("b11_inputs", not fertility.intersection({"manure", "heap", "bio"}),
+            "No organic fertility inputs - manure, compost, or bio-fertilizer materials - were found.",
+            ["soil_cover_fertility"])
+        add("b11_2_method", _answer(answers, "b11_2_method") == "none",
+            "No method of applying fertility inputs was observed or reported.", ["soil_cover_fertility"])
+        add("b12_macrofauna", _number(answers, "b12_macrofauna") == 0,
+            "No earthworms or other soil macrofauna were found - a sign the soil's biological activity may be poor.",
+            ["soil_cover_fertility"])
+
+    if PIP in selected_topics:
+        add("c1_map_drawn", _answer(answers, "c1_map_drawn") == "no",
+            "No household resource map has been drawn.", [PIP])
+        add("c2_current_map", _answer(answers, "c2_current_map") == "no",
+            "No map showing the current household situation could be found or shown.", [PIP])
+        add("c3_storage", _answer(answers, "c3_storage") == "not_shown",
+            "The map or plan was not shown and could not be located.", [PIP])
+        add("c4_use", _answer(answers, "c4_use") == "none",
+            "The plan shows no signs of use since it was made - no dated notes, ticked items, or visible handling.", [PIP])
+
+    if KITCHEN in selected_topics:
+        add("d2_garden_cover", _answer(answers, "d2_garden_cover") == "mostly_bare",
+            "The kitchen garden is mostly bare ground or weeds, with few vegetables remaining.", [KITCHEN])
+        add("d3_weeds", _answer(answers, "d3_weeds") == "most",
+            "Weeds are taller than the vegetables across most of the garden.", [KITCHEN])
+        add("d4_unhealthy", _number(answers, "d4_unhealthy") >= 7,
+            "Many vegetable plants are wilted, yellowing, or dead.", [KITCHEN])
+        add("d6_seed_storage", _answer(answers, "d6_seed_storage") in {"claimed", "no"},
+            "No stored seed for next season could be seen, or the farmer reported none is kept.", [KITCHEN])
+
+    if FINANCIAL in selected_topics:
+        add("e1_budget", _answer(answers, "e1_budget") in {"claimed", "none"},
+            "No financial record book, budget, or log could be shown, or none is kept.", [FINANCIAL])
+        add("e1_frequency", _answer(answers, "e1_frequency") == "rare",
+            "Entries in the record book are rare - only one or two isolated entries were found.", [FINANCIAL])
+        add("e1_income_change", _answer(answers, "e1_income_change") == "decrease",
+            "Recorded income shows a decrease.", [FINANCIAL])
+        add("e2_decisions", _answer(answers, "e2_decisions") in {"respondent", "spouse"},
+            "Financial decisions are made by only one spouse, without joint participation.", [FINANCIAL])
+        add("e3_within_means", _answer(answers, "e3_within_means") == "no",
+            "The household reports spending beyond what it earns or has.", [FINANCIAL])
+        add("e4_invested", _answer(answers, "e4_invested") == "no",
+            "No investments were made in the last 12 months.", [FINANCIAL])
+        add("e5_savings", _number(answers, "e5_savings") <= 0,
+            "No savings were reported for an average month.", [FINANCIAL])
+
+    if POULTRY in selected_topics:
+        add("f1_location", _answer(answers, "f1_location") == "free",
+            "Birds are free-ranging, with no boundary or enclosure at the time of the visit.", [POULTRY])
+        add("f1_1_structure", len(_answer(answers, "f1_1_structure", []) or []) == 0,
+            "No sufficient housing features were visible.", [POULTRY])
+        inspected = _number(answers, "f2_visible")
+        unhealthy = _number(answers, "f2_1_unhealthy")
+        health_failed = unhealthy >= 4 if inspected >= 5 else inspected > 0 and unhealthy > inspected / 2
+        add("f2_1_unhealthy", health_failed,
+            "Several birds show signs of illness.", [POULTRY])
+        add("f3_isolation", _answer(answers, "f3_isolation") == "mixed",
+            "Sick birds are kept mixed with the rest of the flock, with no separate space.", [POULTRY])
+        add("f4_records", _answer(answers, "f4_records") == "none",
+            "No poultry record book could be shown, or none exists.", [POULTRY])
+        add("f5_vaccination", _answer(answers, "f5_vaccination") == "none",
+            "No vaccination record or vaccine container could be shown.", [POULTRY])
+    return comments
 
 
 def score_survey(answers: dict[str, Any], topics: Iterable[str]) -> dict[str, Any]:
@@ -1086,5 +1352,6 @@ def score_survey(answers: dict[str, Any], topics: Iterable[str]) -> dict[str, An
         "depth": depth,
         "packages": packages,
         "trainings": trainings,
+        "failure_comments": collect_failure_comments(answers, topics),
         "centralized_training_recommendations": package_training_recommendations,
     }

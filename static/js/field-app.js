@@ -345,6 +345,10 @@
     if (question.condition) wrap.dataset.condition = JSON.stringify(question.condition);
     if (question.skip_condition) wrap.dataset.skipCondition = JSON.stringify(question.skip_condition);
     if (question.guide_parent) wrap.dataset.guideParent = question.guide_parent;
+    if (question.locked_to) wrap.dataset.lockedTo = question.locked_to;
+    if (question.training_topic) {
+      wrap.dataset.trainingApplicable = (farmer.trainingHistory || []).includes(question.training_topic) ? "true" : "false";
+    }
     wrap.dataset.required = question.required ? "true" : "false";
     if (question.max_selections) wrap.dataset.maxSelections = String(question.max_selections);
     if (question.exclusive_values) wrap.dataset.exclusiveValues = JSON.stringify(question.exclusive_values);
@@ -353,11 +357,7 @@
     if (question.help) copy.append(create("p", "", question.help));
     if (question.required) copy.append(create("b", "field-required", "Required"));
     wrap.append(copy);
-    let options = question.options || [];
-    if (question.id === "i1_helpful") {
-      const recordedTopics = new Set(farmer.trainingHistory || []);
-      options = options.filter((option) => recordedTopics.has(option.training_topic));
-    }
+    const options = question.options || [];
     const prefillSource = question.profile_key
       ? farmer.profile?.[question.profile_key]
       : (question.carry_forward ? farmer.previousAnswers?.[question.id] : "");
@@ -747,6 +747,16 @@
       orderFor: (questionId) => Number($(`[data-survey-question="${CSS.escape(questionId)}"]`, container)?.dataset.sectionOrder || 0),
     });
     $$('[data-survey-question]', container).forEach((node) => {
+      if (node.dataset.lockedTo) {
+        const lockedValue = surveyValue(container, node.dataset.lockedTo);
+        $$('input[type="radio"], input[type="checkbox"]', node).forEach((control) => {
+          control.checked = Array.isArray(lockedValue) ? lockedValue.includes(control.value) : control.value === lockedValue;
+        });
+        const select = $("select", node);
+        if (select) select.value = lockedValue;
+        const input = $('input:not([type="radio"]):not([type="checkbox"]), textarea', node);
+        if (input) input.value = lockedValue;
+      }
       const condition = node.dataset.condition ? JSON.parse(node.dataset.condition) : null;
       const skipCondition = node.dataset.skipCondition ? JSON.parse(node.dataset.skipCondition) : null;
       let packages = [];
@@ -754,10 +764,10 @@
       const stopped = packages.length > 0 && packages.every(
         (packageKey) => packageStops.has(packageKey) && packageStops.get(packageKey) < Number(node.dataset.sectionOrder || 0),
       );
-      const visible = surveyConditionMatches(container, condition)
+      const visible = node.dataset.trainingApplicable !== "false" && surveyConditionMatches(container, condition)
         && !(skipCondition && surveyConditionMatches(container, skipCondition)) && !stopped;
       node.hidden = !visible;
-      $$('input, select, textarea', node).forEach((control) => { control.disabled = !visible; });
+      $$('input, select, textarea', node).forEach((control) => { control.disabled = !visible || Boolean(node.dataset.lockedTo); });
       applyFieldMultiRules(node);
     });
     $$('[data-section]', container).forEach((section) => section.refreshQuestionGuide?.());
@@ -817,26 +827,6 @@
       if (node.dataset.required === "true" && empty && !node.classList.contains("field-question-training_list")) {
         alertUser(`Complete required item ${$("small", node)?.textContent || "in this package"}.`, "warning");
         node.scrollIntoView({ behavior: "smooth", block: "center" });
-        return false;
-      }
-    }
-    const householdTotalValue = surveyValue(container, "a10_total");
-    const householdMaleValue = surveyValue(container, "a10_male");
-    const householdFemaleValue = surveyValue(container, "a10_female");
-    if (householdTotalValue !== "") {
-      const householdTotal = Number(householdTotalValue);
-      const householdMale = householdMaleValue === "" ? 0 : Number(householdMaleValue);
-      const householdFemale = householdFemaleValue === "" ? 0 : Number(householdFemaleValue);
-      if (householdMale > householdTotal) {
-        alertUser("A10.2 cannot be greater than the total household size in A10.1.", "warning");
-        return false;
-      }
-      if (householdFemale > householdTotal) {
-        alertUser("A10.3 cannot be greater than the total household size in A10.1.", "warning");
-        return false;
-      }
-      if (householdMaleValue !== "" && householdFemaleValue !== "" && householdMale + householdFemale > householdTotal) {
-        alertUser("A10.2 and A10.3 together cannot be greater than the total household size in A10.1.", "warning");
         return false;
       }
     }
@@ -967,20 +957,6 @@
       firstMissing.scrollIntoView({ behavior: "smooth", block: "center" });
       alertUser(`Complete required item ${$("small", firstMissing)?.textContent || "in the survey"}.`, "warning");
       return;
-    }
-    if ((answers.i1_helpful || []).length > 2) {
-      alertUser("Select no more than two answers for I1.", "warning");
-      return;
-    }
-    if (answers.a10_total !== undefined && answers.a10_total !== "") {
-      const householdTotal = Number(answers.a10_total);
-      const householdMale = answers.a10_male === "" ? 0 : Number(answers.a10_male);
-      const householdFemale = answers.a10_female === "" ? 0 : Number(answers.a10_female);
-      if (householdMale > householdTotal || householdFemale > householdTotal ||
-          (answers.a10_male !== "" && answers.a10_female !== "" && householdMale + householdFemale > householdTotal)) {
-        alertUser("Household male and female counts cannot exceed the total household size in A10.1.", "warning");
-        return;
-      }
     }
     if (answers.b10_1_damage !== "" && answers.b10_2_severe !== "" && Number(answers.b10_2_severe) > Number(answers.b10_1_damage)) {
       alertUser("B10.2 cannot be greater than the number of damaged plants in B10.1.", "warning");

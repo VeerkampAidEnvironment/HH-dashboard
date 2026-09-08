@@ -18,6 +18,9 @@ except ModuleNotFoundError:  # Import utilities can run in the spreadsheet runti
     session = None
 
 
+DATABASE_SCHEMA_VERSION = 1
+
+
 SCHEMA = """
 PRAGMA foreign_keys = ON;
 
@@ -259,6 +262,9 @@ def connect(path: str | Path | None = None) -> sqlite3.Connection:
 def get_db() -> sqlite3.Connection:
     if "db" not in g:
         g.db = connect()
+        schema_version = g.db.execute("PRAGMA user_version").fetchone()[0]
+        if schema_version < DATABASE_SCHEMA_VERSION:
+            init_db(g.db)
     return g.db
 
 
@@ -338,6 +344,7 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_field_events_client_submission "
         "ON field_events(client_submission_id) WHERE client_submission_id IS NOT NULL"
     )
+    connection.execute(f"PRAGMA user_version = {DATABASE_SCHEMA_VERSION}")
     connection.commit()
     if owns_connection:
         connection.close()

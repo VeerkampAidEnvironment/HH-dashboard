@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import os
 import shutil
+import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from datetime import date
 import json
 from io import BytesIO
@@ -50,6 +52,32 @@ class ApplicationTest(unittest.TestCase):
     def csrf(self):
         with self.client.session_transaction() as current_session:
             return current_session["csrf_token"]
+
+    def test_existing_test_database_is_migrated_before_use(self):
+        from db import ensure_test_database
+
+        username = "legacy-schema-check"
+        legacy_path = ensure_test_database(username, reset=True)
+        with closing(sqlite3.connect(legacy_path)) as connection:
+            connection.execute("DROP TABLE followup_package_results")
+            connection.execute("DROP TABLE followup_assessments")
+            connection.execute("PRAGMA user_version = 0")
+            connection.commit()
+
+        with self.client.session_transaction() as current_session:
+            current_session["username"] = username
+            current_session["test_environment"] = True
+        response = self.client.get("/data-entry")
+        self.assertEqual(response.status_code, 200)
+        with closing(sqlite3.connect(legacy_path)) as connection:
+            tables = {
+                row[0] for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
+            self.assertIn("followup_assessments", tables)
+            self.assertIn("followup_package_results", tables)
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 1)
 
     def test_main_pages_and_filters_render(self):
         endpoints = [
@@ -927,34 +955,39 @@ class ApplicationTest(unittest.TestCase):
             self.assertEqual(status, "WAIT")
 
     def test_adaptive_followup_calculates_and_stores_training_result(self):
-        from followup_survey import PIP, SURVEY_VERSION
+        from followup_survey import I1_RATING_QUESTIONS, PIP, SURVEY_VERSION, received_training_topics
 
         with self.app.app_context():
             from db import get_db
 
             due = get_db().execute(
-                """SELECT r.id, r.cbf_name FROM records r
+                """SELECT r.id, r.cbf_name, r.raw_data FROM records r
                    JOIN topic_statuses ts ON ts.record_id=r.id
                    WHERE r.dataset='training' AND r.archived_at IS NULL
                    AND TRIM(r.cbf_name)<>'' AND ts.status_code='FU' AND ts.topic=? LIMIT 1""",
                 (PIP,),
             ).fetchone()
         self.assertIsNotNone(due)
-        response = self.client.post(
-            "/data-entry",
-            data={
-                "csrf_token": self.csrf(), "cbf": due["cbf_name"], "mode": "followup",
-                "event_date": date.today().isoformat(), "record_id": str(due["id"]),
-                "survey_version": SURVEY_VERSION, "topic_count": "1", "topic__0": PIP,
-                "survey_answer__c1_map_drawn": "no",
-                "survey_answer__h1_radio": "no",
-                "survey_answer__i1_helpful": "Household Resource Mapping",
-                "survey_answer__i2_change": "No noticeable change yet",
-                "survey_answer__i3_improve": "More frequent follow-up visits",
-                "survey_answer__consent": "yes",
-            },
-        )
+        data = {
+            "csrf_token": self.csrf(), "cbf": due["cbf_name"], "mode": "followup",
+            "event_date": date.today().isoformat(), "record_id": str(due["id"]),
+            "survey_version": SURVEY_VERSION, "topic_count": "1", "topic__0": PIP,
+            "survey_answer__c1_map_drawn": "no",
+            "survey_answer__h1_radio": "no",
+            "survey_answer__i2_change": "No noticeable change yet",
+            "survey_answer__i3_improve": "More frequent follow-up visits",
+            "survey_answer__consent": "yes",
+        }
+        recorded_topics = set(received_training_topics(json.loads(due["raw_data"])))
+        for _, question_id, _, training_topic in I1_RATING_QUESTIONS:
+            if training_topic in recorded_topics:
+                data[f"survey_answer__{question_id}"] = "lot"
+        response = self.client.post("/data-entry", data=data)
         self.assertEqual(response.status_code, 302)
+        results_page = self.client.get(response.headers["Location"])
+        self.assertEqual(results_page.status_code, 200)
+        self.assertIn(b"Findings to share with the farmer", results_page.data)
+        self.assertIn(b"No household resource map has been drawn.", results_page.data)
         with self.app.app_context():
             from db import get_db
 
@@ -982,7 +1015,7 @@ class ApplicationTest(unittest.TestCase):
 
     def test_adaptive_section_b_persists_package_breadth_depth_and_outcome(self):
         from followup_survey import (
-            SECTION_B_TOPICS, SURVEY_VERSION, TRAINING_FEEDBACK_OPTIONS,
+            I1_RATING_QUESTIONS, SECTION_B_TOPICS, SURVEY_VERSION,
             received_training_topics,
         )
         from tests.test_followup_survey import good_section_b_answers
@@ -1001,16 +1034,11 @@ class ApplicationTest(unittest.TestCase):
             ).fetchone()
         self.assertIsNotNone(due)
         recorded_topics = set(received_training_topics(json.loads(due["raw_data"])))
-        helpful_training = next(
-            option["value"] for option in TRAINING_FEEDBACK_OPTIONS
-            if option["training_topic"] in recorded_topics
-        )
         data = {
             "csrf_token": self.csrf(), "cbf": due["cbf_name"], "mode": "followup",
             "event_date": date.today().isoformat(), "record_id": str(due["id"]),
             "survey_version": SURVEY_VERSION, "topic_count": "1", "topic__0": due["topic"],
             "survey_answer__h1_radio": "no",
-            "survey_answer__i1_helpful": helpful_training,
             "survey_answer__i2_change": "More harvest / yield",
             "survey_answer__i3_improve": "Nothing - satisfied as is",
             "survey_answer__consent": "yes",
@@ -1019,12 +1047,20 @@ class ApplicationTest(unittest.TestCase):
                 (BytesIO(b"\xff\xd8\xffsecond-photo"), "weak-practice.jpg"),
             ],
         }
+        for _, question_id, _, training_topic in I1_RATING_QUESTIONS:
+            if training_topic in recorded_topics:
+                data[f"survey_answer__{question_id}"] = "lot"
         for question_id, value in good_section_b_answers().items():
             data[f"survey_answer__{question_id}"] = value
         data.update({
+            "survey_answer__a10_male": "3",
+            "survey_answer__a10_female": "4",
             "survey_answer__b13_synthetic_fertilizer": "2.5",
             "survey_answer__b13_unit": "other",
             "survey_answer__b13_unit_other": "Jerrycan",
+            "survey_answer__b14_manure_loads": "1.5",
+            "survey_answer__b14_unit": "other",
+            "survey_answer__b14_unit_other": "Wheelbarrow-load",
         })
         response = self.client.post("/data-entry", data=data)
         self.assertEqual(response.status_code, 302, response.data.decode("utf-8", errors="replace")[:3000])
@@ -1050,6 +1086,7 @@ class ApplicationTest(unittest.TestCase):
             self.assertEqual(assessment["breadth_achieved"], 5)
             self.assertEqual(assessment["breadth_total"], 5)
             self.assertAlmostEqual(assessment["depth"], 93.8)
+            self.assertEqual(json.loads(assessment["profile_snapshot"])["household_total"], 7)
             package_count = connection.execute(
                 "SELECT COUNT(*) FROM followup_package_results WHERE assessment_id=?",
                 (assessment["id"],),
@@ -1064,6 +1101,11 @@ class ApplicationTest(unittest.TestCase):
             self.assertEqual(stored_answers["b13_synthetic_fertilizer"]["answer"], 2.5)
             self.assertEqual(stored_answers["b13_unit"]["answer"], "other")
             self.assertEqual(stored_answers["b13_unit_other"]["answer"], "Jerrycan")
+            self.assertEqual(stored_answers["a10_total"]["answer"], 7)
+            self.assertEqual(stored_answers["a10_total"]["type"], "calculated")
+            self.assertEqual(stored_answers["b14_manure_loads"]["answer"], 1.5)
+            self.assertEqual(stored_answers["b14_unit"]["answer"], "other")
+            self.assertEqual(stored_answers["b14_unit_other"]["answer"], "Jerrycan")
             from app import carry_forward_answers_by_record
             self.assertEqual(
                 carry_forward_answers_by_record(connection, [due["id"]])[due["id"]],

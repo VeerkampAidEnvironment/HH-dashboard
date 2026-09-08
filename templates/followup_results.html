@@ -14,6 +14,20 @@
   </div>
 </section>
 
+{% if assessment.summary.failure_comments %}
+<section class="panel failure-comments-panel">
+  <div class="section-heading"><p class="eyebrow">What failed</p><h2>Findings to share with the farmer</h2><p>These comments are generated from the answers that reached a fail result.</p></div>
+  <div class="failure-comment-list">
+    {% for failure in assessment.summary.failure_comments %}
+    <article class="failure-comment-card">
+      <div><strong>{{ failure.source_id }}</strong><span>{{ failure.packages|join(' · ') }}</span></div>
+      <p>{{ failure.comment }}</p>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
 {% if assessment.packages %}<section class="panel"><div class="section-heading"><p class="eyebrow">Package results</p><h2>Sections passed and percentages</h2></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Package</th><th>Score</th><th>Result</th><th>Recommendation</th></tr></thead><tbody>{% for package in assessment.packages %}<tr><td><strong>{{ package.package_title }}</strong></td><td>{{ package.score|pct }} <small>({{ package.points_earned|round(1) }}/{{ package.points_available|round(1) }})</small></td><td><span class="status-pill">{{ package.result_status }}{% if package.critical_failed %} · critical{% endif %}</span></td><td>{{ package.recommendation or '—' }}</td></tr>{% endfor %}</tbody></table></div></section>{% endif %}
 
 <form method="post" class="panel action-decision-form">
