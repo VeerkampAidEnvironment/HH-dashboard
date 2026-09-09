@@ -105,6 +105,8 @@
               {% endif %}
             {% elif question.type == 'textarea' %}
               <textarea name="{{ field_name }}" rows="3" placeholder="Enter observations or advice">{{ question.prefill or '' }}</textarea>
+            {% elif question.type == 'date' %}
+              <input type="date" name="{{ field_name }}" value="{{ question.prefill or '' }}" {% if question.required and not question.condition %}required{% endif %}>
             {% elif question.type == 'number' %}
               <div class="question-number{{ ' has-unit' if question.unit }}"><input type="number" name="{{ field_name }}" min="{{ question.min_value if question.min_value is defined else 0 }}"{% if question.max_value is defined %} max="{{ question.max_value }}"{% endif %} step="{{ question.step_value if question.step_value is defined else (1 if question.integer else 'any') }}" value="{{ question.prefill if question.prefill is defined and question.prefill is not none else '' }}" placeholder="{{ 'Enter a whole number' if question.integer else 'Enter a number' }}" {% if question.required and not question.condition %}required{% endif %}>{% if question.unit %}<span aria-hidden="true">{{ question.unit }}</span>{% endif %}</div>
             {% elif question.type == 'photos' %}

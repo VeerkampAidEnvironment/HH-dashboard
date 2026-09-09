@@ -9,12 +9,13 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import date
 from math import isfinite
 from statistics import mean
 from typing import Any, Iterable
 
 
-SURVEY_VERSION = "2026-09-08-r21"
+SURVEY_VERSION = "2026-09-09-r22"
 
 PIP = "Household Resource Mapping (PIP)"
 SUSTAINABLE = "Sustainable/Regenerative Agriculture"
@@ -157,6 +158,23 @@ def contains(question_id: str, value: Any) -> dict[str, Any]:
     return {"question": question_id, "operator": "contains", "value": value}
 
 
+def age_group_from_birth_date(value: Any, as_of: date | None = None) -> str:
+    """Calculate the dashboard age band from an ISO date of birth."""
+    try:
+        born = date.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return ""
+    reference = as_of or date.today()
+    if born > reference:
+        return ""
+    age = reference.year - born.year - ((reference.month, reference.day) < (born.month, born.day))
+    if age <= 35:
+        return "Youth"
+    if age <= 59:
+        return "Adult"
+    return "Elder"
+
+
 CROP_OPTIONS = options(
     ("apples", "Apples"), ("avocado", "Avocado"), ("bananas_matooke", "Bananas/matooke"),
     ("barley", "Barley"), ("beans", "Beans"), ("black_nightshade", "Black nightshade"),
@@ -204,8 +222,8 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
             question("A8.3", "a8_gender", "Gender", "choice", options(
                 ("F", "F – Female"), ("M", "M – Male")), profile_key="sex", required=False),
             question("A8.4", "a8_pwd", "Person with a disability (PWD)", "choice", YES_NO, profile_key="pwd", required=False),
-            question("A8.5", "a8_age_group", "Age group", "choice", options(
-                ("Y", "Youth"), ("A", "Adult"), ("E", "Elderly")), profile_key="age_group", required=False),
+            question("A8.5", "a8_birth_date", "Date of birth", "date", profile_key="birth_date", required=False,
+                     help_text="The age group is calculated automatically in the background."),
             question("A8.6", "a8_group", "Farmer group membership", "readonly", profile_key="group", required=False, editable=True),
             question("A9", "a9_education", "Level of education completed", "choice", options(
                 ("none", "Not gone to school"), ("pre_primary", "Pre-primary"), ("primary", "Primary"),
@@ -255,7 +273,7 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
             question("B4.1", "b3_1_rills", "What is the depth of the rills?", "choice", options(
                 ("shallow", "Ankle-height or less"), ("deep", "Deeper than an ankle")), condition=contains("b3_features", "rills"), skip_condition=eq("b5_preparation", "fully_tilled")),
             question("B4.2", "b3_2_roots", "How widespread are the exposed roots?", "choice", options(
-                ("isolated", "Isolated - 1 or 2 plants"), ("widespread", "Widespread")), condition=contains("b3_features", "roots"), skip_condition=eq("b5_preparation", "fully_tilled")),
+                ("isolated", "Isolated - 1 or 2 plants"), ("widespread", "3 or more plants")), condition=contains("b3_features", "roots"), skip_condition=eq("b5_preparation", "fully_tilled")),
             question("B4.3", "b3_3_soil", "What is the occurrence of the loose soil?", "choice", options(
                 ("scatter", "Thin scatter"), ("ridge", "Built-up ridge")), condition=contains("b3_features", "loose_soil"), skip_condition=eq("b5_preparation", "fully_tilled")),
             question("B5", "b4_structures", "Which soil and water conservation structures are visible?", "multi", options(
@@ -284,7 +302,7 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
                 ("other", "Other"),
                 ("none", "No trees or shrubs present (select only if none of the above apply)")),
                 exclusive_values=["none"]),
-            question("B9", "b9_traces", "Can a previous crop be identified from residue, stubble or physical traces?", "choice", options(
+            question("B9", "b9_traces", "On a random plot, Can a previous crop be identified from residue, stubble or physical traces?", "choice", options(
                 ("identified", "Yes - previous crop identified"), ("unidentified", "Traces visible, crop not identifiable"),
                 ("none", "No traces of a previous crop"))),
             question("B9.a", "b9_previous_crop", "Select the previous crop", "choice", CROP_OPTIONS, condition=eq("b9_traces", "identified")),
@@ -325,9 +343,9 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
             question("B14.1", "b14_unit", "Unit used for the manure or compost amount", "choice", options(
                 ("kilogram", "Kilogram"), ("liter", "Liter"), ("bag", "Bag"), ("basin", "Basin"),
                 ("other", "Other (free text)")),
-                guide_parent="b14_manure_loads", locked_to="b13_unit"),
+                guide_parent="b14_manure_loads"),
             question("B14.1a", "b14_unit_other", "Specify the other unit", "text",
-                condition=eq("b13_unit", "other"), guide_parent="b14_manure_loads", locked_to="b13_unit_other"),
+                condition=eq("b14_unit", "other"), guide_parent="b14_manure_loads"),
             question("B15", "b15_gap", "Main gap observed", "textarea", required=False),
             question("B16", "b16_advice", "Immediate recommendation or advice given", "textarea", required=False),
             question("B18", "b18_photos", "Upload photos of the best or weakest practice", "photos", required=False, help_text="You can add several photos."),
@@ -398,8 +416,10 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
                 ("increase", "Clear increase"),
                 ("same", "About the same, or unclear from the entries"),
                 ("decrease", "Decrease")), condition=eq("e1_12_months", "yes")),
-            question("E2", "e2_decisions", "Who makes financial decisions in your household — for example, the last major purchase?", "choice", options(
-                ("respondent", "Respondent alone"), ("spouse", "Spouse alone"), ("both", "Both"),
+            question("E2", "e2_decisions", "Thinking about the most recent major household purchase, were you involved in that decision?", "choice", options(
+                ("involved", "Yes — I was consulted or helped decide"),
+                ("informed", "I was informed about it, but not consulted"),
+                ("not_involved", "I was not involved or don't know how it was decided"),
                 ("single", "Single-adult household — no second adult"))),
             question("E3", "e3_within_means", "Do you live within your means (spending within what you earn or have)?", "choice", YES_NO),
             question("E4", "e4_invested", "Were investments made in the last 12 months?", "choice", YES_NO),
@@ -411,17 +431,11 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
             question("E6", "e6_saving_place", "Where do you save part of your income?", "choice", options(
                 ("bank", "Bank / SACCO"), ("group", "Saving group"), ("mobile", "Mobile money"),
                 ("home", "At home"), ("other", "Other"))),
-            question("E7", "e7_records", "Are income and expense records kept?", "choice", YES_NO),
-            question("E8", "e8_book", "Can a record-keeping book be shown?", "choice", options(
-                ("shown", "Yes, shown"), ("not_shown", "Yes, not shown"), ("no", "No"))),
-            question("E8.1", "e8_1_frequency", "How often are the records updated?", "choice", options(
-                ("never", "Never"), ("daily", "Daily"), ("weekly", "Weekly"), ("monthly", "Monthly"),
-                ("annually", "Annually"), ("other", "Other")), condition=one_of("e8_book", ["shown", "not_shown"])),
-            question("E8.2", "e8_2_help", "How has record keeping helped you?", "multi", options(
-                "Easy tracking of income and expenses", "Improved planning and budgeting", "Better investment decisions", "To calculate profit or loss", "Other"), required=False, condition=one_of("e8_book", ["shown", "not_shown"])),
-            question("E9", "e9_gap", "Main gap observed", "textarea", required=False),
-            question("E10", "e10_advice", "Immediate recommendation or advice", "textarea", required=False),
-            question("E12", "e12_photos", "Upload photos of the financial record or practice", "photos", required=False, help_text="You can add several photos."),
+            question("E7", "e8_2_help", "How has record keeping helped you?", "multi", options(
+                "Easy tracking of income and expenses", "Improved planning and budgeting", "Better investment decisions", "To calculate profit or loss", "Other"), required=False, condition=one_of("e1_budget", ["complete", "incomplete"])),
+            question("E8", "e9_gap", "Main gap observed", "textarea", required=False),
+            question("E9", "e10_advice", "Immediate recommendation or advice", "textarea", required=False),
+            question("E10", "e12_photos", "Upload photos of the financial record or practice", "photos", required=False, help_text="You can add several photos."),
         ],
     },
     {
@@ -753,6 +767,13 @@ def validate_answers(
             return f"Answer {item['source_id']}: {item['label']}."
         if _is_empty(value):
             continue
+        if item["type"] == "date":
+            try:
+                parsed_date = date.fromisoformat(str(value))
+            except (TypeError, ValueError):
+                return f"Enter a valid date for {item['source_id']}."
+            if parsed_date > date.today():
+                return f"{item['source_id']} cannot be in the future."
         if item["type"] == "number":
             try:
                 number = float(value)
@@ -1052,15 +1073,16 @@ SECTION_ITEMS = {
         ("e1_budget", {"complete": 2, "incomplete": 1, "claimed": 0, "none": 0}, set()),
         ("e1_frequency", {"monthly": 2, "gaps": 1, "rare": 0}, set()),
         ("e1_income_change", {"increase": 2, "same": 1, "decrease": 0}, {"decrease"}),
-        ("e2_decisions", {"respondent": 0, "spouse": 0, "both": 2, "single": None}, set()),
+        ("e2_decisions", {
+            "involved": 2, "informed": 1, "not_involved": 0, "single": None,
+            # Retain former values for historical saved assessments.
+            "respondent": 0, "spouse": 0, "both": 2,
+        }, set()),
         ("e3_within_means", {"yes": 2, "no": 0}, {"no"}),
         ("e4_invested", {"yes": 2, "no": 0}, {"no"}),
         ("e4_1_investments", "multi_any", set()),
         ("e5_savings", "positive", set()),
         ("e6_saving_place", {"bank": 2, "group": 2, "mobile": 2, "home": 1, "other": 1}, set()),
-        ("e7_records", {"yes": 2, "no": 0}, set()),
-        ("e8_book", {"shown": 2, "not_shown": 1, "no": 0}, set()),
-        ("e8_1_frequency", {"daily": 2, "weekly": 2, "monthly": 2, "annually": 1, "other": 1, "never": 0}, set()),
     ],
     POULTRY: [
         ("f1_location", {"house": 2, "bounded": 2, "free": 0, "none": None}, {"free"}),
@@ -1255,8 +1277,8 @@ def collect_failure_comments(answers: dict[str, Any], topics: Iterable[str]) -> 
             "Entries in the record book are rare - only one or two isolated entries were found.", [FINANCIAL])
         add("e1_income_change", _answer(answers, "e1_income_change") == "decrease",
             "Recorded income shows a decrease.", [FINANCIAL])
-        add("e2_decisions", _answer(answers, "e2_decisions") in {"respondent", "spouse"},
-            "Financial decisions are made by only one spouse, without joint participation.", [FINANCIAL])
+        add("e2_decisions", _answer(answers, "e2_decisions") in {"not_involved", "respondent", "spouse"},
+            "The respondent was not involved in the most recent major household purchase decision.", [FINANCIAL])
         add("e3_within_means", _answer(answers, "e3_within_means") == "no",
             "The household reports spending beyond what it earns or has.", [FINANCIAL])
         add("e4_invested", _answer(answers, "e4_invested") == "no",

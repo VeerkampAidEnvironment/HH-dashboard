@@ -274,6 +274,11 @@ def append_care_database(connection, file: BinaryIO, filename: str = "") -> dict
         if "Sheet1" not in workbook.sheetnames:
             raise BulkImportError("The FH workbook must contain a 'Sheet1' sheet.")
         sheet = workbook["Sheet1"]
+        from fh_monitoring import import_monthly
+        try:
+            monthly_updated = import_monthly(connection, sheet)
+        except ValueError as exc:
+            raise BulkImportError(str(exc)) from exc
         headers, _fields, module_fields = care_field_schema(sheet)
         attendance_fields = {field for fields in module_fields.values() for field in fields}
         existing_by_id, identity_matches = {}, {}
@@ -328,6 +333,7 @@ def append_care_database(connection, file: BinaryIO, filename: str = "") -> dict
             next_source_row += 1
         set_setting(connection, "care_source", filename or "FH database upload")
         return {"added": len(new_rows), "updated": len(attendance_updates), "existing": unchanged, "duplicates": duplicates,
-                "ambiguous": ambiguous, "beneficiaries": beneficiaries, "attendance_updates": attendance_updates}
+                "ambiguous": ambiguous, "beneficiaries": beneficiaries, "attendance_updates": attendance_updates,
+                "monthly_updated": monthly_updated}
     finally:
         workbook.close()

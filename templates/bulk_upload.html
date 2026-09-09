@@ -8,7 +8,9 @@
   <div class="section-heading"><p class="eyebrow">2. Select workbook</p><h2>Updated project database</h2><p>Use the updated .xlsx workbook for the project selected above.</p></div>
   <label>Excel workbook<input type="file" name="workbook" accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required></label>
   <p class="muted">New beneficiaries are added. For existing beneficiaries, only empty training, follow-up or FH attendance cells are filled; existing values are never overwritten. Re-uploading the same file is safe.</p>
+  <p class="muted">FH monthly reporting uses additional month-labelled columns in the same workbook. Nonblank monthly counts update matching unit/month reports. <a href="{{ url_for('dashboard', dataset='care') }}#fh-monthly">See the FH reporting column guide.</a></p>
   <div class="button-row"><button class="button button-primary" type="submit">Check and add new data</button></div>
 </form></div>
 {% if result %}<div class="panel"><div class="section-heading"><p class="eyebrow">Upload result</p><h2>{{ result.added }} new beneficiaries added · {{ result.updated }} existing beneficiaries updated</h2><p>{{ result.existing }} unchanged rows skipped{% if result.duplicates %} · {{ result.duplicates }} duplicate beneficiaries skipped{% endif %}{% if result.ambiguous %} · {{ result.ambiguous }} ambiguous matches safely skipped{% endif %}.</p></div></div>{% endif %}
+{% if result and result.monthly_updated %}<p class="flash flash-success">{{ result.monthly_updated }} FH monthly reports updated.</p>{% endif %}
 {% endblock %}

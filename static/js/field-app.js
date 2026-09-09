@@ -526,6 +526,12 @@
       input.placeholder = "Enter observations or advice";
       input.value = prefill;
       wrap.append(input);
+    } else if (question.type === "date") {
+      const input = document.createElement("input");
+      input.type = "date";
+      input.name = name;
+      input.value = prefill;
+      wrap.append(input);
     } else if (question.type === "number") {
       const numberWrap = create("div", "field-number-input");
       const input = document.createElement("input");

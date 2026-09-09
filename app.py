@@ -56,6 +56,7 @@ from questionnaire import NEXT_ACTION_OPTIONS, QUESTIONNAIRE_VERSION, questionna
 from followup_survey import (
     CARRY_FORWARD_QUESTION_IDS,
     SURVEY_VERSION,
+    age_group_from_birth_date,
     all_questions_for_topics,
     build_survey,
     question_is_active,
@@ -386,7 +387,7 @@ def create_app(test_config=None):
             session["is_admin"] = bool(user["is_admin"])
             session["access_scope"] = user["access_scope"]
             session["cbf_name"] = user["cbf_name"] or ""
-            fh_allowed = {"dashboard", "record_list", "record_detail", "logout"}
+            fh_allowed = {"dashboard", "record_list", "record_detail", "logout", "fh_settings", "fh_export", "fh_report"}
             if user["access_scope"] == "fh_dashboard" and request.endpoint not in fh_allowed:
                 abort(403)
             ae_user_denied = {"data_entry", "bulk_upload", "users", "user_password", "user_status", "user_access"}
@@ -482,9 +483,76 @@ def create_app(test_config=None):
             return render_template("combined_dashboard.html", dataset=dataset, filters=filters, **data)
         if dataset == "care":
             data = build_fh_dashboard_data(get_db(), filters)
+            from fh_monitoring import build_monitoring
+            data['monitoring'] = build_monitoring(get_db(), request.args)
             return render_template("fh_dashboard.html", dataset=dataset, filters=filters, **data)
         data = build_dashboard_data(get_db(), dataset, filters)
         return render_template("dashboard.html", dataset=dataset, filters=filters, **data)
+
+    @app.post('/fh/settings')
+    def fh_settings():
+        from fh_monitoring import ALL_METRICS, LOCATIONS, reports
+        if session.get('access_scope') == 'ae_user':
+            abort(403)
+        connection = get_db()
+        try:
+            metric = request.form.get('metric')
+            if metric not in ALL_METRICS:
+                raise ValueError('Choose an indicator.')
+            if request.form.get('action') == 'threshold':
+                values = {key: float(request.form.get(key, '')) for key in ('excellent', 'good', 'critical')}
+                if any(not math.isfinite(v) or v < 0 for v in values.values()):
+                    raise ValueError('Thresholds must be finite, non-negative numbers.')
+                direction = request.form.get('direction')
+                if direction not in ('higher', 'lower'):
+                    raise ValueError('Choose a performance direction.')
+                ordered = [values[k] for k in ('critical', 'good', 'excellent')]
+                if ordered != sorted(ordered, reverse=direction == 'lower'):
+                    raise ValueError('For higher-is-better use critical ≤ on-track ≤ exceeding; reverse the order for lower-is-better.')
+                basis = request.form.get('basis', 'unit')
+                if basis not in ('unit', 'target'):
+                    raise ValueError('Choose unit counts or target achievement thresholds.')
+                setting_key = 'fh_rules' if basis == 'unit' else 'fh_target_rules'
+                rules = get_setting(connection, setting_key, {})
+                rules[metric] = {**values, 'direction': direction}
+                set_setting(connection, setting_key, rules)
+            elif request.form.get('action') in ('target', 'delete_target'):
+                month = request.form.get('month', '')
+                date.fromisoformat(month + '-01')
+                scope = {k: request.form.get('scope_' + k, '').strip() for k in LOCATIONS}
+                if any(scope.values()) and not any(all(not v or r[k] == v for k,v in scope.items()) for r in reports(connection)):
+                    raise ValueError('Choose an existing reporting location or unit.')
+                targets = get_setting(connection, 'fh_targets', [])
+                targets = [t for t in targets if (t['metric'],t['month'],t['scope']) != (metric,month,scope)]
+                if request.form.get('action') == 'target':
+                    target = float(request.form.get('target', ''))
+                    if not math.isfinite(target) or target < 0:
+                        raise ValueError('Target must be a finite, non-negative number.')
+                    targets.append(dict(metric=metric, month=month, scope=scope, target=target))
+                set_setting(connection, 'fh_targets', targets)
+            else:
+                raise ValueError('Unknown settings action.')
+            log_audit(connection, session['username'], 'fh_settings', 'settings', None,
+                      'Updated FH targets or thresholds', {'metric': metric, 'action': request.form.get('action')})
+            connection.commit()
+            flash('FH settings saved.', 'success')
+        except (ValueError, TypeError) as exc:
+            connection.rollback()
+            flash(str(exc) or 'Please check the settings values.', 'error')
+        return redirect(url_for('dashboard', dataset='care', month=request.form.get('month', '')) + '#fh-settings')
+
+    @app.get('/fh/export.csv')
+    def fh_export():
+        from fh_monitoring import build_monitoring, export_csv
+        response = make_response(export_csv(build_monitoring(get_db(), request.args)))
+        response.headers['Content-Type'] = 'text/csv; charset=utf-8'
+        response.headers['Content-Disposition'] = 'attachment; filename=fh-monthly-data.csv'
+        return response
+
+    @app.get('/fh/report')
+    def fh_report():
+        from fh_monitoring import build_monitoring
+        return render_template('fh_report.html', m=build_monitoring(get_db(), request.args))
 
     @app.get("/dashboard.pdf")
     def dashboard_pdf():
@@ -1796,10 +1864,13 @@ def create_app(test_config=None):
                           f"{dataset_label} bulk upload added {result['added']} beneficiaries and updated {result['updated']} existing records",
                           {"dataset": dataset, "filename": Path(upload.filename).name, **result})
                 connection.commit()
+                if result.get('monthly_updated'):
+                    flash(f"Updated {result['monthly_updated']} FH monthly reports from the same workbook.", 'success')
                 if result["added"] or result["updated"]:
                     flash(f"Safely added {result['added']} new beneficiaries and updated {result['updated']} existing beneficiaries.", "success")
                 else:
-                    flash("No new beneficiaries or training entries were found; the database was not changed.", "success")
+                    if not result.get('monthly_updated'):
+                        flash("No new beneficiaries or training entries were found; the database was not changed.", "success")
             except BulkImportError as exc:
                 connection.rollback()
                 flash(str(exc), "error")
@@ -1835,6 +1906,9 @@ def followup_profile(record, raw: dict) -> dict[str, str]:
         "phone": record["phone"] or "",
         "sex": record["sex"] or "",
         "pwd": pwd,
+        "birth_date": str(
+            raw.get("Date of birth") or raw.get("Date of Birth") or raw.get("DOB") or ""
+        ).strip()[:10],
         "age_group": record["age_group"] or record["age_value"] or "",
         "group": record["group_name"] or "",
         "education": str(raw.get("Level of education completed") or "").strip(),
@@ -2502,6 +2576,21 @@ def save_scored_followup(
             "type": "calculated",
         }
 
+    birth_date = answers.get("a8_birth_date")
+    if birth_date:
+        calculated_age_group = age_group_from_birth_date(
+            birth_date, date.fromisoformat(event_date)
+        )
+        if not calculated_age_group:
+            return False, "A8.5 date of birth cannot be after the follow-up date."
+        answers["a8_age_group"] = calculated_age_group
+        answer_records["a8_age_group"] = {
+            "source_id": "A8.5",
+            "question": "Age group (calculated from date of birth)",
+            "answer": calculated_age_group,
+            "type": "calculated",
+        }
+
     validation_error = validate_answers(
         answers, topics, training_history=training_history,
     )
@@ -2552,11 +2641,13 @@ def save_scored_followup(
     for key, answer_id in {
         "district": "a4_district", "subcounty": "a5_subcounty", "village": "a6_village",
         "beneficiary_type": "a8_beneficiary_type", "phone": "a8_contact", "sex": "a8_gender",
-        "pwd": "a8_pwd", "age_group": "a8_age_group", "group": "a8_group",
+        "pwd": "a8_pwd", "birth_date": "a8_birth_date", "group": "a8_group",
         "education": "a9_education",
     }.items():
         if answers.get(answer_id) not in {None, ""}:
             profile[key] = str(answers[answer_id])
+    if answers.get("a8_age_group"):
+        profile["age_group"] = answers["a8_age_group"]
     profile.update({
         "household_total": answers.get("a10_total"),
         "household_male": answers.get("a10_male"),
@@ -2626,6 +2717,7 @@ def save_scored_followup(
         "DISTRICT": profile["district"], "Sub County": profile["subcounty"],
         "Village": profile["village"], "Phone Number": profile["phone"],
         "Sex": profile["sex"], "PWD (Y/N)": profile["pwd"],
+        "Date of birth": profile["birth_date"],
         "Age group": profile["age_group"], "GROUP NAME": profile["group"],
         "Benefiary Type": profile["beneficiary_type"],
         "Level of education completed": profile["education"],
