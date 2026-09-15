@@ -24,6 +24,17 @@
 
   <div class="field-alert" data-field-alert hidden role="status" aria-live="polite"></div>
 
+  <section class="field-update panel" aria-label="App updates">
+    <div>
+      <strong>App updates</strong>
+      <p data-app-update-status role="status" aria-live="polite">Updates keep your saved entries and prepared field data on this tablet.</p>
+    </div>
+    <div class="field-update-actions">
+      <button class="button button-secondary" type="button" data-check-app-update>Check for updates</button>
+      <button class="button button-primary" type="button" data-apply-app-update hidden>Update and restart</button>
+    </div>
+  </section>
+
   <section class="field-prepare panel" data-prepare-panel>
     <div>
       <p class="eyebrow">Prepare this tablet</p>
@@ -59,6 +70,7 @@
       <button type="button" data-field-tab="centralized">Centralized training</button>
       <button type="button" data-field-tab="followup">Follow-up</button>
       <button type="button" data-field-tab="pending">Pending <span data-pending-badge>0</span></button>
+      <button type="button" data-field-tab="results">Results</button>
     </nav>
 
     <section class="field-pane active" data-field-pane="home">
@@ -90,12 +102,13 @@
     </section>
 
     <section class="field-pane" data-field-pane="followup" hidden>
-      <div class="field-pane-heading"><div><p class="eyebrow">Beneficiary follow-up</p><h2>Complete the adaptive monitoring survey</h2><p>Observation-led questions open from the beneficiary's due training types. Results and follow-up intervals are calculated during synchronization.</p></div><button class="button button-ghost" type="button" data-open-pane="home">Back</button></div>
+      <div class="field-pane-heading"><div><p class="eyebrow">Beneficiary follow-up</p><h2>Complete the adaptive monitoring survey</h2><p>Observation-led questions open from the beneficiary's due training types. Save the visit to see outcomes and recommended next actions, even offline.</p></div><button class="button button-ghost" type="button" data-open-pane="home">Back</button></div>
       <form class="field-form" data-followup-form>
         <div class="field-event-grid panel field-followup-selector">
           <label>Follow-up date<input type="date" name="eventDate" required></label>
           <label>Beneficiary group<select name="group" data-fu-group><option value="">All groups</option></select></label>
           <label class="field-search-wide">Find beneficiary<input type="search" name="search" data-fu-search placeholder="Search name, ID, village or group" autocomplete="off"></label>
+          <label class="checkbox-label"><input type="checkbox" data-fu-unvisited><span><strong>Not yet visited this round</strong><small>Hide beneficiaries already saved in the current questionnaire round.</small></span></label>
         </div>
         <div class="field-farmer-list panel" data-farmer-list></div>
         <div class="field-questionnaires" data-followup-questionnaires hidden></div>
@@ -107,10 +120,18 @@
       <div class="field-pane-heading"><div><p class="eyebrow">Synchronization queue</p><h2>Entries stored on this tablet</h2><p>Accepted entries disappear from this list after synchronization. Entries needing attention remain visible.</p></div><button class="button button-primary" type="button" data-sync-now>Synchronize now</button></div>
       <div class="field-outbox" data-outbox-list></div>
     </section>
+    <section class="field-pane" data-field-pane="results" hidden>
+      <div class="field-pane-heading"><div><p class="eyebrow">Saved follow-ups</p><h2>Follow-up results</h2><p>Review outcomes and findings on this tablet, including while offline.</p></div><button class="button button-ghost" type="button" data-open-pane="home">Back</button></div>
+      <label class="field-result-picker">Saved visit<select data-result-select aria-label="Saved follow-up visit"></select></label>
+      <div data-followup-results aria-live="polite"></div>
+    </section>
   </section>
 </div>
 <script id="field-app-config" type="application/json">{{ field_app_config|tojson }}</script>
 {% endblock %}
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/field-app.js') }}" defer></script>
+<script src="{{ url_for('field_app_scoring_rules', v=asset_version) }}" defer></script>
+<script src="{{ url_for('static', filename='js/field-scoring.js', v=asset_version) }}" defer></script>
+<script src="{{ url_for('static', filename='js/field-app.js', v=asset_version) }}" defer></script>
+<script src="{{ url_for('static', filename='js/field-updates.js', v=asset_version) }}" defer></script>
 {% endblock %}

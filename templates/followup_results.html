@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Follow-up results - ARFSA{% endblock %}
 {% block content %}
+{% if assessment.summary.shared_followup %}<div class="notice success">This plot follow-up was also registered for <strong>{{ assessment.summary.shared_followup.name }}</strong> for {{ assessment.summary.shared_followup.topics|join(', ') }}.</div>{% endif %}
 {% set outcome = assessment.summary.household_outcome %}
 <div class="page-heading"><div><p class="eyebrow">Follow-up completed</p><h1>{{ assessment.beneficiary_name }}</h1><p class="lead">Review the calculated results, then confirm what should happen for each training type.</p></div><span class="status-pill">{{ assessment.event_date|datefmt }}</span></div>
 

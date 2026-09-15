@@ -4,12 +4,12 @@
 <section class="dashboard-hero fh-hero">
   <div class="hero-copy">
     <p class="eyebrow hero-eyebrow">Family health participation monitoring</p>
-    <h1>FH attendance dashboard</h1>
-    <p>Session attendance and delivery coverage, separated correctly between care groups and school clubs.</p>
+    <h1>FH monitoring dashboard</h1>
+    <p>Community health, VHT activity, care-group performance and programme participation.</p>
   </div>
   <div class="hero-actions">
-    <div class="hero-meta"><span class="live-dot"></span><div><strong>Live attendance view</strong><small>A = attended, X = absent, blank = not recorded</small></div></div>
-    <a class="button button-secondary" href="{{ url_for('dashboard_pdf', dataset='care', **filters) }}">Download PDF</a>
+    <div class="hero-meta"><span class="live-dot"></span><div><strong>Excel reporting</strong><small>Updated through the existing bulk upload</small></div></div>
+    <a class="button button-secondary" href="#fh-settings">Targets &amp; thresholds</a>
   </div>
 </section>
 
@@ -18,6 +18,8 @@
   <span class="scope-label">{{ summary.total_records }} FH participants · {{ summary.groups }} groups and schools</span>
 </div>
 
+{% include 'fh_monitoring.html' %}
+<section id="fh-attendance"><div class="panel-heading"><div><p class="eyebrow">Existing participant records</p><h2>Attendance and participation</h2><p>These lifetime attendance views use the participant filters below. Monthly reporting filters above apply to monthly reports only.</p></div></div></section>
 <form class="filter-panel fh-filter-panel" method="get">
   <input type="hidden" name="dataset" value="care">
   <label>Programme category<select name="category"><option value="">All categories</option>{% for item in options.categories %}<option {{ 'selected' if filters.category == item }}>{{ item }}</option>{% endfor %}</select></label>
@@ -84,3 +86,4 @@
   </article>
 </section>
 {% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/fh-monitoring.js', v=asset_version) }}" defer></script>{% endblock %}

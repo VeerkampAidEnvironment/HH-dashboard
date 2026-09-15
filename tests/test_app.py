@@ -254,7 +254,7 @@ class ApplicationTest(unittest.TestCase):
     def test_fh_dashboard_uses_attendance_structure(self):
         response = self.client.get("/dashboard?dataset=care")
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"FH attendance dashboard", response.data)
+        self.assertIn(b"FH monitoring dashboard", response.data)
         self.assertIn(b"Care groups", response.data)
         self.assertIn(b"School clubs", response.data)
         self.assertIn(b"Absences", response.data)
@@ -683,7 +683,7 @@ class ApplicationTest(unittest.TestCase):
 
         dashboard = self.client.get("/dashboard?dataset=training")
         self.assertEqual(dashboard.status_code, 200)
-        self.assertIn(b"FH attendance dashboard", dashboard.data)
+        self.assertIn(b"FH monitoring dashboard", dashboard.data)
         self.assertIn(b"nav-disabled", dashboard.data)
 
         farmers = self.client.get("/records?dataset=training")
@@ -716,7 +716,22 @@ class ApplicationTest(unittest.TestCase):
         self.assertEqual(self.client.get("/dashboard?dataset=training").status_code, 200)
         self.assertEqual(self.client.get("/records?dataset=training").status_code, 200)
         self.assertEqual(self.client.get("/cbfs").status_code, 200)
-        self.assertEqual(self.client.get("/audit").status_code, 200)
+        audit_page = self.client.get("/audit")
+        self.assertEqual(audit_page.status_code, 200)
+        self.assertNotIn(b"Revert action", audit_page.data)
+        self.assertNotIn(b"Delete event data", audit_page.data)
+        with self.app.app_context():
+            from db import get_db
+
+            reversible_audit_id = get_db().execute(
+                """SELECT a.id FROM audit_log a
+                   WHERE EXISTS(SELECT 1 FROM audit_undo_rows aur WHERE aur.audit_id=a.id)
+                   AND a.action<>'revert' ORDER BY a.id DESC LIMIT 1"""
+            ).fetchone()[0]
+        forbidden_revert = self.client.post(
+            f"/audit/{reversible_audit_id}/revert", data={"csrf_token": self.csrf()}
+        )
+        self.assertEqual(forbidden_revert.status_code, 403)
         self.assertEqual(self.client.get("/data-entry").status_code, 403)
         self.assertEqual(self.client.get("/bulk-upload").status_code, 403)
         self.assertEqual(self.client.get("/users").status_code, 403)
@@ -1090,7 +1105,7 @@ class ApplicationTest(unittest.TestCase):
             self.assertEqual(status, "WAIT")
 
     def test_adaptive_followup_calculates_and_stores_training_result(self):
-        from followup_survey import I1_RATING_QUESTIONS, PIP, SURVEY_VERSION, received_training_topics
+        from followup_survey import PIP, SURVEY_VERSION, TRAINING_TOPICS, received_training_topics
 
         with self.app.app_context():
             from db import get_db
@@ -1107,6 +1122,7 @@ class ApplicationTest(unittest.TestCase):
             "csrf_token": self.csrf(), "cbf": due["cbf_name"], "mode": "followup",
             "event_date": date.today().isoformat(), "record_id": str(due["id"]),
             "survey_version": SURVEY_VERSION, "topic_count": "1", "topic__0": PIP,
+            "survey_answer__a0_shared_plot": "no",
             "survey_answer__c1_map_drawn": "no",
             "survey_answer__h1_radio": "no",
             "survey_answer__i2_change": "No noticeable change yet",
@@ -1114,9 +1130,9 @@ class ApplicationTest(unittest.TestCase):
             "survey_answer__consent": "yes",
         }
         recorded_topics = set(received_training_topics(json.loads(due["raw_data"])))
-        for _, question_id, _, training_topic in I1_RATING_QUESTIONS:
-            if training_topic in recorded_topics:
-                data[f"survey_answer__{question_id}"] = "lot"
+        data["survey_answer__i1_training_ranking"] = [
+            topic for topic in TRAINING_TOPICS if topic in recorded_topics
+        ]
         response = self.client.post("/data-entry", data=data)
         self.assertEqual(response.status_code, 302)
         results_page = self.client.get(response.headers["Location"])
@@ -1150,7 +1166,7 @@ class ApplicationTest(unittest.TestCase):
 
     def test_adaptive_section_b_persists_package_breadth_depth_and_outcome(self):
         from followup_survey import (
-            I1_RATING_QUESTIONS, SECTION_B_TOPICS, SURVEY_VERSION,
+            SECTION_B_TOPICS, SURVEY_VERSION, TRAINING_TOPICS,
             received_training_topics,
         )
         from tests.test_followup_survey import good_section_b_answers
@@ -1173,6 +1189,7 @@ class ApplicationTest(unittest.TestCase):
             "csrf_token": self.csrf(), "cbf": due["cbf_name"], "mode": "followup",
             "event_date": date.today().isoformat(), "record_id": str(due["id"]),
             "survey_version": SURVEY_VERSION, "topic_count": "1", "topic__0": due["topic"],
+            "survey_answer__a0_shared_plot": "no",
             "survey_answer__h1_radio": "no",
             "survey_answer__i2_change": "More harvest / yield",
             "survey_answer__i3_improve": "Nothing - satisfied as is",
@@ -1182,12 +1199,13 @@ class ApplicationTest(unittest.TestCase):
                 (BytesIO(b"\xff\xd8\xffsecond-photo"), "weak-practice.jpg"),
             ],
         }
-        for _, question_id, _, training_topic in I1_RATING_QUESTIONS:
-            if training_topic in recorded_topics:
-                data[f"survey_answer__{question_id}"] = "lot"
+        data["survey_answer__i1_training_ranking"] = [
+            topic for topic in TRAINING_TOPICS if topic in recorded_topics
+        ]
         for question_id, value in good_section_b_answers().items():
             data[f"survey_answer__{question_id}"] = value
         data.update({
+            "survey_answer__a8_birth_year": "1990",
             "survey_answer__a10_male": "3",
             "survey_answer__a10_female": "4",
             "survey_answer__b13_synthetic_fertilizer": "2.5",
@@ -1221,7 +1239,11 @@ class ApplicationTest(unittest.TestCase):
             self.assertEqual(assessment["breadth_achieved"], 5)
             self.assertEqual(assessment["breadth_total"], 5)
             self.assertAlmostEqual(assessment["depth"], 93.8)
-            self.assertEqual(json.loads(assessment["profile_snapshot"])["household_total"], 7)
+            profile_snapshot = json.loads(assessment["profile_snapshot"])
+            self.assertEqual(profile_snapshot["household_total"], 7)
+            self.assertEqual(profile_snapshot["birth_year"], "1990")
+            self.assertEqual(profile_snapshot["age"], date.today().year - 1990)
+            self.assertEqual(profile_snapshot["age_group"], "Adult")
             package_count = connection.execute(
                 "SELECT COUNT(*) FROM followup_package_results WHERE assessment_id=?",
                 (assessment["id"],),
@@ -1240,7 +1262,16 @@ class ApplicationTest(unittest.TestCase):
             self.assertEqual(stored_answers["a10_total"]["type"], "calculated")
             self.assertEqual(stored_answers["b14_manure_loads"]["answer"], 1.5)
             self.assertEqual(stored_answers["b14_unit"]["answer"], "other")
-            self.assertEqual(stored_answers["b14_unit_other"]["answer"], "Jerrycan")
+            self.assertEqual(stored_answers["b14_unit_other"]["answer"], "Wheelbarrow-load")
+            self.assertEqual(stored_answers["a8_birth_year"]["answer"], "1990")
+            self.assertEqual(stored_answers["a8_age"]["answer"], date.today().year - 1990)
+            self.assertEqual(stored_answers["a8_age_group"]["answer"], "Adult")
+            saved_profile = connection.execute(
+                "SELECT age_value, age_group, raw_data FROM records WHERE id=?", (due["id"],)
+            ).fetchone()
+            self.assertEqual(saved_profile["age_group"], "Adult")
+            self.assertEqual(saved_profile["age_value"], str(date.today().year - 1990))
+            self.assertEqual(json.loads(saved_profile["raw_data"])["Year of birth"], "1990")
             from app import carry_forward_answers_by_record
             self.assertEqual(
                 carry_forward_answers_by_record(connection, [due["id"]])[due["id"]],
@@ -1278,6 +1309,7 @@ class ApplicationTest(unittest.TestCase):
                    WHERE id IN ({})""".format(",".join("?" for _ in response_rows)),
                 tuple(row["id"] for row in response_rows),
             ).fetchall()
+
             related_audits = connection.execute(
                 """SELECT id, action FROM audit_log WHERE entity_type='field_event'
                    AND entity_id=? AND action IN ('field_entry', 'followup_actions')""",
@@ -1331,6 +1363,98 @@ class ApplicationTest(unittest.TestCase):
                 tuple(row["id"] for row in related_audits),
             ).fetchone()[0], len(related_audits))
         self.assertTrue(all(not (self.photo_folder / photo["file"]).exists() for photo in photos))
+
+    def test_shared_plot_followup_registers_matching_topics_for_second_person(self):
+        from app import rebuild_statuses
+        from followup_survey import PIP, SURVEY_VERSION, TRAINING_TOPICS, received_training_topics
+
+        with self.app.app_context():
+            from db import get_db
+
+            connection = get_db()
+            primary = connection.execute(
+                """SELECT r.* FROM records r JOIN topic_statuses ts ON ts.record_id=r.id
+                   WHERE r.dataset='training' AND r.archived_at IS NULL
+                     AND TRIM(COALESCE(r.village,''))<>'' AND TRIM(COALESCE(r.cbf_name,''))<>''
+                     AND ts.topic=? AND ts.status_code='FU' LIMIT 1""",
+                (PIP,),
+            ).fetchone()
+            secondary = connection.execute(
+                """SELECT * FROM records WHERE dataset='training' AND archived_at IS NULL
+                   AND id<>? LIMIT 1""", (primary["id"],),
+            ).fetchone()
+            secondary_raw = json.loads(secondary["raw_data"])
+            secondary_raw[f"Training 1 - {PIP}"] = "2020-01-01"
+            secondary_raw[f"Follow up 1 - {PIP}"] = ""
+            connection.execute(
+                "UPDATE records SET village=?, raw_data=? WHERE id=?",
+                (primary["village"], json.dumps(secondary_raw), secondary["id"]),
+            )
+            rebuild_statuses(connection, secondary["id"], "training", secondary_raw)
+            connection.commit()
+            primary_history = received_training_topics(json.loads(primary["raw_data"]))
+
+        data = {
+            "csrf_token": self.csrf(), "cbf": primary["cbf_name"], "mode": "followup",
+            "event_date": date.today().isoformat(), "record_id": str(primary["id"]),
+            "survey_version": SURVEY_VERSION, "topic_count": "1", "topic__0": PIP,
+            "survey_answer__a0_shared_plot": "yes",
+            "survey_answer__a0_shared_person": str(secondary["id"]),
+            "survey_answer__c1_map_drawn": "no", "survey_answer__h1_radio": "no",
+            "survey_answer__i1_training_ranking": [
+                topic for topic in TRAINING_TOPICS if topic in set(primary_history)
+            ],
+            "survey_answer__i2_change": "No noticeable change yet",
+            "survey_answer__i3_improve": "More frequent follow-up visits",
+            "survey_answer__consent": "yes",
+        }
+        response = self.client.post("/data-entry", data=data)
+        self.assertEqual(response.status_code, 302)
+        result_page = self.client.get(response.headers["Location"])
+        self.assertIn(secondary["name"].encode(), result_page.data)
+        with self.app.app_context():
+            from db import get_db
+
+            connection = get_db()
+            assessment = connection.execute(
+                """SELECT * FROM followup_assessments WHERE record_id=?
+                   AND questionnaire_version=? ORDER BY id DESC LIMIT 1""",
+                (primary["id"], SURVEY_VERSION),
+            ).fetchone()
+            entries = connection.execute(
+                "SELECT record_id, topic FROM field_event_entries WHERE event_id=? ORDER BY record_id",
+                (assessment["event_id"],),
+            ).fetchall()
+            self.assertEqual({(row["record_id"], row["topic"]) for row in entries}, {
+                (primary["id"], PIP), (secondary["id"], PIP),
+            })
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM followup_assessments WHERE event_id=?", (assessment["event_id"],)
+            ).fetchone()[0], 1)
+            secondary_saved = json.loads(connection.execute(
+                "SELECT raw_data FROM records WHERE id=?", (secondary["id"],)
+            ).fetchone()[0])
+            self.assertEqual(secondary_saved[f"Follow up 1 - {PIP}"], date.today().isoformat())
+
+    def test_named_coordinators_receive_cross_group_field_worklist(self):
+        from app import build_field_app_package, is_coordinator_cbf
+
+        names = [
+            "Dismas Cheptoek", "Ramula Chebet", "Eliakim Kibet",
+            "Ephraim Kibet Festo", "Chesang Ben Samuel",
+        ]
+        self.assertTrue(all(is_coordinator_cbf(name) for name in names))
+        with self.app.app_context():
+            from db import get_db
+
+            connection = get_db()
+            package = build_field_app_package(connection, names[0])
+            total = connection.execute(
+                "SELECT COUNT(*) FROM records WHERE dataset='training' AND archived_at IS NULL"
+            ).fetchone()[0]
+            self.assertTrue(package["coordinator"])
+            self.assertEqual(len(package["farmers"]), total)
+            self.assertTrue(all("visitedThisRound" in farmer for farmer in package["farmers"]))
 
     def test_followup_can_request_ct_and_new_ct_restarts_waiting_period(self):
         with self.app.app_context():
@@ -1472,7 +1596,7 @@ class ApplicationTest(unittest.TestCase):
         page = self.client.get("/matches?view=duplicates&dataset=training&q=AAAA+Duplicate+Merge+Test")
         self.assertEqual(page.status_code, 200)
         self.assertIn(b"AAAA Duplicate Merge Test", page.data)
-        self.assertIn(b"Merge selected records", page.data)
+        self.assertIn(b"Save identity split", page.data)
 
         form = {
             "csrf_token": self.csrf(), "survivor_id": str(created_record_ids[0]),

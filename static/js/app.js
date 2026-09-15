@@ -103,6 +103,56 @@ window.arfsaSetupPhotoPicker = (picker) => {
   render();
 };
 
+window.arfsaSetupRanking = (ranking) => {
+  if (!ranking || ranking.dataset.rankingReady === "true") return;
+  const list = ranking.querySelector("[data-ranking-list]");
+  if (!list) return;
+  ranking.dataset.rankingReady = "true";
+  let dragged = null;
+  const refresh = () => {
+    const items = Array.from(list.querySelectorAll("[data-ranking-item]"));
+    items.forEach((item, index) => {
+      item.dataset.rank = String(index + 1);
+      item.querySelector("[data-ranking-up]").disabled = index === 0;
+      item.querySelector("[data-ranking-down]").disabled = index === items.length - 1;
+    });
+    ranking.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  list.addEventListener("click", (event) => {
+    const item = event.target.closest("[data-ranking-item]");
+    if (!item) return;
+    if (event.target.closest("[data-ranking-up]") && item.previousElementSibling) {
+      list.insertBefore(item, item.previousElementSibling);
+      refresh();
+    } else if (event.target.closest("[data-ranking-down]") && item.nextElementSibling) {
+      list.insertBefore(item.nextElementSibling, item);
+      refresh();
+    }
+  });
+  list.addEventListener("dragstart", (event) => {
+    dragged = event.target.closest("[data-ranking-item]");
+    if (dragged) {
+      dragged.classList.add("dragging");
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", dragged.querySelector('input[type="hidden"]')?.value || "");
+    }
+  });
+  list.addEventListener("dragover", (event) => {
+    if (!dragged) return;
+    event.preventDefault();
+    const target = event.target.closest("[data-ranking-item]");
+    if (!target || target === dragged) return;
+    const box = target.getBoundingClientRect();
+    list.insertBefore(dragged, event.clientY < box.top + box.height / 2 ? target : target.nextSibling);
+  });
+  list.addEventListener("dragend", () => {
+    dragged?.classList.remove("dragging");
+    dragged = null;
+    refresh();
+  });
+  refresh();
+};
+
 window.arfsaConfirmPackage = ({ finalPackage = false } = {}) => new Promise((resolve) => {
   const previousFocus = document.activeElement;
   const overlay = document.createElement("div");
@@ -158,6 +208,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const navigation = document.querySelector("[data-main-nav]");
   menuButton?.addEventListener("click", () => navigation?.classList.toggle("open"));
   document.querySelectorAll("[data-photo-picker]").forEach(window.arfsaSetupPhotoPicker);
+  document.querySelectorAll("[data-ranking]").forEach(window.arfsaSetupRanking);
 
   document.querySelectorAll("form[data-confirm]").forEach((form) => {
     form.addEventListener("submit", (event) => {
@@ -199,6 +250,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const valueFor = (questionId) => {
       const node = form.querySelector(`[data-survey-question="${CSS.escape(questionId)}"]`);
       if (!node) return "";
+      const ranking = node.querySelector("[data-ranking-list]");
+      if (ranking) return Array.from(ranking.querySelectorAll('input[type="hidden"]')).map((input) => input.value);
       const checked = Array.from(node.querySelectorAll("input[type=checkbox]:checked"));
       if (node.querySelector("input[type=checkbox]")) return checked.map((input) => input.value);
       return node.querySelector("input[type=radio]:checked")?.value

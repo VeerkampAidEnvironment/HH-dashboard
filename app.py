@@ -56,9 +56,11 @@ from questionnaire import NEXT_ACTION_OPTIONS, QUESTIONNAIRE_VERSION, questionna
 from followup_survey import (
     CARRY_FORWARD_QUESTION_IDS,
     SURVEY_VERSION,
-    age_group_from_birth_date,
+    age_from_birth_year,
+    age_group_from_birth_year,
     all_questions_for_topics,
     build_survey,
+    offline_scoring_rules,
     question_is_active,
     received_training_topics,
     resolve_locked_answers,
@@ -81,6 +83,19 @@ DATASET_LABELS = {
     "training": "AE",
     "care": "FH",
 }
+
+COORDINATOR_CBF_NAMES = {
+    "dismas cheptoek",
+    "ramula chebet",
+    "eliakim kibet",
+    "ephraim kibet festo",
+    "chesang ben samuel",
+}
+
+
+def is_coordinator_cbf(cbf_name: str) -> bool:
+    normalized = " ".join(str(cbf_name or "").split()).casefold()
+    return normalized in COORDINATOR_CBF_NAMES
 
 MAX_FOLLOWUP_PHOTOS = 6
 MAX_FOLLOWUP_PHOTO_BYTES = 8 * 1024 * 1024
@@ -316,6 +331,22 @@ def delete_historical_field_event(connection, audit_id: int, username: str) -> t
         raise
 
 
+def field_app_version(root: Path) -> str:
+    """Change the offline release whenever any part of the app shell changes."""
+    digest = hashlib.sha256()
+    for name in (
+        "app.py", "followup_survey.py", "templates/base.html", "templates/field_app.html",
+        "static/css/app.css", "static/js/app.js", "static/js/field-app.js",
+        "static/js/field-updates.js", "static/js/field-service-worker.js",
+        "static/js/field-scoring.js",
+        "static/vendor/html2canvas.min.js", "static/img/field-app-icon-192.png",
+        "static/img/field-app-icon-512.png",
+    ):
+        digest.update(name.encode())
+        digest.update((root / name).read_bytes())
+    return digest.hexdigest()[:12]
+
+
 def create_app(test_config=None):
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_mapping(
@@ -328,10 +359,13 @@ def create_app(test_config=None):
     )
     if test_config:
         app.config.update(test_config)
-    static_files = [Path(app.static_folder) / "css" / "app.css", Path(app.static_folder) / "js" / "app.js"]
+    static_files = [Path(app.static_folder) / folder / filename for folder, filename in (
+        ("css", "app.css"), ("js", "app.js"), ("css", "identity-review.css"), ("js", "identity-review.js"),
+    )]
     app.config["ASSET_VERSION"] = str(max(
         int(path.stat().st_mtime_ns) for path in static_files if path.exists()
     ))
+    app.config["FIELD_APP_VERSION"] = field_app_version(Path(app.root_path))
     Path(app.instance_path).mkdir(parents=True, exist_ok=True)
     register_db(app)
     with app.app_context():
@@ -1273,6 +1307,29 @@ def create_app(test_config=None):
         flash(message, "success")
         return redirect(url_for("matches", view="duplicates", status="merged"))
 
+    @app.post("/duplicates/preview")
+    def duplicate_split_preview():
+        from identity_review import IdentityReviewError, prepare_split
+
+        try:
+            _rows, plans = prepare_split(get_db(), request.get_json(silent=True))
+        except IdentityReviewError as error:
+            return jsonify({"ok": False, "error": str(error)}), 400
+        return jsonify({"ok": True, "groups": [
+            {key: plan[key] for key in ("record_ids", "survivor_id", "conflicts", "errors", "unresolved")}
+            for plan in plans
+        ]})
+
+    @app.post("/duplicates/split")
+    def duplicate_split_save():
+        from identity_review import IdentityReviewError, save_split
+
+        try:
+            result = save_split(get_db(), request.get_json(silent=True), session["username"])
+        except IdentityReviewError as error:
+            return jsonify({"ok": False, "error": str(error)}), 400
+        return jsonify({"ok": True, **result})
+
     @app.post("/matches/<int:match_id>/<decision>")
     def match_decision(match_id, decision):
         if decision not in {"confirm", "reject"}:
@@ -1598,13 +1655,18 @@ def create_app(test_config=None):
         selected_group = request.values.get("group", "").strip()
         selected_record_id = request.values.get("record_id", type=int)
         selected_event_date = valid_iso_date(request.values.get("event_date", "")) or ""
+        not_visited_only = request.values.get("not_visited") == "1"
+        selected_is_coordinator = is_coordinator_cbf(selected_cbf)
 
         if selected_cbf:
+            group_where = ["dataset='training'", "archived_at IS NULL", "TRIM(COALESCE(group_name,''))<>''"]
+            group_params = []
+            if not selected_is_coordinator:
+                group_where.append("cbf_name=?")
+                group_params.append(selected_cbf)
             groups = [row[0] for row in connection.execute(
-                """SELECT DISTINCT group_name FROM records
-                   WHERE dataset='training' AND archived_at IS NULL AND cbf_name=?
-                   AND TRIM(COALESCE(group_name,''))<>'' ORDER BY group_name""",
-                (selected_cbf,),
+                f"SELECT DISTINCT group_name FROM records WHERE {' AND '.join(group_where)} ORDER BY group_name",
+                group_params,
             ).fetchall()]
             if selected_group not in groups:
                 selected_group = ""
@@ -1624,20 +1686,31 @@ def create_app(test_config=None):
                     central_eligibility[row["topic"]].append(row)
 
             followup_where = [
-                "r.dataset='training'", "r.archived_at IS NULL", "r.cbf_name=?",
+                "r.dataset='training'", "r.archived_at IS NULL",
                 "EXISTS (SELECT 1 FROM topic_statuses ts WHERE ts.record_id=r.id AND ts.status_code='FU')",
             ]
-            followup_params = [selected_cbf]
+            followup_params = []
+            if not selected_is_coordinator:
+                followup_where.append("r.cbf_name=?")
+                followup_params.append(selected_cbf)
             if selected_group:
                 followup_where.append("r.group_name=?")
                 followup_params.append(selected_group)
+            if not_visited_only:
+                followup_where.append(
+                    "NOT EXISTS (SELECT 1 FROM followup_assessments fa "
+                    "WHERE fa.record_id=r.id AND fa.questionnaire_version=?)"
+                )
+                followup_params.append(SURVEY_VERSION)
             followup_farmers = connection.execute(
                 f"""SELECT r.id, r.name, r.group_name, f.uid,
                             (SELECT COUNT(*) FROM topic_statuses ts
-                             WHERE ts.record_id=r.id AND ts.status_code='FU') AS due_count
+                             WHERE ts.record_id=r.id AND ts.status_code='FU') AS due_count,
+                            EXISTS(SELECT 1 FROM followup_assessments fa
+                                   WHERE fa.record_id=r.id AND fa.questionnaire_version=?) AS visited_this_round
                      FROM records r JOIN farmers f ON f.id=r.farmer_id
                      WHERE {' AND '.join(followup_where)} ORDER BY r.group_name, r.name""",
-                followup_params,
+                [SURVEY_VERSION, *followup_params],
             ).fetchall()
             eligible_followup_ids = {row["id"] for row in followup_farmers}
             if selected_record_id in eligible_followup_ids:
@@ -1657,12 +1730,28 @@ def create_app(test_config=None):
                 ]
                 raw = json.loads(selected_followup_record["raw_data"])
                 due_topics = [row["topic"] for row in followup_rows]
+                shared_rows = connection.execute(
+                    """SELECT r.id, r.name, r.group_name, f.uid,
+                              GROUP_CONCAT(ts.topic, char(31)) AS due_topics
+                       FROM records r JOIN farmers f ON f.id=r.farmer_id
+                       JOIN topic_statuses ts ON ts.record_id=r.id AND ts.status_code='FU'
+                       WHERE r.dataset='training' AND r.archived_at IS NULL AND r.id<>?
+                         AND LOWER(TRIM(COALESCE(r.village,'')))=LOWER(TRIM(?))
+                       GROUP BY r.id HAVING COUNT(*)>0 ORDER BY r.name COLLATE NOCASE""",
+                    (selected_record_id, selected_followup_record["village"] or ""),
+                ).fetchall() if str(selected_followup_record["village"] or "").strip() else []
+                shared_options = [
+                    {"value": str(row["id"]), "label": f"{row['name']} — {row['group_name'] or 'No group'}"}
+                    for row in shared_rows
+                    if set(str(row["due_topics"] or "").split(chr(31))).intersection(due_topics)
+                ]
                 followup_survey = build_survey(
                     due_topics,
                     followup_profile(selected_followup_record, raw),
                     training_history=received_training_topics(raw),
                     previous_answers=carry_forward_answers_by_record(connection, [selected_record_id]).get(selected_record_id, {}),
                     editable_options={"a6_village": village_values, "a8_group": groups},
+                    question_options={"a0_shared_person": shared_options},
                 )
             else:
                 selected_record_id = None
@@ -1680,6 +1769,7 @@ def create_app(test_config=None):
             followup_survey=followup_survey, selected_followup_record=selected_followup_record,
             history=history, today=date.today().isoformat(), selected_event_date=selected_event_date,
             venues=venues, selected_venue=selected_venue, new_venue=new_venue,
+            not_visited_only=not_visited_only, selected_is_coordinator=selected_is_coordinator,
         )
 
     @app.route("/data-entry/followup-results/<int:event_id>", methods=["GET", "POST"])
@@ -1700,8 +1790,8 @@ def create_app(test_config=None):
         responses = [dict(row) for row in connection.execute(
             """SELECT fr.* FROM followup_responses fr
                JOIN field_event_entries fee ON fee.id=fr.event_entry_id
-               WHERE fee.event_id=? ORDER BY fr.topic""",
-            (event_id,),
+               WHERE fee.event_id=? AND fr.record_id=? ORDER BY fr.topic""",
+            (event_id, assessment_row["record_id"]),
         ).fetchall()]
         if request.method == "POST":
             allowed_actions = {item["value"] for item in NEXT_ACTION_OPTIONS}
@@ -1758,17 +1848,21 @@ def create_app(test_config=None):
         connection = get_db()
         cbfs = available_ae_cbfs(connection)
         assigned_cbf = session.get("cbf_name", "") if session.get("access_scope") == "ae_user" else ""
+        coordinator = is_coordinator_cbf(assigned_cbf)
         return render_template(
             "field_app.html",
             cbfs=cbfs,
             assigned_cbf=assigned_cbf,
             can_choose_cbf=session.get("access_scope") != "ae_user",
+            asset_version=app.config["FIELD_APP_VERSION"],
             field_app_config={
+                "appVersion": app.config["FIELD_APP_VERSION"],
                 "bootstrapUrl": url_for("field_app_bootstrap"),
                 "syncUrl": url_for("field_app_sync"),
                 "csrfToken": csrf_token(),
                 "assignedCbf": assigned_cbf,
                 "canChooseCbf": session.get("access_scope") != "ae_user",
+                "isCoordinator": coordinator,
                 "username": session.get("username", ""),
                 "environment": "test" if session.get("test_environment") else "live",
             },
@@ -1802,10 +1896,18 @@ def create_app(test_config=None):
 
     @app.get("/field-app/service-worker.js")
     def field_app_service_worker():
-        response = make_response(app.send_static_file("js/field-service-worker.js"))
+        source = (Path(app.static_folder) / "js" / "field-service-worker.js").read_text(encoding="utf-8")
+        response = make_response(source.replace("__FIELD_APP_VERSION__", app.config["FIELD_APP_VERSION"]))
         response.headers["Content-Type"] = "application/javascript; charset=utf-8"
         response.headers["Cache-Control"] = "no-cache"
         response.headers["Service-Worker-Allowed"] = "/field-app/"
+        return response
+
+    @app.get("/field-app/scoring-rules.js")
+    def field_app_scoring_rules():
+        response = make_response("window.ARFSA_FOLLOWUP_RULES = " + json.dumps(offline_scoring_rules()) + ";\n")
+        response.headers["Content-Type"] = "application/javascript; charset=utf-8"
+        response.headers["Cache-Control"] = "no-cache"
         return response
 
     @app.get("/field-app/api/bootstrap")
@@ -1835,6 +1937,16 @@ def create_app(test_config=None):
             )
             for submission in submissions
         ]
+        for result in results:
+            if result["status"] in {"accepted", "duplicate"} and result.get("eventId"):
+                assessment = connection.execute(
+                    """SELECT fa.summary FROM followup_assessments fa
+                       JOIN field_events e ON e.id=fa.event_id
+                       WHERE fa.event_id=? AND e.cbf_name=?""",
+                    (result["eventId"], cbf_name),
+                ).fetchone()
+                if assessment:
+                    result["outcome"] = json.loads(assessment["summary"])
         return jsonify({
             "ok": all(item["status"] in {"accepted", "duplicate"} for item in results),
             "results": results,
@@ -1898,6 +2010,11 @@ def followup_profile(record, raw: dict) -> dict[str, str]:
     """Build the editable Section A snapshot from canonical and workbook fields."""
     pwd_value = str(raw.get("PWD (Y/N)") or "").strip().casefold()
     pwd = "yes" if pwd_value in {"y", "yes", "1", "true"} else "no" if pwd_value else ""
+    recorded_birth = str(
+        raw.get("Year of birth") or raw.get("Date of birth")
+        or raw.get("Date of Birth") or raw.get("DOB") or ""
+    ).strip()
+    birth_year = recorded_birth[:4] if re.fullmatch(r"\d{4}(?:-\d{2}-\d{2})?", recorded_birth) else ""
     return {
         "district": record["district"] or "",
         "subcounty": record["subcounty"] or "",
@@ -1906,9 +2023,8 @@ def followup_profile(record, raw: dict) -> dict[str, str]:
         "phone": record["phone"] or "",
         "sex": record["sex"] or "",
         "pwd": pwd,
-        "birth_date": str(
-            raw.get("Date of birth") or raw.get("Date of Birth") or raw.get("DOB") or ""
-        ).strip()[:10],
+        "birth_year": birth_year,
+        "age": record["age_value"] or "",
         "age_group": record["age_group"] or record["age_value"] or "",
         "group": record["group_name"] or "",
         "education": str(raw.get("Level of education completed") or "").strip(),
@@ -1963,12 +2079,17 @@ def field_app_cbf(connection, requested_cbf: str) -> str:
 
 
 def build_field_app_package(connection, cbf_name: str) -> dict:
+    coordinator = is_coordinator_cbf(cbf_name)
+    ownership_clause = "" if coordinator else "AND r.cbf_name=?"
+    record_params = [SURVEY_VERSION] + ([] if coordinator else [cbf_name])
     records = connection.execute(
-        """SELECT r.*, f.uid
+        f"""SELECT r.*, f.uid,
+                  EXISTS(SELECT 1 FROM followup_assessments fa
+                         WHERE fa.record_id=r.id AND fa.questionnaire_version=?) AS visited_this_round
            FROM records r JOIN farmers f ON f.id=r.farmer_id
-           WHERE r.dataset='training' AND r.archived_at IS NULL AND r.cbf_name=?
+           WHERE r.dataset='training' AND r.archived_at IS NULL {ownership_clause}
            ORDER BY r.group_name COLLATE NOCASE, r.name COLLATE NOCASE""",
-        (cbf_name,),
+        record_params,
     ).fetchall()
     record_ids = [row["id"] for row in records]
     statuses_by_record = defaultdict(list)
@@ -1994,7 +2115,10 @@ def build_field_app_package(connection, cbf_name: str) -> dict:
     for row in records:
         statuses = statuses_by_record[row["id"]]
         raw = json.loads(row["raw_data"])
-        ct_topics = [item["topic"] for item in statuses if item["code"] in {"CT", "RT"}]
+        ct_topics = [
+            item["topic"] for item in statuses if item["code"] in {"CT", "RT"}
+            and (not coordinator or row["cbf_name"] == cbf_name)
+        ]
         followup_topics = [item for item in statuses if item["code"] == "FU"]
         ct_entries += len(ct_topics)
         followup_entries += len(followup_topics)
@@ -2004,6 +2128,8 @@ def build_field_app_package(connection, cbf_name: str) -> dict:
             "name": row["name"],
             "group": row["group_name"] or "",
             "village": row["village"] or "",
+            "assignedCbf": row["cbf_name"] or "",
+            "visitedThisRound": bool(row["visited_this_round"]),
             "updatedAt": row["updated_at"],
             "ctTopics": ct_topics,
             "followupTopics": followup_topics,
@@ -2011,21 +2137,24 @@ def build_field_app_package(connection, cbf_name: str) -> dict:
             "profile": followup_profile(row, raw),
             "previousAnswers": previous_answers_by_record.get(row["id"], {}),
         })
-    venue_rows = connection.execute(
-        """SELECT location AS venue FROM field_events
+    venue_sql = """SELECT location AS venue FROM field_events
            WHERE event_type='centralized' AND TRIM(COALESCE(location,''))<>''
            UNION
            SELECT village AS venue FROM records
-           WHERE dataset='training' AND archived_at IS NULL AND cbf_name=?
-           AND TRIM(COALESCE(village,''))<>''
-           ORDER BY venue COLLATE NOCASE""",
-        (cbf_name,),
-    ).fetchall()
+           WHERE dataset='training' AND archived_at IS NULL
+           AND TRIM(COALESCE(village,''))<>''"""
+    venue_params = []
+    if not coordinator:
+        venue_sql += " AND cbf_name=?"
+        venue_params.append(cbf_name)
+    venue_sql += " ORDER BY venue COLLATE NOCASE"
+    venue_rows = connection.execute(venue_sql, venue_params).fetchall()
     return {
         "version": 2,
         "questionnaireVersion": SURVEY_VERSION,
         "preparedAt": utc_now(),
         "cbf": cbf_name,
+        "coordinator": coordinator,
         "topics": list(TRAINING_TOPICS),
         "questionnaires": {
             topic: questionnaire_for_topic(topic) for topic in TRAINING_TOPICS
@@ -2487,11 +2616,12 @@ def save_scored_followup(
         return False, "Enter a valid follow-up date."
     record = connection.execute(
         """SELECT r.*, f.uid FROM records r JOIN farmers f ON f.id=r.farmer_id
-           WHERE r.id=? AND r.dataset='training' AND r.archived_at IS NULL AND r.cbf_name=?""",
-        (record_id, cbf_name),
+           WHERE r.id=? AND r.dataset='training' AND r.archived_at IS NULL
+             AND (r.cbf_name=? OR ?=1)""",
+        (record_id, cbf_name, int(is_coordinator_cbf(cbf_name))),
     ).fetchone() if record_id else None
     if not record:
-        return False, "Select a beneficiary belonging to this CBF."
+        return False, "Select a beneficiary available to this CBF."
 
     topic_count = min(max(values.get("topic_count", 0, type=int), 0), len(TRAINING_TOPICS))
     topics = []
@@ -2524,7 +2654,7 @@ def save_scored_followup(
             continue
         seen_questions.add(item["id"])
         field_name = f"survey_answer__{item['id']}"
-        if item["type"] == "multi":
+        if item["type"] in {"multi", "ranking"}:
             answer: Any = [value.strip() for value in values.getlist(field_name) if value.strip()]
         elif item["type"] == "photos":
             try:
@@ -2576,13 +2706,20 @@ def save_scored_followup(
             "type": "calculated",
         }
 
-    birth_date = answers.get("a8_birth_date")
-    if birth_date:
-        calculated_age_group = age_group_from_birth_date(
-            birth_date, date.fromisoformat(event_date)
-        )
+    birth_year = answers.get("a8_birth_year")
+    if birth_year:
+        visit_date = date.fromisoformat(event_date)
+        calculated_age = age_from_birth_year(birth_year, visit_date)
+        calculated_age_group = age_group_from_birth_year(birth_year, visit_date)
         if not calculated_age_group:
-            return False, "A8.5 date of birth cannot be after the follow-up date."
+            return False, "A8.5 year of birth must be valid and cannot be after the follow-up year."
+        answers["a8_age"] = calculated_age
+        answer_records["a8_age"] = {
+            "source_id": "A8.5",
+            "question": "Age (calculated from year of birth)",
+            "answer": calculated_age,
+            "type": "calculated",
+        }
         answers["a8_age_group"] = calculated_age_group
         answer_records["a8_age_group"] = {
             "source_id": "A8.5",
@@ -2626,6 +2763,49 @@ def save_scored_followup(
             return False, f"No training cycle was found for {topic}."
         cycles[topic] = cycle
 
+    shared_record = None
+    shared_raw = None
+    shared_topics: list[str] = []
+    shared_cycles: dict[str, int] = {}
+    if answers.get("a0_shared_plot") == "yes":
+        try:
+            shared_record_id = int(answers.get("a0_shared_person") or 0)
+        except (TypeError, ValueError):
+            shared_record_id = 0
+        shared_record = connection.execute(
+            """SELECT r.*, f.uid FROM records r JOIN farmers f ON f.id=r.farmer_id
+               WHERE r.id=? AND r.id<>? AND r.dataset='training' AND r.archived_at IS NULL
+                 AND LOWER(TRIM(COALESCE(r.village,'')))=LOWER(TRIM(COALESCE(?,'')))""",
+            (shared_record_id, record_id, record["village"]),
+        ).fetchone() if shared_record_id and str(record["village"] or "").strip() else None
+        if not shared_record:
+            return False, "Select another registered person from the same village."
+        shared_due = {
+            row["topic"] for row in connection.execute(
+                "SELECT topic FROM topic_statuses WHERE record_id=? AND status_code='FU'",
+                (shared_record_id,),
+            ).fetchall()
+        }
+        shared_topics = [topic for topic in topics if topic in shared_due]
+        if not shared_topics:
+            return False, "The other registered person has no matching training due for follow-up."
+        shared_raw = json.loads(shared_record["raw_data"])
+        for topic in shared_topics:
+            cycle = next((number for number in range(1, 4)
+                          if shared_raw.get(f"Training {number} - {topic}") not in {None, ""}
+                          and shared_raw.get(f"Follow up {number} - {topic}") in {None, ""}), None)
+            if cycle is None:
+                cycle = next((number for number in range(3, 0, -1)
+                              if shared_raw.get(f"Training {number} - {topic}") not in {None, ""}), None)
+            if cycle is None:
+                return False, f"No training cycle was found for {shared_record['name']} and {topic}."
+            shared_cycles[topic] = cycle
+        results["shared_followup"] = {
+            "record_id": shared_record_id,
+            "name": shared_record["name"],
+            "topics": shared_topics,
+        }
+
     cursor = connection.execute(
         """INSERT INTO field_events(
                event_type, cbf_name, event_date, location, created_by, created_at,
@@ -2641,13 +2821,14 @@ def save_scored_followup(
     for key, answer_id in {
         "district": "a4_district", "subcounty": "a5_subcounty", "village": "a6_village",
         "beneficiary_type": "a8_beneficiary_type", "phone": "a8_contact", "sex": "a8_gender",
-        "pwd": "a8_pwd", "birth_date": "a8_birth_date", "group": "a8_group",
+        "pwd": "a8_pwd", "birth_year": "a8_birth_year", "group": "a8_group",
         "education": "a9_education",
     }.items():
         if answers.get(answer_id) not in {None, ""}:
             profile[key] = str(answers[answer_id])
     if answers.get("a8_age_group"):
         profile["age_group"] = answers["a8_age_group"]
+        profile["age"] = answers["a8_age"]
     profile.update({
         "household_total": answers.get("a10_total"),
         "household_male": answers.get("a10_male"),
@@ -2713,12 +2894,42 @@ def save_scored_followup(
             ),
         )
 
+    if shared_record and shared_raw is not None:
+        for topic in shared_topics:
+            result = results["trainings"][topic]
+            cycle = shared_cycles[topic]
+            shared_raw[f"Follow up {cycle} - {topic}"] = event_date
+            shared_raw[f"Follow up {cycle} score - {topic}"] = result["score"]
+            shared_raw[f"Follow up {cycle} next action - {topic}"] = result["next_action"]
+            entry_cursor = connection.execute(
+                "INSERT INTO field_event_entries(event_id, record_id, topic, score) VALUES(?, ?, ?, ?)",
+                (event_id, shared_record["id"], topic, result["score"]),
+            )
+            connection.execute(
+                """INSERT INTO followup_responses(
+                       event_entry_id, record_id, topic, training_cycle, questionnaire_version,
+                       answers, adoption_rate, next_action, created_at, result_status,
+                       recommendation, critical_failed, points_earned, points_available
+                   ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    entry_cursor.lastrowid, shared_record["id"], topic, cycle, SURVEY_VERSION,
+                    answers_payload, result["score"], result["next_action"], created_at,
+                    result["status"], result["recommendation"], int(result["critical_failed"]),
+                    result["points_earned"], result["points_available"],
+                ),
+            )
+        connection.execute(
+            "UPDATE records SET raw_data=?, updated_at=? WHERE id=?",
+            (json.dumps(shared_raw, ensure_ascii=False), utc_now(), shared_record["id"]),
+        )
+        rebuild_statuses(connection, shared_record["id"], "training", shared_raw)
+
     raw.update({
         "DISTRICT": profile["district"], "Sub County": profile["subcounty"],
         "Village": profile["village"], "Phone Number": profile["phone"],
         "Sex": profile["sex"], "PWD (Y/N)": profile["pwd"],
-        "Date of birth": profile["birth_date"],
-        "Age group": profile["age_group"], "GROUP NAME": profile["group"],
+        "Year of birth": profile["birth_year"],
+        "Age": profile["age"], "Age group": profile["age_group"], "GROUP NAME": profile["group"],
         "Benefiary Type": profile["beneficiary_type"],
         "Level of education completed": profile["education"],
         "Household members - total": profile["household_total"],
@@ -2726,23 +2937,25 @@ def save_scored_followup(
         "Household members - female": profile["household_female"],
     })
     connection.execute(
-        """UPDATE records SET district=?, subcounty=?, village=?, phone=?, sex=?, age_group=?,
+        """UPDATE records SET district=?, subcounty=?, village=?, phone=?, sex=?, age_value=?, age_group=?,
                   group_name=?, raw_data=?, updated_at=? WHERE id=?""",
         (
             profile["district"], profile["subcounty"], profile["village"], profile["phone"],
-            profile["sex"], profile["age_group"], profile["group"],
+            profile["sex"], profile["age"], profile["age_group"], profile["group"],
             json.dumps(raw, ensure_ascii=False), utc_now(), record_id,
         ),
     )
     rebuild_statuses(connection, record_id, "training", raw)
     log_audit(
         connection, username, "field_entry", "field_event", event_id,
-        f"Recorded scored follow-up for {record['name']}",
+        f"Recorded scored follow-up for {record['name']}"
+        + (f" and {shared_record['name']}" if shared_record else ""),
         {
             "cbf": cbf_name, "date": event_date,
             "household_outcome": household.get("code"),
             "breadth": breadth, "depth": results.get("depth"),
             "training_results": results["trainings"],
+            "shared_followup": results.get("shared_followup"),
             "location": {
                 "latitude": latitude, "longitude": longitude,
                 "accuracy_m": location_accuracy_m, "captured_at": location_captured_at,
@@ -2753,7 +2966,8 @@ def save_scored_followup(
     if client_submission_id is None:
         session["last_followup_event_id"] = event_id
     outcome_text = f" Outcome {household.get('code')} - {household.get('label')}." if household else ""
-    return True, f"Follow-up scored and saved for {record['name']}.{outcome_text}"
+    shared_text = f" The same plot follow-up was also registered for {shared_record['name']}." if shared_record else ""
+    return True, f"Follow-up scored and saved for {record['name']}.{shared_text}{outcome_text}"
 
 
 def csrf_token() -> str:
@@ -3902,6 +4116,11 @@ def duplicate_review_page(connection):
     ))
     total = len(candidates)
     candidates = candidates[(page - 1) * page_size:page * page_size]
+    if review_status == "pending":
+        from identity_review import review_payload
+
+        for candidate in candidates:
+            candidate["review_data"] = review_payload(connection, [item["record"] for item in candidate["records"]])
     return render_template(
         "duplicates.html", candidates=candidates, review_status=review_status, dataset=dataset,
         total=total, page=page, pages=max(1, (total + page_size - 1) // page_size), q=query,

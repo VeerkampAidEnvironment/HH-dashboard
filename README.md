@@ -60,6 +60,14 @@ To rebuild a new database from the original workbooks:
 
 The two datasets remain separate. Confirmed matches share only a stable `ARF-######` farmer ID. Candidate generation uses an exact normalized name or phone with corroborating information, but never confirms a person automatically. Conflicting non-empty phone numbers are excluded. Every candidate appears under **Identity review** and enters the Combined dashboard only after a user presses **Confirm match**.
 
+### Reviewing duplicate names
+
+Open **Identity review → Duplicate names → AE** (or **FH**) and expand a name. Each record starts in its own person group, with the strongest suggested matches highlighted. Drag a record card onto another person group to combine them in your draft, or use the person selector. Double-click a record in a multi-record group to move it back into its own person group. Use **New person group** or **New person / individual** to split records back out. A name can be divided into any number of groups, including individuals.
+
+The selected group's side-by-side comparison updates immediately. Profile conflicts are highlighted in red, missing values in yellow, and training-history differences in blue. Choose the values to keep for conflicting profile fields and for conflicting values attached to the same training event. Distinct training events are combined; groups exceeding the existing three-cycle limit must be reviewed separately. **Review split → Save identity split** applies the whole decision together, archives merged copies, and remembers which groups are different people. An administrator can reverse the complete decision through the audit log. Drafts stay on the current page until saved, and leaving with unsaved changes displays a browser warning.
+
+Run the identity regression checks with `.venv-app\Scripts\python.exe -m unittest tests.test_identity_review`. Restart the Flask service and refresh the page after deploying the Python, template, JavaScript, and CSS files together.
+
 ## Combined analysis
 
 Combined is reserved for relationships between AE exposure/adoption and FH outcomes among manually confirmed farmers. It reports cross-project correlations, FH participation by AE exposure level, topic-level differences, and the underlying farmer observations. The current FH workbook contains attendance and module-completion data but no nutrition outcome score; nutrition-score analysis will become available once such a field is added to FH data.
@@ -82,7 +90,19 @@ To prepare a CBF tablet:
 
 Each tablet submission has a unique client ID. Repeating an interrupted upload therefore cannot create the same event twice. Rejected submissions remain in the tablet's Pending list with the server message and can be retried or deliberately discarded. Do not clear the browser's site data while unsynchronized entries remain.
 
+To update the installed app, connect to the internet, open **AE Field App**, and use **Check for updates** in the **App updates** panel. When an update is ready, save any unfinished entry and press **Update and restart**. The app also checks on opening, returning to it, and reconnecting. Updates preserve prepared worklists and all saved submissions, including entries still waiting to upload. **Prepare or update field data** refreshes beneficiaries and questionnaires separately.
+
+Uninstalling and reinstalling is not needed for normal updates. Avoid uninstalling or clearing site data with unsynchronized entries. For an older installation that does not yet show the update controls, connect, close every Field App window/browser tab, and reopen it; if needed, close and reopen once more after the updated app has downloaded.
+
+Deploy app files together and restart the Flask service after a release. The offline release fingerprint is calculated from the app shell at startup, so changes are detected without manually incrementing a cache number. The new shell downloads completely before activation; failed downloads leave the existing offline app available. To run update regression checks, use `node --test tests/field-updates.test.cjs` and `.venv-app\Scripts\python.exe -m unittest tests.test_field_updates`.
+
 When recording a follow-up, the user can optionally press **Add current location**. The browser asks for permission and stores the latitude, longitude, estimated accuracy and capture time with that offline submission. A follow-up can still be saved if location permission is declined or GPS is unavailable.
+
+Saving a follow-up immediately opens its **Results**, including package and training scores, household outcome, RVO/Project checks, Breadth, Depth, findings to share with the beneficiary, and recommended next actions. This works without internet. The visit and its outcome are saved together on the tablet; use the **Results** tab or **View results** from Pending to reopen them. Results remain available after closing the app and after successful synchronization. Existing pending adaptive follow-ups receive local results when the updated app opens.
+
+Tablet results are calculated using the bundled scoring rules. During synchronization the server recalculates the answers and returns the confirmed outcome, including on retries, which replaces the tablet calculation. Client-supplied scores are never accepted as authoritative. Once synchronized, **Review and confirm CBF decisions** opens the existing online decision form. The results history follows the tablet's selected CBF and live/testing environment.
+
+The scoring rules and result wording are cached with the app shell. Deploy and restart the server, then use **Check for updates → Update and restart** on the tablet to enable offline outcomes. Run `.venv-app\Scripts\python.exe -m unittest tests.test_offline_scoring tests.test_offline_results tests.test_followup_survey tests.test_field_updates` to check scoring parity, sync responses, and offline release contents. The parity test compares JavaScript with Python across all question choices, score boundaries and more than 1,000 combined/conditional cases; it requires Node.js on PATH.
 
 ## Testing environment
 
