@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from typing import Any, BinaryIO
 from openpyxl import load_workbook
-from db import set_setting, utc_now
+from db import get_setting, set_setting, utc_now
 from scripts.import_data import care_field_schema, clean, json_value, normalize, normalize_age_group, normalize_phone, normalize_sex
 from training import TRAINING_TOPICS, care_module_status, parse_date, training_topic_status
 
@@ -155,6 +155,8 @@ def append_farmer_database(connection, file: BinaryIO, filename: str = "") -> di
             cbf_map = {normalize(group): clean(cbf) for cbf, group in
                        workbook["CBF_Groups"].iter_rows(min_row=2, max_col=2, values_only=True)
                        if clean(cbf) and clean(group)}
+        cbf_aliases = get_setting(connection, "cbf_name_aliases", {})
+        cbf_map = {group: cbf_aliases.get(name, name) for group, name in cbf_map.items()}
         existing_by_id = {}
         identity_matches: dict[tuple[str, ...], set[int]] = {}
         existing_rows = connection.execute(

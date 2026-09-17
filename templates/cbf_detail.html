@@ -5,6 +5,15 @@
 <div class="page-heading"><div><p class="eyebrow">CBF progress dashboard</p><h1>{{ cbf_name }}</h1><p class="lead">{{ groups|length }} beneficiary groups mapped to this facilitator.</p></div>
   <div class="button-row cbf-report-actions"><a class="button button-ghost" href="{{ url_for('cbf_pdf', cbf_name=cbf_name, **filters) }}">Current view PDF</a><a class="button button-secondary" href="{{ url_for('cbf_all_pdf', cbf_name=cbf_name) }}">Print all groups</a><a class="button button-primary" href="{{ url_for('cbf_all_zip', cbf_name=cbf_name) }}">Separate PDFs (.zip)</a></div></div>
 
+{% if session.get('access_scope') != 'ae_user' %}<details class="panel cbf-rename-panel">
+  <summary>Change CBF name</summary>
+  <form method="post" action="{{ url_for('cbf_rename', cbf_name=cbf_name) }}" class="cbf-rename-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>CBF name<input name="new_name" value="{{ cbf_name }}" maxlength="100" required></label>
+    <button class="button button-primary" type="submit">Save name</button>
+  </form>
+</details>{% endif %}
+
 <form class="filter-panel compact" method="get">
   <label>Beneficiary group<select name="group"><option value="">All groups</option>{% for item in groups %}<option {{ 'selected' if filters.group == item }}>{{ item }}</option>{% endfor %}</select></label>
   <label>Gender<select name="gender"><option value="">All</option>{% for item in options.genders %}<option {{ 'selected' if filters.gender == item }}>{{ item }}</option>{% endfor %}</select></label>

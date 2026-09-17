@@ -251,6 +251,67 @@ class ApplicationTest(unittest.TestCase):
             set_setting(connection, "cbf_group_map", original_map)
             connection.commit()
 
+    def test_cbf_name_can_be_changed_from_detail_page(self):
+        from db import get_db, get_setting, set_setting
+
+        with self.app.app_context():
+            connection = get_db()
+            old_name = connection.execute(
+                """SELECT cbf_name FROM records WHERE dataset='training' AND cbf_name<>''
+                   GROUP BY cbf_name ORDER BY COUNT(*) DESC LIMIT 1"""
+            ).fetchone()[0]
+            other_name = connection.execute(
+                "SELECT cbf_name FROM records WHERE dataset='training' AND cbf_name NOT IN (?, '') LIMIT 1",
+                (old_name,),
+            ).fetchone()[0]
+            original_map = get_setting(connection, "cbf_group_map", {})
+            original_aliases = get_setting(connection, "cbf_name_aliases", {})
+            original_count = connection.execute(
+                "SELECT COUNT(*) FROM records WHERE cbf_name=?", (old_name,)
+            ).fetchone()[0]
+        new_name = "Renamed CBF Test Unique"
+        old_path = quote(old_name, safe="")
+        try:
+            page = self.client.get(f"/cbfs/{old_path}")
+            self.assertEqual(page.status_code, 200)
+            self.assertIn(b"Change CBF name", page.data)
+
+            duplicate = self.client.post(
+                f"/cbfs/{old_path}/rename",
+                data={"csrf_token": self.csrf(), "new_name": other_name},
+            )
+            self.assertEqual(duplicate.status_code, 302)
+            self.assertEqual(duplicate.headers["Location"], f"/cbfs/{old_path}")
+
+            response = self.client.post(
+                f"/cbfs/{old_path}/rename",
+                data={"csrf_token": self.csrf(), "new_name": f"  {new_name}  "},
+            )
+            self.assertEqual(response.status_code, 302)
+            self.assertEqual(response.headers["Location"], f"/cbfs/{quote(new_name, safe='')}")
+            self.assertEqual(self.client.get(response.headers["Location"]).status_code, 200)
+            with self.app.app_context():
+                connection = get_db()
+                self.assertEqual(connection.execute(
+                    "SELECT COUNT(*) FROM records WHERE cbf_name=?", (new_name,)
+                ).fetchone()[0], original_count)
+                self.assertEqual(connection.execute(
+                    "SELECT COUNT(*) FROM records WHERE cbf_name=?", (old_name,)
+                ).fetchone()[0], 0)
+                self.assertTrue(all(
+                    name != old_name for name in get_setting(connection, "cbf_group_map", {}).values()
+                ))
+                self.assertEqual(get_setting(connection, "cbf_name_aliases")[old_name], new_name)
+        finally:
+            with self.app.app_context():
+                connection = get_db()
+                connection.execute("UPDATE records SET cbf_name=? WHERE cbf_name=?", (old_name, new_name))
+                connection.execute("UPDATE users SET cbf_name=? WHERE cbf_name=?", (old_name, new_name))
+                connection.execute("UPDATE field_events SET cbf_name=? WHERE cbf_name=?", (old_name, new_name))
+                set_setting(connection, "cbf_group_map", original_map)
+                set_setting(connection, "cbf_name_aliases", original_aliases)
+                connection.commit()
+
     def test_fh_dashboard_uses_attendance_structure(self):
         response = self.client.get("/dashboard?dataset=care")
         self.assertEqual(response.status_code, 200)

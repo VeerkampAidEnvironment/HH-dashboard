@@ -729,6 +729,63 @@ def create_app(test_config=None):
             priorities=priorities, **data,
         )
 
+    @app.post("/cbfs/<path:cbf_name>/rename")
+    def cbf_rename(cbf_name):
+        if session.get("access_scope") == "ae_user":
+            abort(403)
+        connection = get_db()
+        if not connection.execute(
+            "SELECT 1 FROM records WHERE dataset='training' AND cbf_name=? LIMIT 1", (cbf_name,)
+        ).fetchone():
+            abort(404)
+        new_name = " ".join(request.form.get("new_name", "").split())
+        if not new_name or len(new_name) > 100:
+            flash("Enter a CBF name of up to 100 characters.", "error")
+            return redirect(url_for("cbf_detail", cbf_name=cbf_name))
+        if new_name == cbf_name:
+            return redirect(url_for("cbf_detail", cbf_name=cbf_name))
+        cbf_map = get_setting(connection, "cbf_group_map", {})
+        cbf_aliases = get_setting(connection, "cbf_name_aliases", {})
+        known_names = {row[0] for row in connection.execute(
+            """SELECT cbf_name FROM records WHERE TRIM(COALESCE(cbf_name,''))<>''
+               UNION SELECT cbf_name FROM users WHERE TRIM(COALESCE(cbf_name,''))<>''
+               UNION SELECT cbf_name FROM field_events WHERE TRIM(cbf_name)<>''"""
+        ).fetchall()} | set(cbf_map.values()) | set(cbf_aliases)
+        if any(name.casefold() == new_name.casefold() for name in known_names if name != cbf_name):
+            flash("Another CBF already has that name.", "error")
+            return redirect(url_for("cbf_detail", cbf_name=cbf_name))
+        now = utc_now()
+        changed_records = connection.execute(
+            "UPDATE records SET cbf_name=?, updated_at=? WHERE cbf_name=?",
+            (new_name, now, cbf_name),
+        ).rowcount
+        changed_users = connection.execute(
+            "UPDATE users SET cbf_name=?, updated_at=? WHERE cbf_name=?",
+            (new_name, now, cbf_name),
+        ).rowcount
+        changed_events = connection.execute(
+            "UPDATE field_events SET cbf_name=? WHERE cbf_name=?",
+            (new_name, cbf_name),
+        ).rowcount
+        updated_map = {group: new_name if name == cbf_name else name for group, name in cbf_map.items()}
+        if updated_map != cbf_map:
+            set_setting(connection, "cbf_group_map", updated_map)
+        cbf_aliases = {
+            previous: new_name if current == cbf_name else current
+            for previous, current in cbf_aliases.items()
+        }
+        cbf_aliases[cbf_name] = new_name
+        set_setting(connection, "cbf_name_aliases", cbf_aliases)
+        log_audit(
+            connection, session["username"], "rename", "cbf", None,
+            f"Renamed CBF {cbf_name} to {new_name}",
+            {"from": cbf_name, "to": new_name, "records": changed_records,
+             "users": changed_users, "field_events": changed_events},
+        )
+        connection.commit()
+        flash(f"CBF renamed to {new_name}.", "success")
+        return redirect(url_for("cbf_detail", cbf_name=new_name))
+
     @app.get("/cbfs/<path:cbf_name>.pdf")
     def cbf_pdf(cbf_name):
         from pdf_reports import build_cbf_report_pdf
