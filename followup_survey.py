@@ -15,7 +15,7 @@ from statistics import mean
 from typing import Any, Iterable
 
 
-SURVEY_VERSION = "2026-09-22-r24"
+SURVEY_VERSION = "2026-09-22-r25"
 
 PIP = "Household Resource Mapping (PIP)"
 SUSTAINABLE = "Sustainable/Regenerative Agriculture"
@@ -368,8 +368,6 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
                 guide_parent="b14_manure_loads"),
             question("B14.1a", "b14_unit_other", "Specify the other unit", "text",
                 condition=eq("b14_unit", "other"), guide_parent="b14_manure_loads"),
-            question("B15", "b15_gap", "Main gap observed", "textarea", required=False),
-            question("B16", "b16_advice", "Immediate recommendation or advice given", "textarea", required=False),
         ],
     },
     {
@@ -382,8 +380,6 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
                 ("not_shown", "Not shown")), condition=eq("c1_map_drawn", "yes")),
             question("C4", "c4_use", "Does the plan show signs of use since it was made?", "choice", options(
                 ("clear", "Clear signs of use"), ("some", "Some signs, unclear"), ("none", "No signs of use")), condition=eq("c1_map_drawn", "yes")),
-            question("C5", "c5_gap", "Main gap observed", "textarea", required=False),
-            question("C6", "c6_advice", "Immediate recommendation or advice", "textarea", required=False),
         ],
     },
     {
@@ -415,8 +411,6 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
                 ("visible", "Yes, storage container or hanging bundle visible"), ("claimed", "Farmer says yes, nothing visible"), ("no", "No"))),
             question("D7", "d7_income", "What was the level of income from kitchen gardens last week?", "number",
                      unit="UGX", step_value=100, required=False, help_text="Descriptive only; not scored. Enter the amount in steps of UGX 100."),
-            question("D8", "d7_gap", "Main gap observed", "textarea", required=False),
-            question("D9", "d8_advice", "Immediate recommendation or advice", "textarea", required=False),
         ],
     },
     {
@@ -453,8 +447,6 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
                 ("home", "At home"), ("other", "Other"))),
             question("E7", "e8_2_help", "How has record keeping helped you?", "multi", options(
                 "Easy tracking of income and expenses", "Improved planning and budgeting", "Better investment decisions", "To calculate profit or loss", "Other"), required=False, condition=one_of("e1_budget", ["complete", "incomplete"])),
-            question("E8", "e9_gap", "Main gap observed", "textarea", required=False),
-            question("E9", "e10_advice", "Immediate recommendation or advice", "textarea", required=False),
         ],
     },
     {
@@ -477,8 +469,6 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
             question("F5", "f5_vaccination", "Can a vaccination record or last vaccine container be shown?", "choice", options(
                 ("recent", "Shown, dated within the last 6 months"), ("stale", "Shown, older or undated"),
                 ("none", "Nothing shown")), condition=one_of("f1_location", ["house", "bounded"])),
-            question("F6", "f6_gap", "Main gap observed or shared", "textarea", required=False),
-            question("F7", "f7_advice", "Immediate advice", "textarea", required=False),
         ],
     },
     {
@@ -509,12 +499,11 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
             question("I2", "i2_change", "What is the biggest change noticed since starting these practices?", "choice", options(
                 "More harvest / yield", "More food variety at home", "Spending less on inputs", "Less soil erosion / land damage",
                 "Better animal / poultry health", "Saving more money", "No noticeable change yet", "Other")),
-            question("I3", "i3_improve", "What would make the trainings more useful?", "choice", options(
-                "More hands-on demonstrations", "More frequent follow-up visits", "Provide materials in local language",
-                "Cover new or different topics", "Nothing - satisfied as is", "Other")),
             question("Consent", "consent", "Permission received to document and share practices for learning and communication", "consent", options(("yes", "Permission received"))),
             question("I4", "i4_photos", "Take or upload one photo of the best practice found during this visit", "photos", required=False,
                      help_text="Use the device camera or choose an existing photo. Maximum 1 photo."),
+            question("I5", "i5_general_gap", "What is the main general gap observed during this visit?", "textarea", required=False),
+            question("I6", "i6_general_recommendation", "What general recommendation was provided to the farmer during this visit?", "textarea", required=False),
         ],
     },
 ]
