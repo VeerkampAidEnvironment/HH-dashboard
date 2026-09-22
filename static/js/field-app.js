@@ -17,9 +17,11 @@
   let selectedFarmerId = null;
   let capturedLocation = null;
   let syncing = false;
+  const sendingIds = new Set();
   let preparing = false;
   let saving = false;
   let storageReady = false;
+  let focusedVisit = false;
   const unfinishedForms = new Set();
 
   const $ = (selector, scope = root) => scope.querySelector(selector);
@@ -75,7 +77,6 @@
   const getStored = (store, key) => dbRequest(store, "readonly", (target) => target.get(key));
   const getAllStored = (store) => dbRequest(store, "readonly", (target) => target.getAll());
   const putStored = (store, value) => dbRequest(store, "readwrite", (target) => target.put(value));
-  const deleteStored = (store, key) => dbRequest(store, "readwrite", (target) => target.delete(key));
   const packageKey = (cbf) => `${environment}::${cbf}`;
   const metaKey = (key) => `${environment}::${key}`;
 
@@ -92,7 +93,9 @@
     const status = $("[data-connection-status]");
     const online = navigator.onLine;
     status.classList.toggle("offline", !online);
-    $("span", status).textContent = online ? "Online" : "Offline — entries save locally";
+    $("span", status).textContent = online ? "Internet available" : "Offline · save on this tablet";
+    refreshCounts();
+    renderOutbox();
     if (savedResults.length) renderResults();
   };
 
@@ -169,10 +172,30 @@
   const refreshCounts = () => {
     const items = currentOutbox();
     $$('[data-summary-pending], [data-pending-badge]').forEach((node) => { node.textContent = items.length; });
-    $("[data-summary-pending-label]").textContent = items.length === 1 ? "tablet submission" : "tablet submissions";
+    $("[data-summary-pending-label]").textContent = "saved here · server not confirmed";
+    const summary = $("[data-transfer-summary]");
+    summary.hidden = !fieldPackage;
+    const errors = items.filter((item) => item.status === "error").length;
+    const failed = items.some((item) => item.syncError);
+    summary.dataset.state = errors || failed ? "attention" : items.length ? "pending" : "complete";
+    $("[data-transfer-title]").textContent = items.length
+      ? `${items.length} saved ${items.length === 1 ? "entry still needs" : "entries still need"} to reach the server`
+      : "No saved entries waiting to send";
+    $("[data-transfer-detail]").textContent = syncing
+      ? "Sending saved entries… Keep the app open until the server confirms them."
+      : errors ? `${errors} ${errors === 1 ? "entry needs" : "entries need"} attention. Open Pending to see the server message. Your saved entries are still on this tablet.`
+      : failed ? "The last upload was not confirmed. Your entries are saved on this tablet. Check your connection and try Synchronize now."
+      : items.length ? "You can close the app and continue your visits. Back at the office, connect to the internet and open this app to send them."
+      : `For ${currentCbf || "the selected CBF"}${environment === "test" ? " in testing mode" : ""}. Follow-up save receipts remain in Results.`;
+    $("[data-transfer-review]").hidden = !items.length;
+    $$('[data-sync-now]').forEach((button) => {
+      button.disabled = syncing || !navigator.onLine || !items.length;
+      button.textContent = syncing ? "Sending to server…" : "Synchronize now";
+    });
   };
 
   const openPane = (name) => {
+    if (focusedVisit && name !== "followup" && name !== "results") return;
     $$('[data-field-tab]').forEach((button) => button.classList.toggle("active", button.dataset.fieldTab === name));
     $$('[data-field-pane]').forEach((pane) => {
       const active = pane.dataset.fieldPane === name;
@@ -183,8 +206,32 @@
     if (name === "results") renderResults();
     if (name === "centralized") renderCentralizedTopics();
     if (name === "followup") renderFarmerList();
+    if (name === "home") renderOutbox();
     $("[data-field-tab].active")?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const focusVisit = (name, saved = false) => {
+    focusedVisit = true;
+    document.body.classList.add("field-visit-active");
+    $("[data-visit-header]").hidden = false;
+    $("[data-visit-name]").textContent = name;
+    $("[data-visit-stage]").textContent = saved
+      ? "Visit saved. Review the results, then finish and return to the Field App."
+      : "Complete this visit, then save and review its results. Your answers are not saved yet.";
+    $("[data-cancel-visit]").hidden = saved;
+  };
+
+  const leaveVisit = () => {
+    if (saving) return;
+    focusedVisit = false;
+    document.body.classList.remove("field-visit-active");
+    $("[data-visit-header]").hidden = true;
+    openPane("home");
+    const summary = currentOutbox().length ? $("[data-home-saved]") : $("[data-transfer-summary]");
+    summary.tabIndex = -1;
+    summary.focus({ preventScroll: true });
+    summary.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const renderPackage = () => {
@@ -207,6 +254,7 @@
     renderCentralizedTopics();
     renderFarmerList();
     refreshCounts();
+    renderOutbox();
   };
 
   const populateFilters = () => {
@@ -558,9 +606,8 @@
       input.name = name;
       input.accept = "image/jpeg,image/png,image/webp,image/heic,image/heif";
       input.capture = "environment";
-      input.multiple = true;
-      const button = create("span", "button button-secondary", "Take or choose photos");
-      const status = create("small", "", "No photos added · maximum 6");
+      const button = create("span", "button button-secondary", "Take or choose a photo");
+      const status = create("small", "", "No photo added · maximum 1");
       status.dataset.photoStatus = "";
       const preview = create("div", "survey-photo-preview");
       preview.dataset.photoPreview = "";
@@ -684,6 +731,7 @@
       $("[data-followup-save]").hidden = true;
       return;
     }
+    focusVisit(farmer.name);
     const heading = create("div", "field-selected-farmer");
     heading.append(create("span", "field-farmer-avatar", farmer.name.slice(0, 1).toUpperCase()));
     const copy = create("div");
@@ -692,8 +740,18 @@
     container.append(heading);
     const dueTopics = farmer.availableFollowups.map((item) => item.topic);
     const dueSet = new Set(dueTopics);
+    // Apply the revised final photo question to previously prepared worklists too.
+    // Saved outbox submissions are separate and must never be changed here.
+    const finalPhoto = window.ARFSA_FOLLOWUP_RULES.questions.find((question) => question.id === "i4_photos");
     const sections = (fieldPackage.survey?.sections || []).filter((section) =>
-      section.always || (section.topics || []).some((topic) => dueSet.has(topic)));
+      section.always || (section.topics || []).some((topic) => dueSet.has(topic))).map((section) => ({
+        ...section,
+        ...(section.id === "I" ? { intro: "This feedback is not scored." } : {}),
+        questions: [
+          ...section.questions.filter((question) => question.id !== "i1_training_ranking" && question.type !== "photos"),
+          ...(section.id === "I" ? [finalPhoto] : []),
+        ],
+      }));
     const dueCard = create("div", "field-survey-due");
     dueCard.append(create("strong", "", "Due for follow-up"));
     const dueList = create("div");
@@ -787,7 +845,7 @@
     });
     const finalize = create("div", "field-survey-finalize");
     finalize.hidden = true;
-    finalize.append(create("strong", "", "All packages completed"), create("p", "", "Save the visit to see package scores, Breadth, Depth, findings and recommended next actions immediately, even offline."));
+    finalize.append(create("strong", "", "Questions complete · save to finish"), create("p", "", "This visit has not been saved yet. Press Save follow-up and view results to store your answers on this tablet and see the results, even offline."));
     container.append(finalize);
     container.dataset.topics = JSON.stringify(dueTopics);
     const refresh = () => updateFieldSurveyConditions(container);
@@ -881,7 +939,7 @@
 
   const readPhotoFiles = async (node) => {
     const files = Array.from($('input[type="file"]', node)?.files || []);
-    if (files.length > 6) throw new Error("Upload no more than 6 photos for one photo question.");
+    if (files.length > 1) throw new Error("Upload no more than 1 photo of the best practice found during this visit.");
     if (files.some((file) => file.size > 8 * 1024 * 1024)) throw new Error("Each follow-up photo must be smaller than 8 MB.");
     return Promise.all(files.map((file) => new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -907,8 +965,8 @@
         return false;
       }
       const fileInput = $('input[type="file"]', node);
-      if (fileInput?.files.length > 6) {
-        alertUser("Upload no more than 6 photos for one photo question.", "warning");
+      if (fileInput?.files.length > 1) {
+        alertUser("Upload no more than 1 photo of the best practice found during this visit.", "warning");
         return false;
       }
       const value = surveyValue(container, node.dataset.surveyQuestion);
@@ -979,7 +1037,10 @@
       recordId: submission.recordId, beneficiaryName: submission.beneficiaryName
         || fieldPackage?.farmers.find((farmer) => farmer.id === submission.recordId)?.name || submission.summary,
       eventDate: submission.eventDate, createdAt: submission.createdAt,
-      status: submission.status || "pending", error: submission.error || "", outcome,
+      topics: submission.topics || [],
+      photoCount: Object.values(submission.answers || {}).flat().filter((value) => value && typeof value === "object" && value.data).length,
+      hasLocation: Boolean(submission.geoLocation),
+      status: submission.status || "pending", error: submission.error || "", syncError: submission.syncError || "", outcome,
     };
   };
 
@@ -996,9 +1057,10 @@
         transaction.oncomplete = resolve;
         transaction.onabort = () => reject(transaction.error || new Error("Visit could not be saved."));
       });
-      savedResults = await getAllStored("followupResults");
+      savedResults.push(localResult);
     } else await putStored("outbox", submission);
-    outbox = await getAllStored("outbox");
+    // Once committed, do not let a subsequent read failure suggest saving again.
+    outbox.push(submission);
     refreshCounts();
   };
 
@@ -1099,6 +1161,7 @@
         ? Number(answers.a0_shared_person) : null,
       beneficiaryName: farmer.name,
       topics,
+      surveyVersion: window.ARFSA_FOLLOWUP_RULES.version,
       answers,
       geoLocation: capturedLocation ? { ...capturedLocation } : null,
       createdAt: new Date().toISOString(),
@@ -1114,11 +1177,89 @@
     $("[data-followup-save]").hidden = true;
     renderFarmerList();
     selectedResultId = followupSubmission.id;
+    focusVisit(farmer.name, true);
     alertUser(savedResults.find((item) => item.id === followupSubmission.id)?.outcome
       ? "Follow-up saved. The results are available on this tablet."
       : "Follow-up saved. Its results are not yet available on this tablet.", "success");
     openPane("results");
+    const receipt = $("[data-save-receipt]");
+    receipt?.focus({ preventScroll: true });
+    receipt?.scrollIntoView({ behavior: "smooth", block: "start" });
     if (navigator.onLine) synchronize();
+  };
+
+  const uploadState = (item) => {
+    if (item.status === "synchronized") return { tone: "complete", label: "Confirmed by server",
+      detail: item.synchronizedAt ? `Confirmed ${formatDateTime(item.synchronizedAt)}. Nothing more to upload for this visit.` : "Received by the server. Nothing more to upload for this visit." };
+    if (sendingIds.has(item.id)) return { tone: "pending", label: "Sending to server…",
+      detail: "Waiting for the server to confirm receipt. Your saved copy stays on this tablet." };
+    if (item.status === "error") return { tone: "attention", label: "Not accepted · needs attention",
+      detail: item.error || "The server could not accept this entry. Open Pending for details." };
+    if (item.syncError) return { tone: "attention", label: "Upload not confirmed",
+      detail: item.syncError };
+    return { tone: "pending", label: navigator.onLine ? "Waiting to send" : "Waiting for internet",
+      detail: "Server receipt has not been confirmed. This entry is in Pending." };
+  };
+
+  const renderSaveReceipt = (visit) => {
+    const state = uploadState(visit);
+    const complete = visit.status === "synchronized";
+    const receipt = create("section", `panel field-save-receipt field-save-${state.tone}`);
+    receipt.dataset.saveReceipt = "";
+    receipt.tabIndex = -1;
+    receipt.setAttribute("aria-label", "Follow-up save receipt");
+    const title = create("div", "field-save-title");
+    const icon = create("span", "field-save-icon", "✓");
+    icon.setAttribute("aria-hidden", "true");
+    const copy = create("div");
+    copy.append(create("p", "eyebrow", environment === "test" ? "Practice follow-up saved" : "Follow-up saved"),
+      create("h2", "", complete ? "Saved on this tablet and server" : "Saved on this tablet"),
+      create("p", "", `${visit.beneficiaryName} · Visit date ${visit.eventDate}`));
+    title.append(icon, copy);
+    receipt.append(title);
+    const steps = create("ol", "field-save-steps");
+    const local = create("li", "is-complete");
+    local.append(create("strong", "", "1. Saved on this tablet"),
+      create("p", "", `Saved ${formatDateTime(visit.createdAt)}. You can close the app and reopen this visit in Results.`));
+    const server = create("li", complete ? "is-complete" : "");
+    server.append(create("strong", "", `2. ${state.label}`), create("p", "", state.detail));
+    steps.append(local, server);
+    receipt.append(steps);
+    const contents = ["Survey answers", ...(visit.photoCount ? [`${visit.photoCount} ${visit.photoCount === 1 ? "photo" : "photos"}`] : []),
+      ...(visit.hasLocation ? ["GPS location"] : [])].join(" · ");
+    receipt.append(create("p", "field-save-contents", `${complete ? "Sent to server" : "Saved and queued to send"}: ${contents}.`));
+    if (visit.topics?.length) receipt.append(create("p", "field-save-contents", `Training types: ${visit.topics.join(" · ")}`));
+    if (!complete) receipt.append(create("p", "field-save-next", state.tone === "attention"
+      ? "You do not need to enter this visit again. Check the message above, then try Synchronize now when connected. Keep this saved entry until the server confirms it."
+      : "Back at the office: connect and open this app to upload automatically, or press Synchronize now. Keep it open until the server confirms receipt."));
+    if (!complete) receipt.append(create("p", "field-save-contents", "Until then, keep this browser's site data so your saved entries remain available."));
+    const actions = create("div", "field-save-actions");
+    if (!complete) {
+      const sync = create("button", "button button-primary", syncing ? "Sending to server…" : "Synchronize now");
+      sync.type = "button";
+      sync.disabled = syncing || !navigator.onLine;
+      sync.addEventListener("click", () => synchronize());
+      const pending = create("button", "button button-secondary", `View pending entries (${currentOutbox().length})`);
+      pending.type = "button";
+      pending.addEventListener("click", () => openPane("pending"));
+      actions.append(sync);
+      if (!focusedVisit) actions.append(pending);
+    }
+    receipt.append(actions);
+    return receipt;
+  };
+
+  const appendVisitFinish = (container, visit) => {
+    if (!focusedVisit) return;
+    const finish = create("section", "field-sticky-save field-visit-finish");
+    const complete = visit.status === "synchronized";
+    finish.append(create("span", "", complete ? "Saved on this device and confirmed by the server."
+      : "Saved on this device. Your visit will stay in Pending until the server confirms it."));
+    const button = create("button", "button button-primary", "Finish and return to Field App");
+    button.type = "button";
+    button.addEventListener("click", leaveVisit);
+    finish.append(button);
+    container.append(finish);
   };
 
   const renderResults = () => {
@@ -1127,7 +1268,7 @@
     const visits = savedResults.filter((item) => item.cbf === currentCbf && item.environment === environment)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     container.replaceChildren();
-    select.replaceChildren(...visits.map((item) => new Option(`${item.eventDate} · ${item.beneficiaryName}`, item.id)));
+    select.replaceChildren(...visits.map((item) => new Option(`${item.eventDate} · ${item.beneficiaryName} · ${item.status === "synchronized" ? "On server" : item.status === "error" || item.syncError ? "Upload needs attention" : "Tablet only"}`, item.id)));
     select.closest("label").hidden = !visits.length;
     if (!visits.length) {
       container.append(create("p", "panel field-empty", "Save a follow-up to see its results here, even without internet."));
@@ -1136,14 +1277,12 @@
     const visit = visits.find((item) => item.id === selectedResultId) || visits[0];
     selectedResultId = visit.id;
     select.value = visit.id;
-    const heading = create("section", "panel field-result-heading");
-    heading.append(create("h2", "", visit.beneficiaryName), create("p", "", `${visit.eventDate} · ${visit.status === "synchronized" ? "Synchronized — results confirmed" : visit.status === "error" ? "Saved on this tablet — synchronization needs attention" : "Saved on this tablet — waiting to synchronize"}`));
-    if (visit.error) heading.append(create("p", "field-outbox-error", visit.error));
-    if (visit.status !== "synchronized") heading.append(create("p", "", "Calculated on this tablet. Results will be checked when the visit synchronizes."));
-    container.append(heading);
+    container.append(renderSaveReceipt(visit));
+    if (visit.status !== "synchronized") container.append(create("p", "field-result-note", "The results below were calculated on this tablet. The server will check them after upload."));
     const result = visit.outcome;
     if (!result) {
       container.append(create("p", "panel field-empty", "This visit is saved, but its outcomes could not be calculated on this tablet. Update the app or synchronize to receive the results."));
+      appendVisitFinish(container, visit);
       return;
     }
     const percent = (value) => `${Number(value).toFixed(1).replace(/\.0$/, "")}%`;
@@ -1196,31 +1335,43 @@
       if (navigator.onLine) {
         const link = create("a", "button button-primary", "Review and confirm CBF decisions");
         link.href = `/data-entry/followup-results/${visit.eventId}`;
+        if (focusedVisit) {
+          // Keep the saved visit open while reviewing the online decision form.
+          link.target = "_blank";
+          link.rel = "noopener";
+          link.textContent += " (opens a new tab)";
+        }
         actions.append(link);
       } else actions.append(create("p", "", "Reconnect to review and confirm CBF decisions. These results remain available offline."));
       container.append(actions);
     }
+    appendVisitFinish(container, visit);
   };
 
   const renderOutbox = () => {
     const list = $("[data-outbox-list]");
     const items = currentOutbox().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const homeList = $("[data-home-outbox]");
+    homeList.replaceChildren();
+    $("[data-home-saved]").hidden = !items.length;
     list.replaceChildren();
     if (!items.length) {
       const empty = create("div", "panel field-outbox-empty");
-      empty.append(create("div", "field-safety-icon", "✓"), create("h2", "", "Everything is synchronized"), create("p", "", "There are no field submissions waiting on this tablet."));
+      empty.append(create("div", "field-safety-icon", "✓"), create("h2", "", "No saved entries waiting to send"), create("p", "", `No pending entries for ${currentCbf || "the selected CBF"}. Follow-up save receipts are available in Results.`));
       list.append(empty);
       return;
     }
     items.forEach((item) => {
-      const card = create("article", `panel field-outbox-card${item.status === "error" ? " has-error" : ""}`);
+      const state = uploadState(item);
+      const card = create("article", `panel field-outbox-card${state.tone === "attention" ? " has-error" : ""}`);
       const type = item.type === "centralized" ? "Centralized training" : "Follow-up";
       const title = create("div");
       title.append(create("span", "field-outbox-type", type), create("h3", "", item.summary), create("p", "", `${item.eventDate} · Saved ${formatDateTime(item.createdAt)}`));
       if (item.geoLocation) title.append(create("p", "field-outbox-location", `Location attached · accuracy approximately ${Math.round(item.geoLocation.accuracy)} m`));
-      if (item.error) title.append(create("p", "field-outbox-error", item.error));
+      title.append(create("p", state.tone === "attention" ? "field-outbox-error" : "", state.detail));
       const actions = create("div", "field-outbox-actions");
-      actions.append(create("span", item.status === "error" ? "status-pill field-status-error" : "status-pill", item.status === "error" ? "Needs attention" : "Waiting to upload"));
+      actions.append(create("span", "field-local-saved", "✓ Saved on tablet"),
+        create("span", state.tone === "attention" ? "status-pill field-status-error" : "status-pill", state.label));
       if (item.type === "followup" && savedResults.some((result) => result.id === item.id)) {
         const view = create("button", "button button-secondary button-small", "View results");
         view.type = "button";
@@ -1229,8 +1380,10 @@
       }
       const discard = create("button", "button button-ghost button-small", "Discard");
       discard.type = "button";
+      discard.disabled = syncing;
       discard.addEventListener("click", async () => {
-        if (!confirm("Discard this locally saved submission? It has not been added to the central database.")) return;
+        if (syncing) return;
+        if (!confirm("Discard this saved copy from the device? Server receipt has not been confirmed. If it has not reached the server, this entry will be lost.")) return;
         const db = await dbPromise;
         await new Promise((resolve, reject) => {
           const transaction = db.transaction(["outbox", "followupResults"], "readwrite");
@@ -1249,6 +1402,15 @@
       actions.append(discard);
       card.append(title, actions);
       list.append(card);
+      const homeCard = create("article", "panel field-outbox-card");
+      const homeCopy = create("div");
+      homeCopy.append(create("span", "field-outbox-type", type), create("h3", "", item.summary),
+        create("p", "", `${item.eventDate} · Saved on device ${formatDateTime(item.createdAt)}`));
+      const homeStatus = create("div", "field-outbox-actions");
+      homeStatus.append(create("span", "field-local-saved", "✓ Saved on this device"),
+        create("span", "status-pill", state.label));
+      homeCard.append(homeCopy, homeStatus);
+      homeList.append(homeCard);
     });
   };
 
@@ -1262,9 +1424,9 @@
 
   const synchronize = async () => {
     if (syncing || root.inert) return;
-    const pending = currentOutbox();
+    const pending = currentOutbox().slice(0, 100);
     if (!pending.length) {
-      alertUser("Everything on this tablet is already synchronized.", "success");
+      alertUser("No saved entries are waiting to send for this CBF.", "success");
       return;
     }
     if (!navigator.onLine) {
@@ -1272,32 +1434,58 @@
       return;
     }
     syncing = true;
-    $$('[data-sync-now]').forEach((button) => { button.disabled = true; button.textContent = "Synchronizing…"; });
+    pending.forEach((item) => sendingIds.add(item.id));
+    refreshCounts();
+    renderResults();
+    renderOutbox();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
     try {
       const response = await fetch(config.syncUrl, {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json", "X-CSRF-Token": config.csrfToken, Accept: "application/json" },
-        body: JSON.stringify({ cbf: currentCbf, deviceId: await deviceId(), submissions: pending.slice(0, 100) }),
+        body: JSON.stringify({ cbf: currentCbf, deviceId: await deviceId(), submissions: pending }),
+        signal: controller.signal,
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !Array.isArray(payload.results)) throw new Error(payload.error || "Synchronization could not be completed. Sign in again if your session expired.");
       let accepted = 0;
       let rejected = 0;
       for (const result of payload.results) {
+        const item = pending.find((entry) => entry.id === result.id);
+        if (!item || !sendingIds.has(result.id)) continue;
         const localResult = savedResults.find((item) => item.id === result.id);
         if (result.status === "accepted" || result.status === "duplicate") {
-          if (localResult) await putStored("followupResults", { ...localResult, status: "synchronized",
-            eventId: result.eventId, error: "", outcome: result.outcome || localResult.outcome });
-          applySynchronizedSubmission(pending.find((entry) => entry.id === result.id));
-          await deleteStored("outbox", result.id);
+          const confirmed = localResult && { ...localResult, status: "synchronized", synchronizedAt: new Date().toISOString(),
+            eventId: result.eventId, error: "", syncError: "", outcome: result.outcome || localResult.outcome };
+          // Update the receipt and queue together: a server confirmation must
+          // never leave a visit simultaneously marked as waiting to send.
+          const db = await dbPromise;
+          await new Promise((resolve, reject) => {
+            const transaction = db.transaction(["outbox", "followupResults"], "readwrite");
+            if (confirmed) transaction.objectStore("followupResults").put(confirmed);
+            transaction.objectStore("outbox").delete(result.id);
+            transaction.oncomplete = resolve;
+            transaction.onabort = () => reject(transaction.error || new Error("Server confirmation could not be stored. Try synchronizing again."));
+          });
+          if (confirmed) savedResults = savedResults.map((visit) => visit.id === result.id ? confirmed : visit);
+          outbox = outbox.filter((entry) => entry.id !== result.id);
+          applySynchronizedSubmission(item);
           accepted += 1;
         } else {
-          if (localResult) await putStored("followupResults", { ...localResult, status: "error", error: result.message || "The server rejected this entry." });
-          const item = pending.find((entry) => entry.id === result.id);
-          if (item) await putStored("outbox", { ...item, status: "error", error: result.message || "The server rejected this entry." });
+          const error = result.message || "The server rejected this entry.";
+          if (localResult) {
+            const failed = { ...localResult, status: "error", error, syncError: "" };
+            await putStored("followupResults", failed);
+            savedResults = savedResults.map((visit) => visit.id === result.id ? failed : visit);
+          }
+          const failed = { ...item, status: "error", error, syncError: "" };
+          await putStored("outbox", failed);
+          outbox = outbox.map((entry) => entry.id === result.id ? failed : entry);
           rejected += 1;
         }
+        sendingIds.delete(result.id);
       }
       if (accepted && fieldPackage) await putStored("packagesV2", { key: packageKey(currentCbf), package: fieldPackage });
       outbox = await getAllStored("outbox");
@@ -1308,16 +1496,31 @@
       if (accepted) await prepareTablet({ quiet: true });
       renderCentralizedTopics();
       renderFarmerList();
-      if (rejected) alertUser(`${accepted} synchronized; ${rejected} need attention. Open Pending for details.`, "warning");
-      else alertUser(`${accepted} ${accepted === 1 ? "submission" : "submissions"} synchronized successfully.`, "success");
+      const remaining = currentOutbox().length;
+      if (remaining) alertUser(`${accepted} confirmed by server; ${remaining} still to send${rejected ? `, including ${rejected} needing attention` : ""}. Open Pending for details.`, "warning");
+      else alertUser(`${accepted} ${accepted === 1 ? "entry" : "entries"} confirmed by server. No saved entries left to send for this CBF.`, "success");
     } catch (error) {
-      if (!navigator.onLine) alertUser("Entries and results remain saved on this tablet. Synchronize when internet is available.", "info");
-      else alertUser(error instanceof TypeError
-        ? "Could not connect to synchronize. Entries and results remain saved on this tablet. Please try again."
-        : error.message || "Synchronization could not be completed. Entries remain safe on this tablet.", "error");
+      const message = !navigator.onLine ? "Internet was disconnected before upload could be confirmed. Reconnect and try again."
+        : error.name === "AbortError" ? "The server did not confirm the upload in time. Try Synchronize now again."
+        : error instanceof TypeError ? "Could not reach the server. Check your connection and try Synchronize now again."
+        : error.message || "Synchronization could not be completed. Try again when connected.";
+      for (const item of outbox.filter((entry) => sendingIds.has(entry.id))) {
+        item.syncError = message;
+        const localResult = savedResults.find((visit) => visit.id === item.id);
+        if (localResult) localResult.syncError = message;
+        try {
+          await putStored("outbox", item);
+          if (localResult) await putStored("followupResults", localResult);
+        } catch (_) { /* Preserve the original saved entry if status storage fails. */ }
+      }
+      alertUser(`${message} Unconfirmed entries remain saved on this tablet.`, "warning");
     } finally {
+      clearTimeout(timeout);
       syncing = false;
-      $$('[data-sync-now]').forEach((button) => { button.disabled = false; button.textContent = "Synchronize now"; });
+      sendingIds.clear();
+      refreshCounts();
+      renderResults();
+      renderOutbox();
     }
   };
 
@@ -1347,11 +1550,24 @@
       }
     }
     renderResults();
+    renderOutbox();
     storageReady = true;
     if (navigator.onLine && fieldPackage && currentOutbox().length) setTimeout(synchronize, 900);
   };
 
   $("[data-prepare]").addEventListener("click", () => prepareTablet());
+  $("[data-cancel-visit]").addEventListener("click", () => {
+    if (saving || !unfinishedForms.has($("[data-followup-form]")) || !confirm("This visit has not been saved. Cancel it and discard the answers?")) return;
+    unfinishedForms.delete($("[data-followup-form]"));
+    selectedFarmerId = null;
+    capturedLocation = null;
+    $("[data-followup-questionnaires]").replaceChildren();
+    $("[data-followup-questionnaires]").hidden = true;
+    $("[data-followup-save]").hidden = true;
+    const status = $("[data-save-status]", $("[data-followup-form]"));
+    if (status) status.hidden = true;
+    leaveVisit();
+  });
   $("[data-result-select]").addEventListener("change", (event) => { selectedResultId = event.target.value; renderResults(); });
   $$('[data-sync-now]').forEach((button) => button.addEventListener("click", () => synchronize()));
   $$('[data-field-tab]').forEach((button) => button.addEventListener("click", () => openPane(button.dataset.fieldTab)));
@@ -1364,12 +1580,35 @@
     event.preventDefault();
     if (saving || root.inert) return;
     saving = true;
+    const form = event.currentTarget;
+    const buttons = $$('button[type="submit"]', form);
+    const labels = buttons.map((button) => button.textContent);
+    let status = $("[data-save-status]", form);
+    if (!status) {
+      status = create("p", "field-save-feedback");
+      status.dataset.saveStatus = "";
+      status.setAttribute("role", "status");
+      form.append(status);
+    }
+    status.hidden = false;
+    status.classList.remove("has-error");
+    status.textContent = "Saving on this tablet… Keep this form open until saving is confirmed.";
+    form.setAttribute("aria-busy", "true");
+    buttons.forEach((button) => { button.disabled = true; button.textContent = "Saving on tablet…"; });
+    $("[data-cancel-visit]").disabled = true;
     try {
       await save(event);
+      status.hidden = true;
     } catch (error) {
-      alertUser("The entry could not be saved on this tablet. Keep this form open and try saving again.", "error");
+      status.classList.add("has-error");
+      status.textContent = "Not saved. Keep this form open and try saving again. Do not close the app until you see the save confirmation.";
+      status.scrollIntoView({ behavior: "smooth", block: "center" });
+      alertUser(status.textContent, "error");
     } finally {
       saving = false;
+      form.removeAttribute("aria-busy");
+      $("[data-cancel-visit]").disabled = false;
+      buttons.forEach((button, index) => { button.disabled = false; button.textContent = labels[index]; });
     }
   };
   $("[data-ct-form]").addEventListener("submit", saveEntry(saveCentralized));
@@ -1385,11 +1624,17 @@
       event.detail.reason = "Please wait for the app to finish loading, saving or synchronizing, then try the update again.";
       event.preventDefault();
     } else if (unfinishedForms.size) {
-      event.detail.reason = "You have an unfinished entry. Use Save safely on this tablet before updating the app.";
+      event.detail.reason = "You have an unfinished entry. Save it on this tablet before updating the app.";
       event.preventDefault();
     }
   });
   window.addEventListener("online", () => { updateConnection(); if (fieldPackage && currentOutbox().length) synchronize(); });
   window.addEventListener("offline", updateConnection);
+  window.addEventListener("beforeunload", (event) => {
+    if (saving || unfinishedForms.size) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+  });
   start().catch(() => alertUser("This browser could not open the tablet's offline storage.", "error"));
 })();

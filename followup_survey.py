@@ -15,7 +15,7 @@ from statistics import mean
 from typing import Any, Iterable
 
 
-SURVEY_VERSION = "2026-09-15-r23"
+SURVEY_VERSION = "2026-09-22-r24"
 
 PIP = "Household Resource Mapping (PIP)"
 SUSTAINABLE = "Sustainable/Regenerative Agriculture"
@@ -254,8 +254,6 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
             question("A10.3", "a10_female", "People living in the household - female", "number", required=False, min_value=0, integer=True),
             question("A11", "a11_trainings", "Trainings received", "training_list", required=False,
                      help_text="Filled from the AE training history and cannot be changed during follow-up."),
-            question("A12", "a12_photos", "Take or upload photos for this section", "photos", required=False,
-                     help_text="You can use the device camera or choose existing photos."),
         ],
     },
     {
@@ -372,7 +370,6 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
                 condition=eq("b14_unit", "other"), guide_parent="b14_manure_loads"),
             question("B15", "b15_gap", "Main gap observed", "textarea", required=False),
             question("B16", "b16_advice", "Immediate recommendation or advice given", "textarea", required=False),
-            question("B18", "b18_photos", "Take or upload photos of the best or weakest practice", "photos", required=False, help_text="You can use the device camera or choose existing photos."),
         ],
     },
     {
@@ -387,8 +384,6 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
                 ("clear", "Clear signs of use"), ("some", "Some signs, unclear"), ("none", "No signs of use")), condition=eq("c1_map_drawn", "yes")),
             question("C5", "c5_gap", "Main gap observed", "textarea", required=False),
             question("C6", "c6_advice", "Immediate recommendation or advice", "textarea", required=False),
-            question("C8", "c8_photos", "Take or upload photos of the vision map", "photos", required=False,
-                     help_text="You can use the device camera or choose existing photos."),
         ],
     },
     {
@@ -422,7 +417,6 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
                      unit="UGX", step_value=100, required=False, help_text="Descriptive only; not scored. Enter the amount in steps of UGX 100."),
             question("D8", "d7_gap", "Main gap observed", "textarea", required=False),
             question("D9", "d8_advice", "Immediate recommendation or advice", "textarea", required=False),
-            question("D10", "d10_photos", "Take or upload photos of the best or weakest kitchen-garden practice", "photos", required=False, help_text="You can use the device camera or choose existing photos."),
         ],
     },
     {
@@ -461,7 +455,6 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
                 "Easy tracking of income and expenses", "Improved planning and budgeting", "Better investment decisions", "To calculate profit or loss", "Other"), required=False, condition=one_of("e1_budget", ["complete", "incomplete"])),
             question("E8", "e9_gap", "Main gap observed", "textarea", required=False),
             question("E9", "e10_advice", "Immediate recommendation or advice", "textarea", required=False),
-            question("E10", "e12_photos", "Take or upload photos of the financial record or practice", "photos", required=False, help_text="You can use the device camera or choose existing photos."),
         ],
     },
     {
@@ -486,7 +479,6 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
                 ("none", "Nothing shown")), condition=one_of("f1_location", ["house", "bounded"])),
             question("F6", "f6_gap", "Main gap observed or shared", "textarea", required=False),
             question("F7", "f7_advice", "Immediate advice", "textarea", required=False),
-            question("F9", "f9_photos", "Take or upload photos of poultry-management practices", "photos", required=False, help_text="You can use the device camera or choose existing photos."),
         ],
     },
     {
@@ -508,17 +500,12 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
                 ("tree_nursery", "Tree nursery establishment")),
                 condition=eq("h1_2_practised", "yes"), required=False,
                 help_text="Narrative only; not scored."),
-            question("H2", "h2_photos", "Take or upload photos for this section", "photos", required=False,
-                     help_text="You can use the device camera or choose existing photos."),
         ],
     },
     {
         "id": "I", "title": "Beneficiary Feedback on Trainings", "always": True,
-        "intro": "Rank only the trainings the farmer received. This feedback is not scored.",
+        "intro": "This feedback is not scored.",
         "questions": [
-            question("I1", "i1_training_ranking",
-                     "Thinking back on the trainings you completed, which one helped you the most? Which one helped you the least? Please put them in order, from the one that helped you most to the one that helped you least.",
-                     "ranking", TRAINING_RANKING_OPTIONS, required=False),
             question("I2", "i2_change", "What is the biggest change noticed since starting these practices?", "choice", options(
                 "More harvest / yield", "More food variety at home", "Spending less on inputs", "Less soil erosion / land damage",
                 "Better animal / poultry health", "Saving more money", "No noticeable change yet", "Other")),
@@ -526,8 +513,8 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
                 "More hands-on demonstrations", "More frequent follow-up visits", "Provide materials in local language",
                 "Cover new or different topics", "Nothing - satisfied as is", "Other")),
             question("Consent", "consent", "Permission received to document and share practices for learning and communication", "consent", options(("yes", "Permission received"))),
-            question("I4", "i4_photos", "Take or upload photos for this section", "photos", required=False,
-                     help_text="You can use the device camera or choose existing photos."),
+            question("I4", "i4_photos", "Take or upload one photo of the best practice found during this visit", "photos", required=False,
+                     help_text="Use the device camera or choose an existing photo. Maximum 1 photo."),
         ],
     },
 ]

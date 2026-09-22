@@ -47,16 +47,16 @@ window.arfsaSetupPhotoPicker = (picker) => {
   const preview = picker.querySelector("[data-photo-preview]");
   if (!input || !status || !preview) return;
   picker.dataset.photoReady = "true";
-  let selectedFiles = Array.from(input.files || []);
+  input.multiple = false;
+  let selectedFiles = Array.from(input.files || []).slice(0, 1);
   let previewUrls = [];
-  const fileKey = (file) => `${file.name}::${file.size}::${file.lastModified}`;
   const synchronizeInput = () => {
     const transfer = new DataTransfer();
     selectedFiles.forEach((file) => transfer.items.add(file));
     input.files = transfer.files;
     input._arfsaFiles = [...selectedFiles];
   };
-  const render = (limitReached = false) => {
+  const render = () => {
     previewUrls.forEach((url) => URL.revokeObjectURL(url));
     previewUrls = [];
     preview.replaceChildren();
@@ -87,17 +87,15 @@ window.arfsaSetupPhotoPicker = (picker) => {
       card.append(image, name, remove);
       preview.append(card);
     });
-    if (limitReached) status.textContent = `${selectedFiles.length} photos added · maximum 6 reached`;
-    else if (selectedFiles.length) status.textContent = `${selectedFiles.length} ${selectedFiles.length === 1 ? "photo" : "photos"} added · click Remove to delete`;
-    else status.textContent = "No photos added · maximum 6";
+    status.textContent = selectedFiles.length
+      ? "1 photo added · maximum 1 · choose another photo to replace it or Remove to delete"
+      : "No photo added · maximum 1";
   };
   input.addEventListener("change", () => {
-    const combined = [...selectedFiles, ...Array.from(input.files || [])];
-    const unique = combined.filter((file, index, files) => files.findIndex((candidate) => fileKey(candidate) === fileKey(file)) === index);
-    const limitReached = unique.length > 6;
-    selectedFiles = unique.slice(0, 6);
+    const files = Array.from(input.files || []);
+    if (files.length) selectedFiles = files.slice(0, 1);
     synchronizeInput();
-    render(limitReached || selectedFiles.length === 6);
+    render();
   });
   window.addEventListener("beforeunload", () => previewUrls.forEach((url) => URL.revokeObjectURL(url)));
   render();

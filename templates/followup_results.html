@@ -5,6 +5,11 @@
 {% set outcome = assessment.summary.household_outcome %}
 <div class="page-heading"><div><p class="eyebrow">Follow-up completed</p><h1>{{ assessment.beneficiary_name }}</h1><p class="lead">Review the calculated results, then confirm what should happen for each training type.</p></div><span class="status-pill">{{ assessment.event_date|datefmt }}</span></div>
 
+<section class="panel field-save-receipt field-save-complete" aria-label="Follow-up save confirmation" role="status">
+  <div class="field-save-title"><span class="field-save-icon" aria-hidden="true">✓</span><div><p class="eyebrow">{{ 'Testing environment' if session.get('test_environment') else 'Follow-up saved' }}</p><h2>Saved on the {{ 'test ' if session.get('test_environment') }}server</h2><p>This visit and its answers have been received. There is nothing left to upload for this visit.</p></div></div>
+  <p class="field-save-next">{% if finalized %}Your CBF decisions have also been saved on the server.{% else %}Next: review the results below, then save your CBF decisions. The visit itself is already saved.{% endif %}</p>
+</section>
+
 <section class="result-hero panel">
   <div><span>Household outcome</span><strong>{% if outcome %}{{ outcome.code }} — {{ outcome.label }}{% else %}Training-specific assessment{% endif %}</strong>{% if outcome %}<p>{{ outcome.action }}</p>{% endif %}</div>
   <div class="result-kpis">

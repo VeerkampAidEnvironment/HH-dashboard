@@ -5,6 +5,7 @@
   const checkButton = root?.querySelector("[data-check-app-update]");
   const applyButton = root?.querySelector("[data-apply-app-update]");
   const status = root?.querySelector("[data-app-update-status]");
+  const notice = root?.querySelector("[data-app-update-notice]");
   if (!checkButton || !applyButton || !status) return;
 
   if (!("serviceWorker" in navigator) || !window.isSecureContext) {
@@ -24,6 +25,7 @@
   const watched = new WeakSet();
 
   const showReady = () => {
+    if (notice) notice.hidden = false;
     applyButton.hidden = false;
     status.textContent = "An update is ready. Save your current entry, then restart. Saved entries and prepared field data will stay on this tablet.";
   };
@@ -36,8 +38,11 @@
         if (registration.active) showReady();
         else status.textContent = "App ready for offline use. Updates will be checked when you are online.";
       } else if (worker.state === "redundant") {
+        if (notice) notice.hidden = !registration.waiting && !controllerChanged;
+        if (!registration.waiting && !controllerChanged) applyButton.hidden = true;
         status.textContent = "The update could not be downloaded. Your existing app is still available. Check your connection, sign in if needed, and try again.";
       } else if (worker.state === "installing") {
+        if (notice && registration.active) notice.hidden = false;
         status.textContent = "Downloading app files. You can keep working.";
       }
     };
@@ -78,7 +83,11 @@
       await current.update();
       if (current.waiting || controllerChanged) showReady();
       else if (current.installing) watchInstallation(current.installing);
-      else status.textContent = "Your app is up to date. Saved entries and prepared field data stay on this tablet.";
+      else {
+        if (notice) notice.hidden = true;
+        applyButton.hidden = true;
+        status.textContent = "Your app is up to date. Saved entries and prepared field data stay on this tablet.";
+      }
     } catch (error) {
       status.textContent = "Could not check for updates. Check your connection, sign in if needed, and try again. You can keep using the app.";
     } finally {
@@ -104,6 +113,7 @@
       return;
     }
     if (!registration?.waiting && !controllerChanged) {
+      if (notice) notice.hidden = true;
       applyButton.hidden = true;
       checkForUpdates(true);
       return;

@@ -113,7 +113,7 @@
             {% elif question.type == 'number' %}
               <div class="question-number{{ ' has-unit' if question.unit }}"><input type="number" name="{{ field_name }}" min="{{ question.min_value if question.min_value is defined else 0 }}"{% if question.max_value is defined %} max="{{ question.max_value }}"{% endif %} step="{{ question.step_value if question.step_value is defined else (1 if question.integer else 'any') }}" value="{{ question.prefill if question.prefill is defined and question.prefill is not none else '' }}" placeholder="{{ 'Enter a whole number' if question.integer else 'Enter a number' }}" {% if question.required and not question.condition %}required{% endif %}>{% if question.unit %}<span aria-hidden="true">{{ question.unit }}</span>{% endif %}</div>
             {% elif question.type == 'photos' %}
-              <label class="survey-photo-upload" data-photo-picker><input type="file" name="{{ field_name }}" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" capture="environment" multiple><span>Take or choose photos</span><small data-photo-status>No photos added · maximum 6</small><div class="survey-photo-preview" data-photo-preview></div></label>
+              <label class="survey-photo-upload" data-photo-picker><input type="file" name="{{ field_name }}" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" capture="environment"><span>Take or choose a photo</span><small data-photo-status>No photo added · maximum 1</small><div class="survey-photo-preview" data-photo-preview></div></label>
             {% elif question.type == 'gps' %}
               <div class="survey-gps-capture" data-gps-tracker>
                 <input type="hidden" name="{{ field_name }}" value="">

@@ -9,6 +9,10 @@
 {% endblock %}
 {% block content %}
 <div class="field-app" data-field-app>
+  <header class="field-visit-header" data-visit-header hidden>
+    <div><p class="eyebrow">{% if session.get('test_environment') %}Practice · {% endif %}Follow-up visit</p><h1 data-visit-name></h1><p data-visit-stage>Complete this visit, then save and review its results.</p></div>
+    <button class="button button-ghost" type="button" data-cancel-visit>Cancel visit</button>
+  </header>
   {% if not session.get('test_environment') %}<section class="field-test-launch"><div><strong>Practice mode</strong><span>Use a separate test database to try offline entries safely.</span></div><form method="post" action="{{ url_for('test_environment') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="enter"><input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}"><button class="button button-secondary button-small" type="submit">Open testing environment</button></form></section>{% else %}<section class="field-test-launch field-test-active"><div><strong>Testing environment active</strong><span>Field-App synchronization uses only your test database.</span></div><form method="post" action="{{ url_for('test_environment') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="reset"><input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}"><button class="button button-ghost button-small" type="submit">Reset test data</button></form></section>{% endif %}
   <section class="field-hero">
     <div>
@@ -24,13 +28,21 @@
 
   <div class="field-alert" data-field-alert hidden role="status" aria-live="polite"></div>
 
+  <section class="field-transfer-summary" data-transfer-summary aria-label="Saved entries and uploads" hidden>
+    <div role="status" aria-live="polite" aria-atomic="true"><strong data-transfer-title>Checking saved entries…</strong><p data-transfer-detail></p></div>
+    <button class="button button-secondary button-small" type="button" data-open-pane="pending" data-transfer-review>View pending entries</button>
+  </section>
+
   <section class="field-update panel" aria-label="App updates">
     <div>
       <strong>App updates</strong>
       <p data-app-update-status role="status" aria-live="polite">Updates keep your saved entries and prepared field data on this tablet.</p>
     </div>
     <div class="field-update-actions">
-      <button class="button button-secondary" type="button" data-check-app-update>Check for updates</button>
+      <div class="field-update-check">
+        <button class="button button-secondary" type="button" data-check-app-update>Check for updates</button>
+        <small class="field-update-notice" data-app-update-notice hidden>New version available</small>
+      </div>
       <button class="button button-primary" type="button" data-apply-app-update hidden>Update and restart</button>
     </div>
   </section>
@@ -74,6 +86,10 @@
     </nav>
 
     <section class="field-pane active" data-field-pane="home">
+      <section class="field-home-saved" data-home-saved hidden>
+        <div class="field-pane-heading"><div><p class="eyebrow">Saved on your device</p><h2>Still to send to the server</h2><p>These entries are saved in this app. They can be uploaded when your internet connection is restored.</p></div></div>
+        <div class="field-outbox" data-home-outbox></div>
+      </section>
       <div class="field-home-grid">
         <button class="field-action-card" type="button" data-open-pane="centralized">
           <span class="field-action-symbol">CT</span><span><strong>Record centralized training</strong><small>Choose topics and mark attending beneficiaries.</small></span><b>Start</b>
@@ -84,7 +100,7 @@
       </div>
       <div class="panel field-safety-card">
         <div class="field-safety-icon">✓</div>
-        <div><h2>Your offline entries are saved on this tablet</h2><p>You can close the app between visits. Keep pending entries until they show as synchronized.</p></div>
+        <div><h2>Save each visit before leaving</h2><p>After saving, check the tablet and server status in Results. Saved visits remain available when you close the app, including offline.</p></div>
       </div>
     </section>
 
@@ -112,12 +128,12 @@
         </div>
         <div class="field-farmer-list panel" data-farmer-list></div>
         <div class="field-questionnaires" data-followup-questionnaires hidden></div>
-        <div class="field-sticky-save" data-followup-save hidden><span data-followup-selection>Complete at least one topic</span><button class="button button-primary" type="submit">Save safely on this tablet</button></div>
+        <div class="field-sticky-save" data-followup-save hidden><div><span data-followup-selection>Complete at least one topic</span><small class="field-save-hint">Not saved yet. Save to finish this visit, even offline.</small></div><button class="button button-primary" type="submit">Save follow-up and view results</button></div>
       </form>
     </section>
 
     <section class="field-pane" data-field-pane="pending" hidden>
-      <div class="field-pane-heading"><div><p class="eyebrow">Synchronization queue</p><h2>Entries stored on this tablet</h2><p>Accepted entries disappear from this list after synchronization. Entries needing attention remain visible.</p></div><button class="button button-primary" type="button" data-sync-now>Synchronize now</button></div>
+      <div class="field-pane-heading"><div><p class="eyebrow">Still to send</p><h2>Saved on this tablet · waiting for the server</h2><p>Back at the office, connect to the internet and open this app. Uploads start automatically, or press Synchronize now. An entry leaves this list only after the server confirms it.</p></div><button class="button button-primary" type="button" data-sync-now>Synchronize now</button></div>
       <div class="field-outbox" data-outbox-list></div>
     </section>
     <section class="field-pane" data-field-pane="results" hidden>

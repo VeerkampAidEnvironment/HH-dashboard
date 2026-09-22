@@ -15,7 +15,7 @@ class Node extends EventTarget {
 }
 
 function ui({ waiting = null, online = true, controller = {}, installing = null, updateError = false } = {}) {
-  const nodes = Object.fromEntries(["check-app-update", "apply-app-update", "app-update-status"].map((key) => [key, new Node()]));
+  const nodes = Object.fromEntries(["check-app-update", "apply-app-update", "app-update-status", "app-update-notice"].map((key) => [key, new Node()]));
   const root = new Node();
   root.querySelector = (selector) => nodes[selector.slice(6, -1)];
   const document = new Node();
@@ -42,6 +42,7 @@ test("a downloaded update waits for an explicit restart, then reloads only after
   const app = ui({ waiting: { postMessage: (message) => messages.push(message.type) } });
   await tick();
   assert.equal(app.nodes["apply-app-update"].hidden, false);
+  assert.equal(app.nodes["app-update-notice"].hidden, false);
   assert.equal(app.reloads, 0);
   app.nodes["apply-app-update"].click();
   assert.deepEqual(messages, ["SKIP_WAITING"]);
@@ -69,8 +70,10 @@ test("offline users can apply an already downloaded update without a new downloa
   const app = ui({ online: false, waiting: { postMessage: () => { sent = true; } } });
   await tick();
   assert.equal(app.checks, 0);
+  assert.equal(app.nodes["app-update-notice"].hidden, false);
   app.nodes["check-app-update"].click();
   assert.match(app.nodes["app-update-status"].textContent, /offline/);
+  assert.equal(app.nodes["app-update-notice"].hidden, false);
   app.nodes["apply-app-update"].click();
   assert.equal(sent, true);
 });
@@ -92,6 +95,7 @@ test("first install does not trigger an unnecessary reload", async () => {
   app.serviceWorker.dispatchEvent(new Event("controllerchange"));
   assert.equal(app.reloads, 0);
   assert.equal(app.nodes["apply-app-update"].hidden, true);
+  assert.equal(app.nodes["app-update-notice"].hidden, true);
 });
 
 test("failed checks and stalled activation restore usable controls", async () => {
@@ -99,6 +103,7 @@ test("failed checks and stalled activation restore usable controls", async () =>
   await tick();
   assert.equal(app.nodes["check-app-update"].disabled, false);
   assert.match(app.nodes["app-update-status"].textContent, /Could not check/);
+  assert.equal(app.nodes["app-update-notice"].hidden, false);
   app.nodes["apply-app-update"].click();
   app.expire();
   assert.equal(app.root.inert, false);
@@ -111,13 +116,26 @@ test("download completion offers restart and download failure reports an error",
   const app = ui({ installing });
   await tick();
   assert.equal(app.nodes["apply-app-update"].hidden, true);
+  assert.equal(app.nodes["app-update-notice"].hidden, false);
   installing.state = "installed";
   installing.dispatchEvent(new Event("statechange"));
   assert.equal(app.nodes["apply-app-update"].hidden, false);
+  assert.equal(app.nodes["app-update-notice"].hidden, false);
   installing.state = "redundant";
   installing.dispatchEvent(new Event("statechange"));
   assert.match(app.nodes["app-update-status"].textContent, /could not be downloaded/);
+  assert.equal(app.nodes["app-update-notice"].hidden, true);
   assert.equal(app.reloads, 0);
+});
+
+test("an up-to-date app keeps the new-version notice hidden", async () => {
+  const app = ui();
+  await tick();
+  assert.match(app.nodes["app-update-status"].textContent, /up to date/);
+  assert.equal(app.nodes["app-update-notice"].hidden, true);
+  app.nodes["check-app-update"].click();
+  await tick();
+  assert.equal(app.nodes["app-update-notice"].hidden, true);
 });
 
 function worker({ failPath, redirectPath, offline = false, serverVersion = "test-release" } = {}) {

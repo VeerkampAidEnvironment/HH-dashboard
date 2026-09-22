@@ -97,7 +97,7 @@ def is_coordinator_cbf(cbf_name: str) -> bool:
     normalized = " ".join(str(cbf_name or "").split()).casefold()
     return normalized in COORDINATOR_CBF_NAMES
 
-MAX_FOLLOWUP_PHOTOS = 6
+MAX_FOLLOWUP_PHOTOS = 1
 MAX_FOLLOWUP_PHOTO_BYTES = 8 * 1024 * 1024
 
 
@@ -113,7 +113,9 @@ def _photo_extension(data: bytes) -> str | None:
     return None
 
 
-def prepare_followup_photos(field_name: str, encoded_value: str = "") -> list[dict[str, Any]]:
+def prepare_followup_photos(
+    field_name: str, encoded_value: str = "", *, maximum: int = MAX_FOLLOWUP_PHOTOS,
+) -> list[dict[str, Any]]:
     candidates: list[tuple[str, bytes]] = []
     for upload in request.files.getlist(field_name):
         if upload and upload.filename:
@@ -134,8 +136,10 @@ def prepare_followup_photos(field_name: str, encoded_value: str = "") -> list[di
                 candidates.append((Path(str(item.get("name") or "photo")).name, data))
             except (KeyError, TypeError, ValueError, binascii.Error):
                 raise ValueError("One of the offline photos is invalid.") from None
-    if len(candidates) > MAX_FOLLOWUP_PHOTOS:
-        raise ValueError(f"Upload no more than {MAX_FOLLOWUP_PHOTOS} photos for one photo question.")
+    if len(candidates) > maximum:
+        if maximum == 1:
+            raise ValueError("Upload no more than 1 photo of the best practice found during this visit.")
+        raise ValueError(f"An older saved photo question can contain no more than {maximum} photos.")
     prepared = []
     for original_name, data in candidates:
         if not data or len(data) > MAX_FOLLOWUP_PHOTO_BYTES:
@@ -145,6 +149,24 @@ def prepare_followup_photos(field_name: str, encoded_value: str = "") -> list[di
             raise ValueError("Photo questions accept JPG, PNG, WebP or HEIC photos only.")
         prepared.append({"name": original_name or f"photo{extension}", "extension": extension, "data": data})
     return prepared
+
+
+def followup_submission_questions(topics: list[str], survey_version: str) -> list[dict[str, Any]]:
+    """Retain attachments in visits already saved by earlier tablet releases."""
+    questions = all_questions_for_topics(topics)
+    if survey_version != SURVEY_VERSION:
+        for item in questions:
+            if item["type"] == "photos":
+                item["label"] = "Visit photos from an earlier questionnaire"
+        for question_id, source_id in (
+            ("a12_photos", "A12"), ("b18_photos", "B18"), ("c8_photos", "C8"),
+            ("d10_photos", "D10"), ("e12_photos", "E10"), ("f9_photos", "F9"),
+            ("h2_photos", "H2"),
+        ):
+            questions.append({"id": question_id, "source_id": source_id,
+                              "label": "Visit photos from an earlier questionnaire",
+                              "type": "photos", "required": False})
+    return questions
 
 
 def persist_followup_photos(prepared: list[dict[str, Any]]) -> list[dict[str, str]]:
@@ -2289,11 +2311,12 @@ def synchronize_field_submission(connection, cbf_name: str, submission, username
                 or any(topic not in TRAINING_TOPICS for topic in survey_topics)
             ):
                 return {"id": submission_id, "status": "rejected", "message": "Complete at least one valid follow-up training type."}
+            survey_version = str(submission.get("surveyVersion") or "legacy")
             pairs.extend((("record_id", str(record_id)), ("topic_count", str(len(survey_topics))),
-                          ("survey_version", SURVEY_VERSION)))
+                          ("survey_version", survey_version)))
             for index, topic in enumerate(survey_topics):
                 pairs.append((f"topic__{index}", topic))
-            for question in all_questions_for_topics(survey_topics):
+            for question in followup_submission_questions(survey_topics, survey_version):
                 value = survey_answers.get(question["id"], "")
                 if question["id"] == "b12_macrofauna":
                     value = {"zero": 0, "one_four": 1, "five_plus": 5}.get(value, value)
@@ -2705,7 +2728,8 @@ def save_scored_followup(
     answer_records: dict[str, dict[str, Any]] = {}
     pending_photos: dict[str, list[dict[str, Any]]] = {}
     seen_questions = set()
-    for item in all_questions_for_topics(topics):
+    survey_version = values.get("survey_version", "")
+    for item in followup_submission_questions(topics, survey_version):
         if item["id"] in seen_questions or item["type"] == "training_list" \
                 or (item.get("training_topic") and item["training_topic"] not in training_history):
             continue
@@ -2715,7 +2739,10 @@ def save_scored_followup(
             answer: Any = [value.strip() for value in values.getlist(field_name) if value.strip()]
         elif item["type"] == "photos":
             try:
-                pending_photos[item["id"]] = prepare_followup_photos(field_name, values.get(field_name, ""))
+                pending_photos[item["id"]] = prepare_followup_photos(
+                    field_name, values.get(field_name, ""),
+                    maximum=MAX_FOLLOWUP_PHOTOS if survey_version == SURVEY_VERSION else 6,
+                )
             except ValueError as error:
                 return False, str(error)
             answer = [{"name": photo["name"]} for photo in pending_photos[item["id"]]]
