@@ -116,6 +116,8 @@ The focused visit and save-status browser checks run with `node --test tests/fie
 
 Use **Open testing environment** on either **Data entry** or **AE Field App** to work in a personal copy of the live database. You can add practice CTs and follow-ups, including offline submissions, without changing live records. The yellow testing banner confirms that the mode is active. Choose **Exit testing** to return to live data. **Reset test data** discards all of your practice changes and makes a fresh copy of the current live database.
 
+Administrators can enable or disable testing for everyone from **User accounts → Testing environment**. Disabling hides the practice controls, blocks entry and reset, and signs out existing test sessions on their next request. Test uploads cannot be submitted to live data. Personal test databases are retained for later use if testing is enabled again. Devices already offline receive the restriction when they reconnect.
+
 Service workers require HTTPS outside localhost. Production hosting must therefore use HTTPS, secure cookies, reliable backups and personal CBF accounts before field deployment.
 
 ## Tests

@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 try:
-    from flask import current_app, g, has_request_context, session
+    from flask import abort, current_app, g, has_request_context, session
 except ModuleNotFoundError:  # Import utilities can run in the spreadsheet runtime.
     current_app = None
     g = None
@@ -295,24 +295,41 @@ def connect(path: str | Path | None = None) -> sqlite3.Connection:
     return connection
 
 
+def _application_connection(path: Path) -> sqlite3.Connection:
+    connection = connect(path)
+    if connection.execute("PRAGMA user_version").fetchone()[0] < DATABASE_SCHEMA_VERSION:
+        init_db(connection)
+    prepare_audit_capture(connection)
+    return connection
+
+
+def get_live_db() -> sqlite3.Connection:
+    """Use the authoritative database even when the session is practicing."""
+    if "live_db" not in g:
+        g.live_db = _application_connection(primary_database_path())
+    return g.live_db
+
+
+def testing_environment_enabled() -> bool:
+    return bool(get_setting(get_live_db(), "test_environment_enabled", True))
+
+
 def get_db() -> sqlite3.Connection:
+    if not (has_request_context() and session and session.get("test_environment")):
+        return get_live_db()
+    if not testing_environment_enabled():
+        abort(403, "The testing environment has been disabled by an administrator.")
     if "db" not in g:
-        target = None
-        if has_request_context() and session and session.get("test_environment"):
-            username = str(session.get("username") or session.get("user_id") or "user")
-            target = ensure_test_database(username)
-        g.db = connect(target)
-        schema_version = g.db.execute("PRAGMA user_version").fetchone()[0]
-        if schema_version < DATABASE_SCHEMA_VERSION:
-            init_db(g.db)
-        prepare_audit_capture(g.db)
+        username = str(session.get("username") or session.get("user_id") or "user")
+        g.db = _application_connection(ensure_test_database(username))
     return g.db
 
 
 def close_db(_error=None) -> None:
-    connection = g.pop("db", None)
-    if connection is not None:
-        connection.close()
+    for key in ("db", "live_db"):
+        connection = g.pop(key, None)
+        if connection is not None:
+            connection.close()
 
 
 def init_db(connection: sqlite3.Connection | None = None) -> None:

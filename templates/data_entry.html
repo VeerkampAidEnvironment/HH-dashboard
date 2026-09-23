@@ -3,7 +3,9 @@
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">Administration</p><h1>CBF data entry</h1><p class="lead">Record centralized trainings and beneficiary follow-ups directly in the AE database.</p></div></div>
 
+{% if testing_environment_enabled %}
 {% if not session.get('test_environment') %}<section class="test-environment-launch panel"><div><p class="eyebrow">Practice safely</p><h2>Try data entry without changing live data</h2><p>Open a personal test copy of the database before recording a practice CT or follow-up.</p></div><form method="post" action="{{ url_for('test_environment') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="enter"><input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}"><button class="button button-secondary" type="submit">Open testing environment</button></form></section>{% else %}<section class="test-environment-launch test-environment-active panel"><div><p class="eyebrow">Practice safely</p><h2>Testing environment is active</h2><p>Entries made here cannot alter the live database.</p></div><form method="post" action="{{ url_for('test_environment') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="reset"><input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}"><button class="button button-ghost" type="submit">Reset test data</button></form></section>{% endif %}
+{% endif %}
 
 {% if selected_cbf %}<section class="entry-steps" aria-label="Data-entry steps">
   <div class="entry-step active"><span>1</span><div><strong>Select CBF</strong><small>Identify who is entering data</small></div></div>
@@ -124,6 +126,8 @@
                   <button class="button button-ghost button-small" type="button" data-gps-clear hidden>Clear</button>
                 </div>
               </div>
+            {% elif question.id == 'a0_shared_person' %}
+              <div class="household-picker" data-household-picker data-cbf="{{ selected_cbf }}" data-topics='{{ followup_topics|map(attribute='topic')|list|tojson }}' data-candidates='{{ shared_candidates|tojson }}'></div>
             {% elif question.type == 'multi' %}
               <div class="question-option-grid">{% for option in question.options %}<label class="question-check"><input type="checkbox" name="{{ field_name }}" value="{{ option.value }}"><span>{{ option.label }}</span></label>{% endfor %}</div>
             {% elif question.type in ['choice', 'consent'] and question.options|length <= 6 %}

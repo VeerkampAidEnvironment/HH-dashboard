@@ -13,7 +13,9 @@
     <div><p class="eyebrow">{% if session.get('test_environment') %}Practice · {% endif %}Follow-up visit</p><h1 data-visit-name></h1><p data-visit-stage>Complete this visit, then save and review its results.</p></div>
     <button class="button button-ghost" type="button" data-cancel-visit>Cancel visit</button>
   </header>
+{% if testing_environment_enabled %}
   {% if not session.get('test_environment') %}<section class="field-test-launch"><div><strong>Practice mode</strong><span>Use a separate test database to try offline entries safely.</span></div><form method="post" action="{{ url_for('test_environment') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="enter"><input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}"><button class="button button-secondary button-small" type="submit">Open testing environment</button></form></section>{% else %}<section class="field-test-launch field-test-active"><div><strong>Testing environment active</strong><span>Field-App synchronization uses only your test database.</span></div><form method="post" action="{{ url_for('test_environment') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="reset"><input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}"><button class="button button-ghost button-small" type="submit">Reset test data</button></form></section>{% endif %}
+{% endif %}
   <section class="field-hero">
     <div>
       <p class="eyebrow hero-eyebrow">AE offline data collection</p>

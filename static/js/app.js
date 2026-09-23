@@ -201,11 +201,126 @@ window.arfsaConfirmPackage = ({ finalPackage = false } = {}) => new Promise((res
   });
 });
 
+window.arfsaSetupHouseholdPicker = (host, candidates, currentCbf, inputName, primaryTopics = []) => {
+  const selected = new Map();
+  const people = [...new Map(candidates.map((person) => [String(person.id), person])).values()];
+  const groupOf = (person) => String(person.group || "").trim();
+  const cbfOf = (person) => String(person.cbf || "").trim();
+  const keyFor = (person) => JSON.stringify([cbfOf(person), groupOf(person)]);
+  const sameCbf = (person) => String(person.cbf || "").trim().toLocaleLowerCase()
+    === String(currentCbf || "").trim().toLocaleLowerCase();
+  const groups = [...new Map(people.map((person) => [keyFor(person), person])).values()]
+    .sort((a, b) => groupOf(a).localeCompare(groupOf(b)) || cbfOf(a).localeCompare(cbfOf(b)));
+  const localGroups = groups.filter(sameCbf);
+  const otherGroups = groups.filter((person) => !sameCbf(person));
+  const label = (text, control) => {
+    const node = document.createElement("label");
+    node.textContent = text;
+    node.append(control);
+    return node;
+  };
+  const groupSelect = document.createElement("select");
+  groupSelect.dataset.householdPickerControl = "";
+  groupSelect.append(new Option("Select farmer group", ""));
+  for (const [heading, values] of [["Groups in this CBF", localGroups], ["Other groups", otherGroups]]) {
+    if (!values.length) continue;
+    const section = document.createElement("optgroup");
+    section.label = heading;
+    values.forEach((person) => section.append(new Option(
+      `${groupOf(person) || "No group recorded"}${!sameCbf(person) && cbfOf(person) ? ` · ${cbfOf(person)}` : ""}`,
+      keyFor(person),
+    )));
+    groupSelect.append(section);
+  }
+  const personSelect = document.createElement("select");
+  personSelect.dataset.householdPickerControl = "";
+  const addButton = document.createElement("button");
+  addButton.type = "button";
+  addButton.className = "button button-secondary button-small";
+  addButton.textContent = "Add beneficiary";
+  const selections = document.createElement("div");
+  selections.className = "household-selected";
+  selections.setAttribute("aria-live", "polite");
+  const values = document.createElement("div");
+  values.className = "household-picker-values";
+  values.hidden = true;
+  const controls = document.createElement("div");
+  controls.className = "household-picker-controls";
+  controls.append(label("Farmer group", groupSelect), label("Beneficiary", personSelect), addButton);
+  host.append(controls, selections, values);
+  const render = () => {
+    const selectedGroup = groupSelect.value;
+    personSelect.replaceChildren(new Option("Select beneficiary", ""));
+    people.filter((person) => keyFor(person) === selectedGroup && !selected.has(String(person.id)))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .forEach((person) => personSelect.append(new Option(
+        `${person.name}${person.village ? ` · ${person.village}` : ""}`, String(person.id),
+      )));
+    personSelect.disabled = !selectedGroup || personSelect.options.length === 1;
+    addButton.disabled = !personSelect.value;
+    selections.replaceChildren();
+    values.replaceChildren();
+    const sentinel = document.createElement("input");
+    sentinel.type = "checkbox";
+    sentinel.hidden = true;
+    sentinel.disabled = true;
+    values.append(sentinel);
+    selected.forEach((person, id) => {
+      const item = document.createElement("span");
+      item.className = "household-selected-person";
+      item.append(document.createTextNode(`${person.name} · ${groupOf(person) || "No group recorded"}`));
+      const dueTopics = person.dueTopics || (person.followupTopics || []).map((topic) => topic.topic);
+      const matching = primaryTopics.filter((topic) => dueTopics.includes(topic));
+      const status = document.createElement("small");
+      status.textContent = matching.length
+        ? `Visit also counts for ${matching.length} matching ${matching.length === 1 ? "follow-up" : "follow-ups"}`
+        : "Household member only · no matching follow-up due";
+      item.append(status);
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "Remove";
+      remove.setAttribute("aria-label", `Remove ${person.name} from household`);
+      remove.addEventListener("click", () => { selected.delete(id); render(); });
+      item.append(remove);
+      selections.append(item);
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.name = inputName;
+      input.value = id;
+      input.checked = true;
+      values.append(input);
+    });
+    if (!selected.size) {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent = "No other household members added yet.";
+      selections.append(empty);
+    }
+    host.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  groupSelect.addEventListener("change", render);
+  personSelect.addEventListener("change", () => { addButton.disabled = !personSelect.value; });
+  addButton.addEventListener("click", () => {
+    const person = people.find((item) => String(item.id) === personSelect.value);
+    if (!person) return;
+    selected.set(String(person.id), person);
+    render();
+  });
+  render();
+};
+
 document.addEventListener("DOMContentLoaded", () => {
   const menuButton = document.querySelector("[data-menu-toggle]");
   const navigation = document.querySelector("[data-main-nav]");
   menuButton?.addEventListener("click", () => navigation?.classList.toggle("open"));
   document.querySelectorAll("[data-photo-picker]").forEach(window.arfsaSetupPhotoPicker);
+  document.querySelectorAll("[data-household-picker]").forEach((host) => {
+    let candidates = [];
+    try { candidates = JSON.parse(host.dataset.candidates || "[]"); } catch (_error) { candidates = []; }
+    let topics = [];
+    try { topics = JSON.parse(host.dataset.topics || "[]"); } catch (_error) { topics = []; }
+    window.arfsaSetupHouseholdPicker(host, candidates, host.dataset.cbf || "", "survey_answer__a0_shared_person", topics);
+  });
   document.querySelectorAll("[data-ranking]").forEach(window.arfsaSetupRanking);
 
   document.querySelectorAll("form[data-confirm]").forEach((form) => {
@@ -299,7 +414,7 @@ document.addEventListener("DOMContentLoaded", () => {
         node.querySelectorAll("input, select, textarea").forEach((control) => {
           control.disabled = !visible || Boolean(node.dataset.lockedTo);
           if (!visible) control.required = false;
-          else if (node.dataset.required === "true" && control.type !== "checkbox") {
+          else if (node.dataset.required === "true" && control.type !== "checkbox" && !control.hasAttribute("data-household-picker-control")) {
             if (control.type !== "radio" || control === node.querySelector("input[type=radio]")) control.required = true;
           }
         });

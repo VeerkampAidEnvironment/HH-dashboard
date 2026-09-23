@@ -161,12 +161,22 @@
   const queuedCtKeys = () => new Set(currentOutbox()
     .filter((item) => item.type === "centralized")
     .flatMap((item) => item.entries.map((entry) => `${entry.recordId}::${entry.topic}`)));
+  const matchingHouseholdTopics = (recordId, topics) => {
+    const candidate = (fieldPackage?.householdCandidates || fieldPackage?.farmers || [])
+      .find((person) => String(person.id) === String(recordId));
+    const dueTopics = candidate?.dueTopics || (candidate?.followupTopics || []).map((item) => item.topic);
+    return topics.filter((topic) => dueTopics.includes(topic));
+  };
   const queuedFuKeys = () => new Set(currentOutbox()
     .filter((item) => item.type === "followup")
     .flatMap((item) => {
       const topics = item.topics || (item.responses || []).map((entry) => entry.topic);
-      const recordIds = [item.recordId, item.sharedRecordId].filter(Boolean);
-      return recordIds.flatMap((recordId) => topics.map((topic) => `${recordId}::${topic}`));
+      const sharedIds = [...(item.sharedRecordIds || []), item.sharedRecordId].filter(Boolean);
+      return [
+        ...topics.map((topic) => `${item.recordId}::${topic}`),
+        ...sharedIds.flatMap((recordId) => matchingHouseholdTopics(recordId, topics)
+          .map((topic) => `${recordId}::${topic}`)),
+      ];
     }));
 
   const refreshCounts = () => {
@@ -292,7 +302,7 @@
     try {
       const response = await fetch(`${config.bootstrapUrl}?cbf=${encodeURIComponent(cbf)}`, {
         credentials: "same-origin",
-        headers: { Accept: "application/json" },
+        headers: { Accept: "application/json", "X-ARFSA-Environment": environment },
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Field data could not be prepared.");
@@ -437,18 +447,20 @@
     if (question.help) copy.append(create("p", "", question.help));
     if (question.required) copy.append(create("b", "field-required", "Required"));
     wrap.append(copy);
-    let options = question.options || [];
     if (question.id === "a0_shared_person") {
-      const dueTopics = new Set(farmer.availableFollowups.map((item) => item.topic));
-      options = dueFarmers()
-        .filter((candidate) => candidate.id !== farmer.id
-          && candidate.village && candidate.village.toLocaleLowerCase() === farmer.village.toLocaleLowerCase()
-          && candidate.availableFollowups.some((item) => dueTopics.has(item.topic)))
-        .map((candidate) => ({
-          value: String(candidate.id),
-          label: `${candidate.name} — ${candidate.group || "No group"}`,
-        }));
-    } else if (question.type === "ranking") {
+      const picker = create("div", "household-picker");
+      window.arfsaSetupHouseholdPicker(
+        picker,
+        (fieldPackage.householdCandidates || fieldPackage.farmers || []).filter((person) => person.id !== farmer.id),
+        currentCbf,
+        name,
+        farmer.availableFollowups.map((item) => item.topic),
+      );
+      wrap.append(picker);
+      return wrap;
+    }
+    let options = question.options || [];
+    if (question.type === "ranking") {
       const history = new Set(farmer.trainingHistory || []);
       options = options.filter((option) => history.has(typeof option === "object" ? option.value : option));
       wrap.dataset.required = options.length ? "true" : "false";
@@ -1073,13 +1085,16 @@
       });
     } else if (submission.type === "followup") {
       const completedTopics = new Set(submission.topics || (submission.responses || []).map((entry) => entry.topic));
-      [submission.recordId, submission.sharedRecordId].filter(Boolean).forEach((recordId) => {
+      const applyToFarmer = (recordId, topics) => {
         const farmer = fieldPackage.farmers.find((item) => item.id === recordId);
-        if (farmer) {
-          farmer.followupTopics = farmer.followupTopics.filter((item) => !completedTopics.has(item.topic));
+        if (farmer && topics.length) {
+          farmer.followupTopics = farmer.followupTopics.filter((item) => !topics.includes(item.topic));
           farmer.visitedThisRound = true;
         }
-      });
+      };
+      applyToFarmer(submission.recordId, [...completedTopics]);
+      [...(submission.sharedRecordIds || []), submission.sharedRecordId].filter(Boolean)
+        .forEach((recordId) => applyToFarmer(recordId, matchingHouseholdTopics(recordId, [...completedTopics])));
     }
     fieldPackage.summary.centralizedTrainingDue = fieldPackage.farmers.reduce((total, farmer) => total + farmer.ctTopics.length, 0);
     fieldPackage.summary.followupsDue = fieldPackage.farmers.reduce((total, farmer) => total + farmer.followupTopics.length, 0);
@@ -1157,8 +1172,8 @@
       cbf: currentCbf,
       eventDate: form.elements.eventDate.value,
       recordId: selectedFarmerId,
-      sharedRecordId: answers.a0_shared_plot === "yes" && answers.a0_shared_person
-        ? Number(answers.a0_shared_person) : null,
+      sharedRecordIds: answers.a0_shared_plot === "yes"
+        ? (answers.a0_shared_person || []).map(Number) : [],
       beneficiaryName: farmer.name,
       topics,
       surveyVersion: window.ARFSA_FOLLOWUP_RULES.version,
@@ -1445,7 +1460,7 @@
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json", "X-CSRF-Token": config.csrfToken, Accept: "application/json" },
-        body: JSON.stringify({ cbf: currentCbf, deviceId: await deviceId(), submissions: pending }),
+        body: JSON.stringify({ cbf: currentCbf, environment, deviceId: await deviceId(), submissions: pending }),
         signal: controller.signal,
       });
       const payload = await response.json().catch(() => ({}));

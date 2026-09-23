@@ -224,8 +224,9 @@ SURVEY_SECTIONS: list[dict[str, Any]] = [
         "intro": "Confirm the pre-filled beneficiary information. Training history is read-only.",
         "questions": [
             question("A0", "a0_shared_plot", "Is another person on this plot of land already registered?", "choice", YES_NO),
-            question("A0.1", "a0_shared_person", "Select the other registered person from this village", "choice",
-                     condition=eq("a0_shared_plot", "yes")),
+            question("A0.1", "a0_shared_person", "Add other registered people in this household", "multi",
+                     condition=eq("a0_shared_plot", "yes"),
+                     help_text="Choose a farmer group, then a beneficiary. Add each household member separately, including people in other groups."),
             question("A4", "a4_district", "District", "choice", options("Kapchorwa", "Kween"), profile_key="district", required=False),
             question("A5", "a5_subcounty", "Sub-county / Division", "choice", options(
                 "East Division", "West Division", "Kaptum", "Kwanyiy", "Moyok"), profile_key="subcounty", required=False),

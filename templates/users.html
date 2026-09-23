@@ -4,6 +4,19 @@
 <div class="page-heading">
   <div><p class="eyebrow">Administration</p><h1>User accounts</h1><p class="lead">Give every team member a personal login so their database changes are recorded under their own username.</p></div>
 </div>
+<section class="panel test-environment-launch">
+  <div>
+    <p class="eyebrow">Global access</p>
+    <h2>Testing environment <span class="status-pill">{{ 'Enabled' if testing_environment_enabled else 'Disabled' }}</span></h2>
+    <p>{{ 'Users can open their personal testing environment.' if testing_environment_enabled else 'The testing environment is unavailable to everyone, including administrators.' }} Disabling testing signs out existing test sessions on their next request and blocks test uploads. Saved test data is retained.</p>
+    {% if session.get('test_environment') %}<p>This setting applies to the live system and all users, even while you are testing.</p>{% endif %}
+  </div>
+  <form method="post" action="{{ url_for('testing_environment_settings') }}" {% if testing_environment_enabled %}data-confirm="Disable the testing environment for everyone? Existing test sessions will be signed out on their next request, and test uploads will be blocked."{% endif %}>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="enabled" value="{{ '0' if testing_environment_enabled else '1' }}">
+    <button class="button {{ 'button-danger' if testing_environment_enabled else 'button-primary' }}" type="submit">{{ 'Disable' if testing_environment_enabled else 'Enable' }} testing environment</button>
+  </form>
+</section>
 <div class="user-management-grid">
   <section class="panel user-create-panel">
     <div class="panel-heading"><div><p class="eyebrow">New login</p><h2>Create an account</h2></div></div>

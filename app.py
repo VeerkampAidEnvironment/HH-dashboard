@@ -45,11 +45,13 @@ from db import (
     close_db,
     ensure_test_database,
     get_db,
+    get_live_db,
     get_setting,
     log_audit,
     register_db,
     revert_audit_action,
     set_setting,
+    testing_environment_enabled,
     utc_now,
 )
 from questionnaire import NEXT_ACTION_OPTIONS, QUESTIONNAIRE_VERSION, questionnaire_for_topic
@@ -235,23 +237,20 @@ def followup_photo_files(connection, event_id: int) -> set[str]:
     return filenames
 
 
-def delete_historical_field_event(connection, audit_id: int, username: str) -> tuple[int, set[str]]:
-    """Remove a pre-snapshot field event and clear its derived training/follow-up values."""
-    connection.execute("SAVEPOINT delete_historical_field_event")
+def delete_field_event(connection, event_id: int, username: str) -> tuple[int, set[str]]:
+    """Remove an entire visit and update the affected beneficiaries atomically."""
+    connection.execute("SAVEPOINT delete_field_event")
     try:
         original = connection.execute(
-            """SELECT * FROM audit_log WHERE id=? AND action='field_entry'
-               AND entity_type='field_event'""",
-            (audit_id,),
+            """SELECT * FROM audit_log WHERE entity_id=? AND action='field_entry'
+               AND entity_type='field_event' ORDER BY id LIMIT 1""",
+            (event_id,),
         ).fetchone()
-        if not original:
-            raise AuditRevertError("This historical entry is not a field event that can be deleted.")
-        event_id = original["entity_id"]
         event = connection.execute("SELECT * FROM field_events WHERE id=?", (event_id,)).fetchone()
         if not event:
             raise AuditRevertError("This field event has already been removed.")
-        if connection.execute(
-            "SELECT 1 FROM audit_reverts WHERE original_audit_id=?", (audit_id,)
+        if original and connection.execute(
+            "SELECT 1 FROM audit_reverts WHERE original_audit_id=?", (original["id"],)
         ).fetchone():
             raise AuditRevertError("This action has already been reverted.")
 
@@ -265,7 +264,7 @@ def delete_historical_field_event(connection, audit_id: int, username: str) -> t
             (event_id,),
         ).fetchall()
         if not entries:
-            raise AuditRevertError("No data remains for this historical field event.")
+            raise AuditRevertError("No data remains for this field event.")
 
         records_to_update = {}
         for entry in entries:
@@ -295,14 +294,27 @@ def delete_historical_field_event(connection, audit_id: int, username: str) -> t
                     raise AuditRevertError(
                         f"The original follow-up cycle for {topic} can no longer be identified."
                     )
+                remaining = connection.execute(
+                    """SELECT fr.adoption_rate, fr.next_action, e.id AS event_id, e.event_date
+                       FROM followup_responses fr
+                       JOIN field_event_entries fee ON fee.id=fr.event_entry_id
+                       JOIN field_events e ON e.id=fee.event_id
+                       WHERE fr.record_id=? AND fr.topic=? AND fr.training_cycle=?
+                         AND e.id<>? ORDER BY e.id DESC LIMIT 1""",
+                    (record_id, topic, cycle, event_id),
+                ).fetchone()
+                # A later visit may have overwritten this same training cycle,
+                # including another visit on the very same date.
+                if remaining and remaining["event_id"] > event_id:
+                    continue
                 recorded_date = str(raw.get(f"Follow up {cycle} - {topic}") or "")[:10]
                 if recorded_date and recorded_date != event["event_date"]:
                     raise AuditRevertError(
                         f"A newer change affected the {topic} follow-up. Revert that newer work first."
                     )
-                raw[f"Follow up {cycle} - {topic}"] = ""
-                raw[f"Follow up {cycle} score - {topic}"] = ""
-                raw[f"Follow up {cycle} next action - {topic}"] = ""
+                raw[f"Follow up {cycle} - {topic}"] = remaining["event_date"] if remaining else ""
+                raw[f"Follow up {cycle} score - {topic}"] = remaining["adoption_rate"] if remaining else ""
+                raw[f"Follow up {cycle} next action - {topic}"] = remaining["next_action"] if remaining else ""
             else:
                 cycle = next(
                     (
@@ -334,9 +346,10 @@ def delete_historical_field_event(connection, audit_id: int, username: str) -> t
             ).fetchall()
         ]
         revert_id = log_audit(
-            connection, username, "revert", "audit_log", audit_id,
-            f"Deleted historical field event #{event_id}: {original['summary']}",
-            {"reverted_audit_ids": related_audit_ids, "deleted_field_event_id": event_id},
+            connection, username, "revert", "field_event", event_id,
+            f"Deleted {event['event_type']} visit #{event_id} from {event['event_date']}",
+            {"reverted_audit_ids": related_audit_ids, "deleted_field_event_id": event_id,
+             "record_ids": list(records_to_update)},
         )
         for related_id in related_audit_ids:
             connection.execute(
@@ -345,11 +358,11 @@ def delete_historical_field_event(connection, audit_id: int, username: str) -> t
                    ) VALUES(?, ?, ?, ?)""",
                 (related_id, revert_id, utc_now(), username),
             )
-        connection.execute("RELEASE SAVEPOINT delete_historical_field_event")
+        connection.execute("RELEASE SAVEPOINT delete_field_event")
         return revert_id, photos
     except Exception:
-        connection.execute("ROLLBACK TO SAVEPOINT delete_historical_field_event")
-        connection.execute("RELEASE SAVEPOINT delete_historical_field_event")
+        connection.execute("ROLLBACK TO SAVEPOINT delete_field_event")
+        connection.execute("RELEASE SAVEPOINT delete_field_event")
         raise
 
 
@@ -420,11 +433,22 @@ def create_app(test_config=None):
             "dataset_labels": DATASET_LABELS,
             "current_year": date.today().year,
             "asset_version": app.config["ASSET_VERSION"],
+            "testing_environment_enabled": testing_environment_enabled(),
         }
 
     @app.before_request
     def protect_application():
         allowed = {"login", "static", "health"}
+        if request.endpoint not in {"static", "health"} and session.get("test_environment") \
+                and not testing_environment_enabled():
+            # Never redirect an in-flight practice write into the live database.
+            # Signing out also invalidates the CSRF token in already-open forms.
+            session.clear()
+            message = "The testing environment has been disabled by an administrator. Sign in again to use live data."
+            if request.path.startswith("/field-app/api/"):
+                return jsonify({"ok": False, "error": message}), 403
+            flash(message, "warning")
+            return redirect(url_for("login"), code=303)
         if request.endpoint not in allowed and not session.get("authenticated"):
             if request.path.startswith("/field-app/api/"):
                 return jsonify({"ok": False, "error": "Sign in online before synchronizing."}), 401
@@ -507,6 +531,8 @@ def create_app(test_config=None):
     @app.post("/test-environment")
     def test_environment():
         action = request.form.get("action", "enter")
+        if action in {"enter", "reset"} and not testing_environment_enabled():
+            abort(403, "The testing environment has been disabled by an administrator.")
         destination = request.form.get("next", "")
         if not is_safe_redirect(destination):
             destination = url_for("data_entry")
@@ -916,8 +942,8 @@ def create_app(test_config=None):
         raw = json.loads(record["raw_data"])
         schema = get_schema(connection, record["dataset"])
         sections = group_raw_fields(schema, raw)
-        followup_history = []
         followup_assessments = []
+        followup_visits = {}
         if record["dataset"] == "training":
             next_action_labels = {item["value"]: item["label"] for item in NEXT_ACTION_OPTIONS}
             response_rows = connection.execute(
@@ -932,6 +958,18 @@ def create_app(test_config=None):
             for response_row in response_rows:
                 response = dict(response_row)
                 stored_answers = json.loads(response["answers"])
+                selected_members = stored_answers.get("a0_shared_person", {}).get("answer") or []
+                if not isinstance(selected_members, list):
+                    selected_members = [selected_members]
+                member_names = {}
+                member_ids = [int(value) for value in selected_members if str(value).isdigit()]
+                if member_ids:
+                    member_names = {
+                        str(row["id"]): row["name"] for row in connection.execute(
+                            f"SELECT id, name FROM records WHERE id IN ({','.join('?' for _ in member_ids)})",
+                            member_ids,
+                        ).fetchall()
+                    }
                 response["answers"] = [
                     {
                         **item,
@@ -940,16 +978,31 @@ def create_app(test_config=None):
                             for index, value in enumerate(item.get("answer") or [])
                             if isinstance(value, dict) and value.get("file")
                         ] if item.get("type") == "photos" else [],
-                        "display_answer": ", ".join(str(value) for value in item["answer"])
-                        if isinstance(item["answer"], list)
-                        else (str(item["answer"]) if item["answer"] not in {None, ""} else "-"),
+                        "display_answer": (
+                            ", ".join(member_names.get(str(value), str(value)) for value in selected_members)
+                            if item.get("source_id") == "A0.1" else
+                            ", ".join(str(value) for value in item["answer"])
+                            if isinstance(item["answer"], list) else
+                            (str(item["answer"]) if item["answer"] not in {None, ""} else "-")
+                        ),
                     }
                     for item in stored_answers.values()
                 ]
                 response["next_action_label"] = next_action_labels.get(
                     response["next_action"], response["next_action"]
                 )
-                followup_history.append(response)
+                if response["event_id"] not in followup_visits:
+                    beneficiaries = connection.execute(
+                        """SELECT DISTINCT r.id, r.name FROM field_event_entries fee
+                           JOIN records r ON r.id=fee.record_id
+                           WHERE fee.event_id=? ORDER BY r.name, r.id""",
+                        (response["event_id"],),
+                    ).fetchall()
+                    followup_visits[response["event_id"]] = {
+                        "event_id": response["event_id"], "event_date": response["event_date"],
+                        "beneficiaries": beneficiaries, "responses": [],
+                    }
+                followup_visits[response["event_id"]]["responses"].append(response)
             assessment_rows = connection.execute(
                 """SELECT fa.*, e.event_date, e.created_by
                    FROM followup_assessments fa JOIN field_events e ON e.id=fa.event_id
@@ -967,9 +1020,39 @@ def create_app(test_config=None):
                 followup_assessments.append(assessment)
         return render_template(
             "record_detail.html", record=record, statuses=statuses, related=related,
-            raw=raw, sections=sections, followup_history=followup_history,
+            raw=raw, sections=sections,
             followup_assessments=followup_assessments,
+            followup_visits=list(followup_visits.values()),
         )
+
+    @app.post("/records/<int:record_id>/followups/<int:event_id>/delete")
+    @admin_required
+    def followup_delete(record_id, event_id):
+        connection = get_db()
+        event = connection.execute(
+            """SELECT e.id FROM field_events e
+               JOIN field_event_entries fee ON fee.event_id=e.id
+               WHERE e.id=? AND e.event_type='followup' AND fee.record_id=?""",
+            (event_id, record_id),
+        ).fetchone()
+        if not event:
+            abort(404)
+        try:
+            _audit_id, photo_files = delete_field_event(connection, event_id, session["username"])
+            connection.commit()
+        except AuditRevertError as error:
+            connection.rollback()
+            flash(str(error), "error")
+        else:
+            photo_folder = Path(current_app.config["FOLLOWUP_PHOTO_FOLDER"])
+            for filename in photo_files:
+                try:
+                    (photo_folder / filename).unlink(missing_ok=True)
+                except OSError:
+                    current_app.logger.warning("Could not remove deleted follow-up photo %s", filename)
+            flash("Follow-up deleted, including its scores, next actions, answers and photos. "
+                  "Beneficiary training statuses have been recalculated.", "success")
+        return redirect(url_for("record_detail", record_id=record_id))
 
     @app.route("/records/new", methods=["GET", "POST"])
     def record_new():
@@ -1516,8 +1599,8 @@ def create_app(test_config=None):
                 photo_files = followup_photo_files(connection, entry["entity_id"])
             if not entry["undo_row_count"] and entry["action"] == "field_entry" \
                     and entry["entity_type"] == "field_event":
-                _revert_id, photo_files = delete_historical_field_event(
-                    connection, audit_id, session["username"]
+                _revert_id, photo_files = delete_field_event(
+                    connection, entry["entity_id"], session["username"]
                 )
             else:
                 revert_audit_action(
@@ -1590,6 +1673,36 @@ def create_app(test_config=None):
                     flash("That username is already in use.", "error")
         rows = connection.execute("SELECT * FROM users ORDER BY display_name COLLATE NOCASE").fetchall()
         return render_template("users.html", users=rows, cbfs=cbfs)
+
+    @app.post("/users/testing-environment")
+    def testing_environment_settings():
+        # A copied test account's permissions cannot authorize a global setting.
+        connection = get_live_db()
+        administrator = connection.execute(
+            """SELECT username FROM users WHERE id=? AND username=? COLLATE NOCASE
+               AND is_active=1 AND is_admin=1 AND access_scope='full'""",
+            (session.get("user_id"), session.get("username")),
+        ).fetchone()
+        if not administrator:
+            abort(403)
+        value = request.form.get("enabled")
+        if value not in {"0", "1"}:
+            abort(400, "Choose whether the testing environment is enabled.")
+        enabled = value == "1"
+        previous = testing_environment_enabled()
+        set_setting(connection, "test_environment_enabled", enabled)
+        log_audit(
+            connection, administrator["username"], "settings", "setting", None,
+            f"{'Enabled' if enabled else 'Disabled'} the testing environment for everyone",
+            {"test_environment_enabled": {"from": previous, "to": enabled}},
+        )
+        connection.commit()
+        if not enabled and session.get("test_environment"):
+            session.clear()
+            flash("Testing has been disabled for everyone. Sign in again to use live data.", "success")
+            return redirect(url_for("login"), code=303)
+        flash(f"The testing environment is now {'enabled' if enabled else 'disabled'} for everyone.", "success")
+        return redirect(url_for("users"))
 
     @app.post("/users/<int:user_id>/password")
     @admin_required
@@ -1731,6 +1844,7 @@ def create_app(test_config=None):
         followup_topics = []
         followup_survey = None
         selected_followup_record = None
+        shared_candidates = []
         selected_group = request.values.get("group", "").strip()
         selected_record_id = request.values.get("record_id", type=int)
         selected_event_date = valid_iso_date(request.values.get("event_date", "")) or ""
@@ -1809,20 +1923,8 @@ def create_app(test_config=None):
                 ]
                 raw = json.loads(selected_followup_record["raw_data"])
                 due_topics = [row["topic"] for row in followup_rows]
-                shared_rows = connection.execute(
-                    """SELECT r.id, r.name, r.group_name, f.uid,
-                              GROUP_CONCAT(ts.topic, char(31)) AS due_topics
-                       FROM records r JOIN farmers f ON f.id=r.farmer_id
-                       JOIN topic_statuses ts ON ts.record_id=r.id AND ts.status_code='FU'
-                       WHERE r.dataset='training' AND r.archived_at IS NULL AND r.id<>?
-                         AND LOWER(TRIM(COALESCE(r.village,'')))=LOWER(TRIM(?))
-                       GROUP BY r.id HAVING COUNT(*)>0 ORDER BY r.name COLLATE NOCASE""",
-                    (selected_record_id, selected_followup_record["village"] or ""),
-                ).fetchall() if str(selected_followup_record["village"] or "").strip() else []
-                shared_options = [
-                    {"value": str(row["id"]), "label": f"{row['name']} — {row['group_name'] or 'No group'}"}
-                    for row in shared_rows
-                    if set(str(row["due_topics"] or "").split(chr(31))).intersection(due_topics)
+                shared_candidates = [
+                    row for row in household_candidates(connection) if row["id"] != selected_record_id
                 ]
                 followup_survey = build_survey(
                     due_topics,
@@ -1830,7 +1932,6 @@ def create_app(test_config=None):
                     training_history=received_training_topics(raw),
                     previous_answers=carry_forward_answers_by_record(connection, [selected_record_id]).get(selected_record_id, {}),
                     editable_options={"a6_village": village_values, "a8_group": groups},
-                    question_options={"a0_shared_person": shared_options},
                 )
             else:
                 selected_record_id = None
@@ -1849,6 +1950,7 @@ def create_app(test_config=None):
             history=history, today=date.today().isoformat(), selected_event_date=selected_event_date,
             venues=venues, selected_venue=selected_venue, new_venue=new_venue,
             not_visited_only=not_visited_only, selected_is_coordinator=selected_is_coordinator,
+            shared_candidates=shared_candidates,
         )
 
     @app.route("/data-entry/followup-results/<int:event_id>", methods=["GET", "POST"])
@@ -1991,6 +2093,9 @@ def create_app(test_config=None):
 
     @app.get("/field-app/api/bootstrap")
     def field_app_bootstrap():
+        expected_environment = "test" if session.get("test_environment") else "live"
+        if request.headers.get("X-ARFSA-Environment", expected_environment) != expected_environment:
+            return jsonify({"ok": False, "error": "The environment has changed. Reload the Field App before preparing data."}), 409
         connection = get_db()
         cbf_name = field_app_cbf(connection, request.args.get("cbf", ""))
         refresh_time_sensitive_statuses(connection)
@@ -2010,6 +2115,13 @@ def create_app(test_config=None):
             return jsonify({"ok": False, "error": "This tablet could not be identified."}), 400
         if not isinstance(submissions, list) or len(submissions) > 100:
             return jsonify({"ok": False, "error": "Synchronize no more than 100 submissions at once."}), 400
+        expected_environment = "test" if session.get("test_environment") else "live"
+        submitted_environment = payload.get("environment", expected_environment)
+        if submitted_environment != expected_environment or any(
+            isinstance(item, dict) and item.get("environment", submitted_environment) != expected_environment
+            for item in submissions
+        ):
+            return jsonify({"ok": False, "error": "These entries belong to a different environment and cannot be synchronized here."}), 409
         results = [
             synchronize_field_submission(
                 connection, cbf_name, submission, session["username"], device_id
@@ -2083,6 +2195,23 @@ def valid_iso_date(value: str) -> str | None:
         return date.fromisoformat(value).isoformat()
     except (TypeError, ValueError):
         return None
+
+
+def household_candidates(connection) -> list[dict[str, Any]]:
+    """Offer every active AE beneficiary for A0.1, across CBFs and groups."""
+    return [
+        {"id": row["id"], "name": row["name"], "group": row["group_name"] or "",
+         "cbf": row["cbf_name"] or "", "village": row["village"] or "",
+         "dueTopics": str(row["due_topics"] or "").split(chr(31)) if row["due_topics"] else []}
+        for row in connection.execute(
+            """SELECT r.id, r.name, r.group_name, r.cbf_name, r.village,
+                      GROUP_CONCAT(ts.topic, char(31)) AS due_topics
+               FROM records r LEFT JOIN topic_statuses ts
+                 ON ts.record_id=r.id AND ts.status_code='FU'
+               WHERE r.dataset='training' AND r.archived_at IS NULL
+               GROUP BY r.id ORDER BY r.group_name COLLATE NOCASE, r.name COLLATE NOCASE, r.id"""
+        ).fetchall()
+    ]
 
 
 def followup_profile(record, raw: dict) -> dict[str, str]:
@@ -2248,6 +2377,7 @@ def build_field_app_package(connection, cbf_name: str) -> dict:
         "groups": sorted(
             {row["group_name"] for row in records if row["group_name"]}, key=str.casefold
         ),
+        "householdCandidates": household_candidates(connection),
         "venues": [row["venue"] for row in venue_rows],
         "farmers": farmers,
         "summary": {
@@ -2829,12 +2959,6 @@ def save_scored_followup(
         location_accuracy_m = final_point["accuracy"]
         location_captured_at = final_point["capturedAt"] or None
 
-    for question_id, prepared in pending_photos.items():
-        stored_photos = persist_followup_photos(prepared)
-        answers[question_id] = stored_photos
-        if question_id in answer_records:
-            answer_records[question_id]["answer"] = stored_photos
-
     cycles: dict[str, int] = {}
     for topic in topics:
         cycle = next((number for number in range(1, 4)
@@ -2847,48 +2971,71 @@ def save_scored_followup(
             return False, f"No training cycle was found for {topic}."
         cycles[topic] = cycle
 
-    shared_record = None
-    shared_raw = None
-    shared_topics: list[str] = []
-    shared_cycles: dict[str, int] = {}
+    shared_records = []
+    household_members = []
     if answers.get("a0_shared_plot") == "yes":
+        selected_people = answers.get("a0_shared_person") or []
+        if not isinstance(selected_people, list):
+            selected_people = [selected_people]
+        if len(selected_people) > 100:
+            return False, "Select no more than 100 other household members."
         try:
-            shared_record_id = int(answers.get("a0_shared_person") or 0)
+            selected_ids = [int(value) for value in selected_people]
         except (TypeError, ValueError):
-            shared_record_id = 0
-        shared_record = connection.execute(
-            """SELECT r.*, f.uid FROM records r JOIN farmers f ON f.id=r.farmer_id
-               WHERE r.id=? AND r.id<>? AND r.dataset='training' AND r.archived_at IS NULL
-                 AND LOWER(TRIM(COALESCE(r.village,'')))=LOWER(TRIM(COALESCE(?,'')))""",
-            (shared_record_id, record_id, record["village"]),
-        ).fetchone() if shared_record_id and str(record["village"] or "").strip() else None
-        if not shared_record:
-            return False, "Select another registered person from the same village."
-        shared_due = {
-            row["topic"] for row in connection.execute(
-                "SELECT topic FROM topic_statuses WHERE record_id=? AND status_code='FU'",
-                (shared_record_id,),
+            return False, "Select valid registered beneficiaries for A0.1."
+        if not selected_ids or len(selected_ids) != len(set(selected_ids)) or record_id in selected_ids:
+            return False, "Select each other registered beneficiary only once."
+        placeholders = ",".join("?" for _ in selected_ids)
+        eligible = {
+            row["id"]: row for row in connection.execute(
+                f"""SELECT * FROM records WHERE id IN ({placeholders})
+                    AND dataset='training' AND archived_at IS NULL""",
+                selected_ids,
             ).fetchall()
         }
-        shared_topics = [topic for topic in topics if topic in shared_due]
-        if not shared_topics:
-            return False, "The other registered person has no matching training due for follow-up."
-        shared_raw = json.loads(shared_record["raw_data"])
-        for topic in shared_topics:
-            cycle = next((number for number in range(1, 4)
-                          if shared_raw.get(f"Training {number} - {topic}") not in {None, ""}
-                          and shared_raw.get(f"Follow up {number} - {topic}") in {None, ""}), None)
-            if cycle is None:
-                cycle = next((number for number in range(3, 0, -1)
-                              if shared_raw.get(f"Training {number} - {topic}") not in {None, ""}), None)
-            if cycle is None:
-                return False, f"No training cycle was found for {shared_record['name']} and {topic}."
-            shared_cycles[topic] = cycle
-        results["shared_followup"] = {
-            "record_id": shared_record_id,
-            "name": shared_record["name"],
-            "topics": shared_topics,
-        }
+        if len(eligible) != len(selected_ids):
+            return False, "One of the selected household members is no longer registered. Reload the survey."
+        due_by_record = defaultdict(set)
+        for row in connection.execute(
+            f"""SELECT record_id, topic FROM topic_statuses WHERE record_id IN ({placeholders})
+                AND status_code='FU'""",
+            selected_ids,
+        ).fetchall():
+            due_by_record[row["record_id"]].add(row["topic"])
+        for selected_id in selected_ids:
+            member = eligible[selected_id]
+            matching_topics = [topic for topic in topics if topic in due_by_record[selected_id]]
+            household_members.append({
+                "record_id": selected_id, "name": member["name"],
+                "group": member["group_name"] or "", "topics": matching_topics,
+            })
+            if not matching_topics:
+                continue
+            member_raw = json.loads(member["raw_data"])
+            member_cycles = {}
+            for topic in matching_topics:
+                cycle = next((number for number in range(1, 4)
+                              if member_raw.get(f"Training {number} - {topic}") not in {None, ""}
+                              and member_raw.get(f"Follow up {number} - {topic}") in {None, ""}), None)
+                if cycle is None:
+                    cycle = next((number for number in range(3, 0, -1)
+                                  if member_raw.get(f"Training {number} - {topic}") not in {None, ""}), None)
+                if cycle is None:
+                    return False, f"No training cycle was found for {member['name']} and {topic}."
+                member_cycles[topic] = cycle
+            shared_records.append({"record": member, "raw": member_raw,
+                                   "topics": matching_topics, "cycles": member_cycles})
+        results["household_members"] = household_members
+        results["shared_followup"] = [
+            {"record_id": item["record"]["id"], "name": item["record"]["name"],
+             "topics": item["topics"]} for item in shared_records
+        ]
+
+    for question_id, prepared in pending_photos.items():
+        stored_photos = persist_followup_photos(prepared)
+        answers[question_id] = stored_photos
+        if question_id in answer_records:
+            answer_records[question_id]["answer"] = stored_photos
 
     cursor = connection.execute(
         """INSERT INTO field_events(
@@ -2978,10 +3125,12 @@ def save_scored_followup(
             ),
         )
 
-    if shared_record and shared_raw is not None:
-        for topic in shared_topics:
+    for shared in shared_records:
+        shared_record = shared["record"]
+        shared_raw = shared["raw"]
+        for topic in shared["topics"]:
             result = results["trainings"][topic]
-            cycle = shared_cycles[topic]
+            cycle = shared["cycles"][topic]
             shared_raw[f"Follow up {cycle} - {topic}"] = event_date
             shared_raw[f"Follow up {cycle} score - {topic}"] = result["score"]
             shared_raw[f"Follow up {cycle} next action - {topic}"] = result["next_action"]
@@ -3033,7 +3182,8 @@ def save_scored_followup(
     log_audit(
         connection, username, "field_entry", "field_event", event_id,
         f"Recorded scored follow-up for {record['name']}"
-        + (f" and {shared_record['name']}" if shared_record else ""),
+        + (" and " + ", ".join(item["record"]["name"] for item in shared_records)
+           if shared_records else ""),
         {
             "cbf": cbf_name, "date": event_date,
             "household_outcome": household.get("code"),
@@ -3050,7 +3200,8 @@ def save_scored_followup(
     if client_submission_id is None:
         session["last_followup_event_id"] = event_id
     outcome_text = f" Outcome {household.get('code')} - {household.get('label')}." if household else ""
-    shared_text = f" The same plot follow-up was also registered for {shared_record['name']}." if shared_record else ""
+    shared_text = (" The same household follow-up was also registered for "
+                   + ", ".join(item["record"]["name"] for item in shared_records) + ".") if shared_records else ""
     return True, f"Follow-up scored and saved for {record['name']}.{shared_text}{outcome_text}"
 
 
