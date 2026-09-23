@@ -805,6 +805,34 @@
           next.open = true;
           next.scrollIntoView({ behavior: "smooth", block: "start" });
         } else {
+          // Move the existing controls, retaining the selected file and any
+          // in-flight compression without reopening completed survey answers.
+          $$(".field-question-photos", container).forEach((node) => {
+            node.classList.remove("survey-guide-hidden");
+            $(".field-question-copy h3", node).textContent = "Visit photo";
+            const help = $(".field-question-copy p", node);
+            if (help) help.hidden = true;
+            finalize.append(node);
+          });
+          if ($("[data-photo-picker]", finalize)) {
+            const withoutPhoto = create("button", "button button-secondary", "Save without photo");
+            // Keep normal/keyboard form submission attached to the primary save.
+            withoutPhoto.type = "button";
+            withoutPhoto.dataset.saveWithoutPhoto = "";
+            withoutPhoto.addEventListener("click", () => {
+              if (saving) return;
+              $$("[data-photo-picker]", finalize).forEach((picker) => picker.arfsaPhotoPicker?.clear());
+              withoutPhoto.closest("form").requestSubmit();
+            });
+            finalize.append(withoutPhoto);
+            const refreshPhotoActions = () => {
+              withoutPhoto.hidden = !$$("[data-photo-picker]", finalize)
+                .some((picker) => picker.arfsaPhotoPicker?.needsRecovery);
+            };
+            finalize.addEventListener("photo-state-change", refreshPhotoActions);
+            $$("[data-photo-picker]", finalize).forEach((picker) => picker.arfsaPhotoPicker?.setRecoveryOnly());
+            refreshPhotoActions();
+          }
           finalize.hidden = false;
           $("[data-followup-save]").hidden = false;
           finalize.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -828,6 +856,7 @@
         const current = pages[position];
         if (current) currentQuestionId = current.dataset.surveyQuestion;
         questionNodes.forEach((node) => {
+          if (!questions.contains(node)) return;
           const belongsToCurrentPage = node === current || node.dataset.guideParent === currentQuestionId;
           node.classList.toggle("survey-guide-hidden", !belongsToCurrentPage);
         });
@@ -950,15 +979,22 @@
   };
 
   const readPhotoFiles = async (node) => {
-    const files = Array.from($('input[type="file"]', node)?.files || []);
-    if (files.length > 1) throw new Error("Upload no more than 1 photo of the best practice found during this visit.");
-    if (files.some((file) => file.size > 8 * 1024 * 1024)) throw new Error("Each follow-up photo must be smaller than 8 MB.");
-    return Promise.all(files.map((file) => new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve({ name: file.name, type: file.type, data: reader.result });
-      reader.onerror = () => reject(new Error(`Could not read ${file.name}.`));
-      reader.readAsDataURL(file);
-    })));
+    try {
+      const picker = $("[data-photo-picker]", node)?.arfsaPhotoPicker;
+      const files = picker ? await picker.read() : Array.from($('input[type="file"]', node)?.files || []);
+      if (files.length > 1) throw new Error("Upload no more than 1 photo of the best practice found during this visit.");
+      if (files.some((file) => file.size > window.ARFSA_MAX_PHOTO_BYTES)) throw new Error("Each follow-up photo must be smaller than 8 MB. Replace or remove the photo, or save without it.");
+      return await Promise.all(files.map((file) => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({ name: file.name, type: file.type, data: reader.result });
+        reader.onerror = () => reject(new Error(`Could not read ${file.name}. Replace or remove the photo, or save without it.`));
+        reader.readAsDataURL(file);
+      })));
+    } catch (error) {
+      $("[data-photo-picker]", node)?.arfsaPhotoPicker?.showError(error.message);
+      error.photoError = true;
+      throw error;
+    }
   };
 
   const validateFieldStep = (step, container) => {
@@ -1143,13 +1179,7 @@
     }
     const container = $("[data-followup-questionnaires]");
     const topics = JSON.parse(container.dataset.topics || "[]");
-    let surveyAnswers;
-    try {
-      surveyAnswers = await answersForSurvey(container);
-    } catch (error) {
-      alertUser(error.message || "One of the selected photos could not be read.", "warning");
-      return;
-    }
+    const surveyAnswers = await answersForSurvey(container);
     const { answers, firstMissing } = surveyAnswers;
     if (firstMissing) {
       firstMissing.closest("details")?.setAttribute("open", "");
@@ -1596,7 +1626,7 @@
     if (saving || root.inert) return;
     saving = true;
     const form = event.currentTarget;
-    const buttons = $$('button[type="submit"]', form);
+    const buttons = $$('button[type="submit"], [data-save-without-photo]', form);
     const labels = buttons.map((button) => button.textContent);
     let status = $("[data-save-status]", form);
     if (!status) {
@@ -1609,6 +1639,8 @@
     status.classList.remove("has-error");
     status.textContent = "Saving on this tablet… Keep this form open until saving is confirmed.";
     form.setAttribute("aria-busy", "true");
+    const photoPickers = $$("[data-photo-picker]", form);
+    photoPickers.forEach((picker) => { picker.inert = true; });
     buttons.forEach((button) => { button.disabled = true; button.textContent = "Saving on tablet…"; });
     $("[data-cancel-visit]").disabled = true;
     try {
@@ -1616,12 +1648,15 @@
       status.hidden = true;
     } catch (error) {
       status.classList.add("has-error");
-      status.textContent = "Not saved. Keep this form open and try saving again. Do not close the app until you see the save confirmation.";
+      status.textContent = error.photoError
+        ? `Not saved. ${error.message} Your questionnaire answers are still here.`
+        : "Not saved. Keep this form open and try saving again. Do not close the app until you see the save confirmation.";
       status.scrollIntoView({ behavior: "smooth", block: "center" });
       alertUser(status.textContent, "error");
     } finally {
       saving = false;
       form.removeAttribute("aria-busy");
+      photoPickers.forEach((picker) => { picker.inert = false; });
       $("[data-cancel-visit]").disabled = false;
       buttons.forEach((button, index) => { button.disabled = false; button.textContent = labels[index]; });
     }

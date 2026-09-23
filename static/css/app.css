@@ -230,6 +230,8 @@ body.field-visit-active .page-shell { width: min(100%, 1050px); margin: 0 auto; 
 .survey-photo-upload input, .field-photo-upload input { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; }
 .survey-photo-upload > span { display: inline-flex; align-items: center; min-height: 42px; padding: 8px 15px; border-radius: 9px; background: var(--ae-darkblue); color: white; font-weight: 800; cursor: pointer; }
 .survey-photo-upload > small, .field-photo-upload > small { color: var(--muted); }
+.survey-photo-upload > .photo-error, .field-photo-upload > .photo-error { color: #9a3f2b; font-weight: 700; }
+[data-photo-remove][hidden] { display: none; }
 .field-photo-upload > .button { cursor: pointer; }
 .survey-photo-preview { width: 100%; flex-basis: 100%; display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 9px; }
 .survey-photo-preview:empty { display: none; }
@@ -268,6 +270,8 @@ body.field-visit-active .page-shell { width: min(100%, 1050px); margin: 0 auto; 
 .field-survey-step-actions small { color: var(--muted); font-weight: 800; text-transform: uppercase; }
 .field-survey-finalize { padding: 18px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-soft); }
 .field-survey-finalize p { margin-bottom: 0; color: var(--muted); }
+.field-survey-finalize > .field-question-photos { margin-top: 16px; padding: 14px 0; border: 0; }
+.field-survey-finalize > [data-save-without-photo] { margin-top: 12px; }
 .result-hero { display: grid; gap: 20px; }
 .result-hero > div:first-child > span, .result-kpis span { display: block; color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
 .result-hero > div:first-child > strong { display: block; margin-top: 5px; font-size: clamp(22px, 4vw, 34px); }

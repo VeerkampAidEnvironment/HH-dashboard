@@ -100,6 +100,8 @@ When recording a follow-up, the user can optionally press **Add current location
 
 Follow-up questionnaires end with one optional photo of the best practice found during the visit, with a maximum of one photo. Selecting another photo replaces the first. Section photo prompts and the I1 training-ranking question have been removed, including from previously prepared tablet questionnaires after updating the app.
 
+Photos are prepared on the device, including offline: large images are resized to a maximum of 3,200 pixels on the longest side, starting at 95% JPEG quality and targeting a maximum of 4 MB before attachment. Images already within both limits are kept unchanged. The 8 MB server limit remains in place. Small HEIC photos can be retained unchanged on devices that cannot resize that format; oversized photos that cannot be processed show a replacement/removal message. On the Field App's final save screen, valid photos are read-only. **Replace photo**, **Remove photo** and **Save without photo** appear only if a photo prevents saving, and disappear once it is replaced successfully or removed. Completed questionnaire packages remain locked. Saving waits for photo preparation; a photo error leaves the answers and recovery controls available.
+
 Saving a follow-up immediately opens its **Results**, including package and training scores, household outcome, RVO/Project checks, Breadth, Depth, findings to share with the beneficiary, and recommended next actions. This works without internet. The visit and its outcome are saved together on the tablet; use the **Results** tab or **View results** from Pending to reopen them. Results remain available after closing the app and after successful synchronization. Existing pending adaptive follow-ups receive local results when the updated app opens.
 
 Selecting a farmer opens a focused follow-up screen. The other Field App actions and navigation remain hidden while you complete the questions, save the visit and review the results. **Finish and return to Field App** returns to the main screen only after the visit has been saved. **Cancel visit** asks before discarding an unfinished visit, and closing or reloading the app warns about unsaved answers.
@@ -111,6 +113,8 @@ Tablet results are calculated using the bundled scoring rules. During synchroniz
 The scoring rules and result wording are cached with the app shell. Deploy and restart the server, then use **Check for updates → Update and restart** on the tablet to enable offline outcomes. Run `.venv-app\Scripts\python.exe -m unittest tests.test_offline_scoring tests.test_offline_results tests.test_followup_survey tests.test_field_updates` to check scoring parity, sync responses, and offline release contents. The parity test compares JavaScript with Python across all question choices, score boundaries and more than 1,000 combined/conditional cases; it requires Node.js on PATH.
 
 The focused visit and save-status browser checks run with `node --test tests/field-save-status.test.cjs`. They require Playwright, a browser, and Python with the application dependencies; use `ARFSA_TEST_PYTHON` to select Python and `ARFSA_TEST_BROWSER=msedge` to use installed Edge. These checks use a disposable database copy, isolated browser storage and simulated upload replies, including real offline reloads.
+
+Run `node --test tests/photo-picker.test.cjs tests/field-save-status.test.cjs` to check photo compression, replacement/removal, preparation failures and offline saves with or without a photo.
 
 ## Testing environment
 

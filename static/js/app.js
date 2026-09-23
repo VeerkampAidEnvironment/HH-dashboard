@@ -40,6 +40,59 @@ window.arfsaPackageStopTriggers = ({ rules = [], valueFor, orderFor }) => {
   return triggers;
 };
 
+window.ARFSA_MAX_PHOTO_BYTES = 8 * 1024 * 1024;
+
+// Prepare the attachment locally so camera photos also work without internet.
+window.arfsaPreparePhoto = async (file) => {
+  const targetBytes = 4 * 1024 * 1024;
+  const maxDimension = 3200;
+  const url = URL.createObjectURL(file);
+  const image = new Image();
+  const canvas = document.createElement("canvas");
+  try {
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = () => reject(new Error("This photo could not be opened on this device."));
+      image.src = url;
+    });
+    const longestSide = Math.max(image.naturalWidth, image.naturalHeight);
+    if (!longestSide || !file.size) throw new Error("This photo is empty.");
+    if (file.size <= targetBytes && longestSide <= maxDimension) return file;
+    let scale = Math.min(1, maxDimension / longestSide);
+    // Bound both resolution and encoded size; quality alone cannot guarantee size.
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const context = canvas.getContext("2d");
+      context.fillStyle = "#fff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      for (const quality of [0.95, 0.9, 0.85]) {
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+        if (!blob?.size) throw new Error("This photo could not be resized on this device.");
+        if (blob.size <= targetBytes) {
+          // Preserve an already smaller original when no resizing was needed.
+          if (scale === 1 && file.size <= blob.size) return file;
+          return new File([blob], `${file.name.replace(/\.[^.]+$/, "") || "photo"}.jpg`, {
+            type: "image/jpeg", lastModified: file.lastModified,
+          });
+        }
+      }
+      scale *= 0.75;
+    }
+    throw new Error("This photo could not be reduced enough.");
+  } catch (error) {
+    // Some browsers cannot decode HEIC. Keep supported server attachments that
+    // already fit, but never accept an oversized original after a decode failure.
+    if (file.size > 0 && file.size <= window.ARFSA_MAX_PHOTO_BYTES
+        && (/^image\/hei[cf]$/i.test(file.type) || /\.hei[cf]$/i.test(file.name))) return file;
+    throw error;
+  } finally {
+    URL.revokeObjectURL(url);
+    canvas.width = canvas.height = 0;
+  }
+};
+
 window.arfsaSetupPhotoPicker = (picker) => {
   if (!picker || picker.dataset.photoReady === "true") return;
   const input = picker.querySelector('input[type="file"]');
@@ -50,6 +103,36 @@ window.arfsaSetupPhotoPicker = (picker) => {
   input.multiple = false;
   let selectedFiles = Array.from(input.files || []).slice(0, 1);
   let previewUrls = [];
+  let generation = 0;
+  let pending = Promise.resolve();
+  let busy = false;
+  let errorMessage = "";
+  let resized = false;
+  let recoveryOnly = false;
+  const canEdit = () => !recoveryOnly || Boolean(errorMessage);
+  const selectLabel = picker.querySelector(":scope > span");
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "button button-ghost button-small";
+  remove.textContent = "Remove photo";
+  remove.dataset.photoRemove = "";
+  picker.append(remove);
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+  if (selectLabel) {
+    input.tabIndex = -1;
+    input.setAttribute("aria-hidden", "true");
+    selectLabel.setAttribute("role", "button");
+    selectLabel.tabIndex = 0;
+    selectLabel.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        if (canEdit()) input.click();
+      }
+    });
+  }
+  // A label can open its file input when the preview or status is clicked too.
+  picker.addEventListener("click", (event) => { if (!canEdit()) event.preventDefault(); });
   const synchronizeInput = () => {
     const transfer = new DataTransfer();
     selectedFiles.forEach((file) => transfer.items.add(file));
@@ -60,7 +143,7 @@ window.arfsaSetupPhotoPicker = (picker) => {
     previewUrls.forEach((url) => URL.revokeObjectURL(url));
     previewUrls = [];
     preview.replaceChildren();
-    selectedFiles.forEach((file, index) => {
+    selectedFiles.forEach((file) => {
       const card = document.createElement("div");
       card.className = "survey-photo-card";
       const image = document.createElement("img");
@@ -72,30 +155,75 @@ window.arfsaSetupPhotoPicker = (picker) => {
       const name = document.createElement("span");
       name.textContent = file.name;
       name.title = file.name;
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.className = "survey-photo-remove";
-      remove.textContent = "Remove";
-      remove.setAttribute("aria-label", `Remove ${file.name}`);
-      remove.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        selectedFiles.splice(index, 1);
-        synchronizeInput();
-        render();
-      });
-      card.append(image, name, remove);
+      card.append(image, name);
       preview.append(card);
     });
-    status.textContent = selectedFiles.length
-      ? "1 photo added · maximum 1 · choose another photo to replace it or Remove to delete"
-      : "No photo added · maximum 1";
+    if (selectLabel) {
+      selectLabel.textContent = selectedFiles.length || errorMessage || busy ? "Replace photo" : "Take or choose a photo";
+      selectLabel.hidden = !canEdit();
+    }
+    input.setAttribute("aria-label", selectLabel?.textContent || "Take or choose a photo");
+    remove.hidden = !canEdit() || (!selectedFiles.length && !errorMessage && !busy);
+    picker.setAttribute("aria-busy", String(busy));
+    status.classList.toggle("photo-error", Boolean(errorMessage));
+    status.textContent = busy ? "Preparing photo on this device…"
+      : errorMessage || (selectedFiles.length
+        ? `1 photo added · ${(selectedFiles[0].size / (1024 * 1024)).toFixed(1)} MB${resized ? " · resized automatically" : ""}`
+        : "No photo added · optional · maximum 1");
+    picker.dispatchEvent(new Event("photo-state-change", { bubbles: true }));
   };
-  input.addEventListener("change", () => {
-    const files = Array.from(input.files || []);
-    if (files.length) selectedFiles = files.slice(0, 1);
+  const clear = () => {
+    generation += 1;
+    pending = Promise.resolve();
+    busy = false;
+    errorMessage = "";
+    resized = false;
+    selectedFiles = [];
     synchronizeInput();
     render();
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  picker.arfsaPhotoPicker = {
+    clear,
+    get needsRecovery() { return Boolean(errorMessage); },
+    setRecoveryOnly() { recoveryOnly = true; render(); },
+    showError(message) { errorMessage = message; render(); },
+    async read() {
+      let current;
+      do { current = pending; await current; } while (current !== pending);
+      if (errorMessage) throw new Error(errorMessage);
+      return [...selectedFiles];
+    },
+  };
+  remove.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    clear();
+  });
+  input.addEventListener("change", () => {
+    const file = input.files?.[0];
+    if (!file) { synchronizeInput(); return; }
+    const current = ++generation;
+    busy = true;
+    errorMessage = "";
+    // Keep the previous accepted attachment until its replacement is ready.
+    synchronizeInput();
+    render();
+    pending = (async () => {
+      try {
+        const prepared = await window.arfsaPreparePhoto(file);
+        if (current !== generation) return;
+        if (!prepared.size || prepared.size > window.ARFSA_MAX_PHOTO_BYTES) throw new Error("The photo is still larger than 8 MB.");
+        selectedFiles = [prepared];
+        resized = prepared !== file;
+        synchronizeInput();
+      } catch (_error) {
+        if (current !== generation) return;
+        errorMessage = "This photo could not be prepared. Replace or remove it, or save without a photo.";
+      } finally {
+        if (current === generation) { busy = false; render(); }
+      }
+    })();
   });
   window.addEventListener("beforeunload", () => previewUrls.forEach((url) => URL.revokeObjectURL(url)));
   render();
@@ -658,6 +786,13 @@ document.addEventListener("DOMContentLoaded", () => {
       form.addEventListener("submit", async (event) => {
         if (finalSubmitConfirmed) return;
         event.preventDefault();
+        try {
+          await Promise.all(Array.from(form.querySelectorAll("[data-photo-picker]"))
+            .map((picker) => picker.arfsaPhotoPicker?.read()));
+        } catch (error) {
+          window.alert(error.message);
+          return;
+        }
         if (!validateStep(steps[currentStep] || steps.at(-1))) {
           return;
         }
