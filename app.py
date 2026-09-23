@@ -983,7 +983,7 @@ def create_app(test_config=None):
                             if item.get("source_id") == "A0.1" else
                             ", ".join(str(value) for value in item["answer"])
                             if isinstance(item["answer"], list) else
-                            (str(item["answer"]) if item["answer"] not in {None, ""} else "-")
+                            (str(item["answer"]) if item["answer"] is not None and item["answer"] != "" else "-")
                         ),
                     }
                     for item in stored_answers.values()
