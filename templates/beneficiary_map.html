@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Beneficiary map - ARFSA{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Database</p><h1>Beneficiary map</h1><p class="lead">Fields recorded during AE follow-ups. Household status comes from the latest mapped follow-up's RVO and Project results.</p></div></div>
+<section class="map-summary" aria-label="Mapped beneficiary totals">
+  <article class="panel"><span>Mapped beneficiaries</span><strong data-map-total>0</strong></article>
+  <article class="panel"><span>Validated · both checks passed</span><strong data-map-validated>0</strong><small data-map-validated-trainings></small></article>
+  <article class="panel"><span>Failed · one or both checks unmet</span><strong data-map-failed>0</strong><small data-map-failed-trainings></small></article>
+  <article class="panel"><span>Not assessed</span><strong data-map-unassessed>0</strong></article>
+</section>
+<section class="map-controls panel" aria-label="Map filters">
+  <label>Find a beneficiary<input type="search" data-map-search placeholder="Name, ID, village or CBF"></label>
+  <label>Household status<select data-map-status><option value="all">All statuses</option><option value="validated">Validated</option><option value="failed">Failed</option><option value="unassessed">Not assessed</option></select></label>
+  <button class="button button-ghost button-small map-cbf-toggle" type="button" data-map-cbf-toggle aria-pressed="true">Hide CBFs</button>
+  <span class="map-key"><i class="map-key-dot is-validated"></i> Validated <i class="map-key-dot is-failed"></i> Failed <i class="map-key-dot is-unassessed"></i> Not assessed <span data-map-cbf-key><i class="map-key-dot is-cbf"></i> CBF</span></span>
+</section>
+<div class="beneficiary-map-layout">
+  <section class="panel map-panel"><div id="beneficiary-map" role="application" aria-label="Map of beneficiary fields and CBF groups"></div><p class="map-hint">When shown, CBF circles mark the center of their visible fields, not the CBF’s actual location. Map tiles require an internet connection.</p></section>
+  <aside class="panel map-results" aria-label="Mapped beneficiaries and CBFs">
+    <div data-map-cbf-section><div class="panel-heading"><h2>CBFs on this map</h2><span class="badge" data-map-cbf-visible>0 shown</span></div><div data-map-cbf-list class="map-cbf-list"></div></div>
+    <div class="panel-heading map-beneficiary-heading"><h2>Beneficiaries</h2><span class="badge" data-map-visible>0 shown</span></div><div data-map-list></div><p class="map-empty" data-map-empty hidden>No mapped beneficiaries match these filters.</p>
+  </aside>
+</div>
+<script type="application/json" id="beneficiary-map-data">{{ features|tojson }}</script>
+{% endblock %}
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="" defer></script>
+<script src="{{ url_for('static', filename='js/beneficiary-map.js', v=asset_version) }}" defer></script>
+{% endblock %}

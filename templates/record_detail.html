@@ -8,7 +8,32 @@
 {% if related %}<div class="notice success"><strong>Linked identity:</strong> this beneficiary ID also has {% for item in related %}<a href="{{ url_for('record_detail', record_id=item.id) }}">{{ dataset_labels[item.dataset] }} record</a>{{ ', ' if not loop.last }}{% endfor %}.</div>{% endif %}
 <section class="profile-grid"><article class="panel profile-summary"><dl><div><dt>Beneficiary ID</dt><dd>{{ record.uid }}</dd></div><div><dt>Gender</dt><dd>{{ record.sex or '-' }}</dd></div><div><dt>Age</dt><dd>{{ record.age_value or record.age_group or '-' }}</dd></div><div><dt>Phone</dt><dd>{{ record.phone or '-' }}</dd></div><div><dt>Location</dt><dd>{{ [record.village, record.parish, record.subcounty, record.district]|select|join(', ') or '-' }}</dd></div><div><dt>Record status</dt><dd>{{ record.record_status or '-' }}</dd></div></dl></article>
 <article class="panel panel-wide"><div class="panel-heading"><div><p class="eyebrow">Calculated automatically</p><h2>Training status</h2></div></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Topic / module</th><th>Status</th><th>Received</th><th>Confirmed</th><th>Last activity</th></tr></thead><tbody>{% for item in statuses %}<tr><td>{{ item.topic }}</td><td><span class="status-pill status-{{ item.status_code|lower }}">{{ item.status_label }}</span></td><td>{{ 'Yes' if item.training_received else 'No' }}</td><td>{{ 'Yes' if item.confirmed_trained else 'No' }}</td><td>{{ item.last_activity_date|datefmt }}</td></tr>{% endfor %}</tbody></table></div></article></section>
-{% if followup_assessments %}<section class="raw-sections"><div class="section-heading"><p class="eyebrow">Calculated monitoring results</p><h2>Adoption outcomes</h2></div>{% for assessment in followup_assessments %}{% set outcome = assessment.summary.household_outcome %}<details class="field-section assessment-result" {{ 'open' if loop.first }}><summary>{{ assessment.event_date|datefmt }}{% if outcome %} · Outcome {{ outcome.code }} — {{ outcome.label }}{% endif %}<span>{% if assessment.breadth_total %}Breadth {{ assessment.breadth_achieved }}/{{ assessment.breadth_total }} · Depth {{ assessment.depth|pct }}{% else %}Training results{% endif %}</span></summary><div class="assessment-body">{% if outcome %}<div class="assessment-kpis"><div><span>RVO gate</span><strong>{{ 'Passed' if assessment.rvo_passed else 'Not met' }}</strong></div><div><span>Project standard</span><strong>{{ 'Passed' if assessment.project_passed else 'Not met' }}</strong></div><div><span>Household outcome</span><strong>{{ outcome.code }} — {{ outcome.label }}</strong></div><div><span>Breadth + Depth</span><strong>{{ assessment.breadth_achieved }}/{{ assessment.breadth_total }} · {{ assessment.depth|pct }}</strong></div></div><p class="assessment-action">{{ outcome.action }}</p>{% endif %}{% if assessment.packages %}<div class="table-wrap"><table class="data-table"><thead><tr><th>Package</th><th>Points</th><th>Score</th><th>Result</th><th>Recommendation</th></tr></thead><tbody>{% for package in assessment.packages %}<tr><td><strong>{{ package.package_title }}</strong></td><td>{{ package.points_earned|round(1) }}/{{ package.points_available|round(1) }}</td><td>{{ package.score|pct }}</td><td><span class="status-pill">{{ package.result_status }}{% if package.critical_failed %} · critical{% endif %}</span></td><td>{{ package.recommendation or '—' }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}<h3>Training-type results</h3><div class="table-wrap"><table class="data-table"><thead><tr><th>Training type</th><th>Score</th><th>Result</th><th>Recommendation</th><th>Follow-up</th></tr></thead><tbody>{% for topic, result in assessment.summary.trainings.items() %}<tr><td><strong>{{ topic }}</strong></td><td>{{ result.score|pct }}</td><td><span class="status-pill">{{ result.status }}{% if result.critical_failed %} · critical{% endif %}</span></td><td>{{ result.recommendation }}</td><td>{{ result.next_action_label }}</td></tr>{% endfor %}</tbody></table></div></div></details>{% endfor %}</section>{% endif %}
+{% if followup_assessments %}
+<section class="raw-sections">
+  <div class="section-heading"><p class="eyebrow">Calculated monitoring results</p><h2>Adoption outcomes</h2></div>
+  {% for assessment in followup_assessments %}{% set outcome = assessment.summary.household_outcome %}
+  <details class="field-section assessment-result" {{ 'open' if loop.first }}>
+    <summary>{{ assessment.event_date|datefmt }}{% if outcome %} · Outcome {{ outcome.code }} — {{ outcome.label }}{% endif %}<span>{% if assessment.breadth_total %}Breadth {{ assessment.breadth_achieved }}/{{ assessment.breadth_total }} · Depth {{ assessment.depth|pct }}{% else %}Training results{% endif %}</span></summary>
+    <div class="assessment-body">
+      {% if outcome %}<div class="assessment-kpis"><div class="{{ 'check-failed' if assessment.rvo_passed == 0 }}"><span>RVO gate</span><strong>{{ 'Passed' if assessment.rvo_passed else 'Not met' }}</strong></div><div class="{{ 'check-failed' if assessment.project_passed == 0 }}"><span>Project standard</span><strong>{{ 'Passed' if assessment.project_passed else 'Not met' }}</strong></div><div><span>Household outcome</span><strong>{{ outcome.code }} — {{ outcome.label }}</strong></div><div><span>Breadth + Depth</span><strong>{{ assessment.breadth_achieved }}/{{ assessment.breadth_total }} · {{ assessment.depth|pct }}</strong></div></div><p class="assessment-action">{{ outcome.action }}</p>{% endif %}
+      {% if assessment.summary.failure_comments %}
+      <div class="record-failure-panel">
+        <h3>What caused lower results</h3>
+        <p>Findings from this visit that need attention.</p>
+        <div class="failure-comment-list">
+          {% for failure in assessment.summary.failure_comments %}
+          <article class="failure-comment-card"><div><strong>{{ failure.source_id }} · {{ failure.question }}</strong><span>{{ failure.packages|join(' · ') }}</span></div><p>{{ failure.comment }}</p></article>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+      {% if assessment.packages %}<div class="table-wrap"><table class="data-table"><thead><tr><th>Package</th><th>Points</th><th>Score</th><th>Result</th><th>Recommendation</th></tr></thead><tbody>{% for package in assessment.packages %}<tr><td><strong>{{ package.package_title }}</strong></td><td>{{ package.points_earned|round(1) }}/{{ package.points_available|round(1) }}</td><td>{{ package.score|pct }}</td><td><span class="status-pill status-{{ package.result_status|lower }}">{{ package.result_status }}{% if package.critical_failed %} · critical{% endif %}</span></td><td>{{ package.recommendation or '—' }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+      <h3>Training-type results</h3><div class="table-wrap"><table class="data-table"><thead><tr><th>Training type</th><th>Score</th><th>Result</th><th>Recommendation</th><th>Follow-up</th></tr></thead><tbody>{% for topic, result in assessment.summary.trainings.items() %}<tr><td><strong>{{ topic }}</strong></td><td>{{ result.score|pct }}</td><td><span class="status-pill status-{{ result.status|lower }}">{{ result.status }}{% if result.critical_failed %} · critical{% endif %}</span></td><td>{{ result.recommendation }}</td><td>{{ result.next_action_label }}</td></tr>{% endfor %}</tbody></table></div>
+    </div>
+  </details>
+  {% endfor %}
+</section>
+{% endif %}
 {% if followup_visits %}
 <section class="raw-sections">
   <div class="section-heading"><p class="eyebrow">Stored questionnaires</p><h2>Follow-up history</h2></div>
@@ -24,7 +49,24 @@
       {% endif %}
     </div>
     {% for response in visit.responses %}
-    <details class="field-section"><summary>{{ response.topic }} · {{ response.event_date|datefmt }} <span>{{ response.adoption_rate|pct }} · {{ response.next_action_label }}</span></summary><dl class="field-grid"><div><dt>Final score</dt><dd>{{ response.adoption_rate|pct }}</dd></div><div><dt>Next action</dt><dd>{{ response.next_action_label }}</dd></div>{% if response.latitude is not none and response.longitude is not none %}<div><dt>Visit location</dt><dd><a href="https://www.openstreetmap.org/?mlat={{ response.latitude }}&mlon={{ response.longitude }}#map=17/{{ response.latitude }}/{{ response.longitude }}" target="_blank" rel="noopener">{{ '%.6f'|format(response.latitude) }}, {{ '%.6f'|format(response.longitude) }}</a>{% if response.location_accuracy_m is not none %} · approximately {{ response.location_accuracy_m|round|int }} m accuracy{% endif %}</dd></div>{% endif %}{% for answer in response.answers %}<div><dt>{{ answer.source_id }} · {{ answer.question }}</dt><dd>{% if answer.photo_urls %}<div class="followup-photo-grid">{% for photo in answer.photo_urls %}<a href="{{ photo.url }}" target="_blank"><img src="{{ photo.url }}" alt="{{ photo.name }}"><span>{{ photo.name }}</span></a>{% endfor %}</div>{% else %}{{ answer.display_answer }}{% endif %}</dd></div>{% endfor %}</dl></details>
+    <details class="field-section"><summary>{{ response.topic }} · {{ response.event_date|datefmt }} <span>{{ response.adoption_rate|pct }} · {{ response.next_action_label }}</span></summary>
+      <dl class="field-grid survey-answer-grid">
+        <div><dt>Final score</dt><dd>{{ response.adoption_rate|pct }}</dd></div><div><dt>Next action</dt><dd>{{ response.next_action_label }}</dd></div>
+        {% if response.latitude is not none and response.longitude is not none %}<div><dt>Visit location</dt><dd><a href="https://www.openstreetmap.org/?mlat={{ response.latitude }}&mlon={{ response.longitude }}#map=17/{{ response.latitude }}/{{ response.longitude }}" target="_blank" rel="noopener">{{ '%.6f'|format(response.latitude) }}, {{ '%.6f'|format(response.longitude) }}</a>{% if response.location_accuracy_m is not none %} · approximately {{ response.location_accuracy_m|round|int }} m accuracy{% endif %}</dd></div>{% endif %}
+        {% for answer in response.answers %}
+        <div class="{{ 'survey-answer-failure' if answer.failures }}">
+          <dt>{{ answer.source_id }} · {{ answer.question }}{% if answer.failures %}<span class="survey-failure-tag">Finding</span>{% endif %}</dt>
+          <dd>
+            {% if answer.photo_urls %}<div class="followup-photo-grid">{% for photo in answer.photo_urls %}<a href="{{ photo.url }}" target="_blank"><img src="{{ photo.url }}" alt="{{ photo.name }}"><span>{{ photo.name }}</span></a>{% endfor %}</div>
+            {% elif answer.display_values|length > 1 %}<ul class="survey-answer-list">{% for value in answer.display_values %}<li>{{ value }}</li>{% endfor %}</ul>
+            {% else %}{{ answer.display_answer }}{% endif %}
+            {% if answer.type == 'gps' and answer.display_answer != 'No field boundary recorded' %}<a class="survey-map-link" href="{{ url_for('beneficiary_map', record_id=record.id) }}">View this field on the map</a>{% endif %}
+            {% for failure in answer.failures %}<p class="survey-answer-reason">{{ failure.comment }}</p>{% endfor %}
+          </dd>
+        </div>
+        {% endfor %}
+      </dl>
+    </details>
     {% endfor %}
   </article>
   {% endfor %}

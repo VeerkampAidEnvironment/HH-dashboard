@@ -26,6 +26,7 @@
       <span class="nav-disabled" aria-disabled="true"><span class="nav-symbol">ID</span>Identity review</span>
       {% else %}
       <a class="{{ 'active' if request.endpoint in ['record_list', 'record_detail', 'record_new', 'record_edit'] }}" href="{{ url_for('record_list') }}"><span class="nav-symbol">B</span>Beneficiaries</a>
+      <a class="{{ 'active' if request.endpoint == 'beneficiary_map' }}" href="{{ url_for('beneficiary_map') }}"><span class="nav-symbol">M</span>Map</a>
       <a class="{{ 'active' if request.endpoint in ['cbf_list', 'cbf_detail'] }}" href="{{ url_for('cbf_list') }}"><span class="nav-symbol">C</span>CBFs</a>
       <a class="{{ 'active' if request.endpoint == 'matches' }}" href="{{ url_for('matches') }}"><span class="nav-symbol">ID</span>Identity review</a>
       {% endif %}
@@ -84,6 +85,7 @@
   </footer>
   {% endif %}
   <script src="{{ url_for('static', filename='vendor/html2canvas.min.js', v=asset_version) }}" defer></script>
+  <script src="{{ url_for('static', filename='js/momentum.js', v=asset_version) }}" defer></script>
   <script src="{{ url_for('static', filename='js/app.js', v=asset_version) }}" defer></script>
   {% block scripts %}{% endblock %}
 </body>

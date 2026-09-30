@@ -210,10 +210,11 @@
   </article>
 
   {% if dataset == 'training' %}<article class="panel panel-momentum" data-momentum-explorer>
-    <div class="panel-heading"><div><p class="eyebrow">Programme momentum</p><h2>How implementation is moving</h2><p>Monthly programme reach, delivery, follow-up and newly confirmed adoption within the selected dashboard filters.</p></div><span class="badge" data-momentum-period>Last {{ momentum_chart.months|length }} months</span></div>
+    <div class="panel-heading"><div><p class="eyebrow">Programme momentum</p><h2>How implementation is moving</h2><p>Programme reach, delivery, follow-up and newly confirmed adoption within the selected dashboard filters.</p></div><span class="badge" data-momentum-period>Last {{ momentum_chart.months|length }} months</span></div>
     {% if momentum_chart.months %}
     <div class="momentum-range-controls">
       <span>Time period</span>
+      <label><small>Step size</small><select data-momentum-step><option value="monthly" selected>Monthly</option><option value="weekly">Weekly</option><option value="daily">Daily</option></select></label>
       <label><small>Start month</small><select data-momentum-month-start>{% for month in momentum_chart.months %}<option value="{{ month.key }}" {{ 'selected' if loop.first }}>{{ month.label }}</option>{% endfor %}</select></label>
       <span class="timeline-range-arrow" aria-hidden="true">to</span>
       <label><small>End month</small><select data-momentum-month-end>{% for month in momentum_chart.months %}<option value="{{ month.key }}" {{ 'selected' if loop.last }}>{{ month.label }}</option>{% endfor %}</select></label>
@@ -224,8 +225,8 @@
       <polyline class="momentum-line" points="{{ series.points }}" fill="none" stroke="{{ series.color }}"></polyline>{% for marker in series.markers %}<circle class="momentum-marker" cx="{{ marker.x }}" cy="{{ marker.y }}" r="3.3" fill="{{ series.color }}"><title>{{ momentum_chart.months[loop.index0].label }} · {{ series.label }}: {{ marker.value }}</title></circle>{% endfor %}
       {% if show_months %}{% for month in momentum_chart.months %}{% set month_x = 40 + (353 if month_total == 1 else (706 / (month_total - 1) * loop.index0)) %}<text class="momentum-month" x="{{ month_x }}" y="84">{{ month.label }}</text>{% endfor %}{% endif %}
     </svg></div></section>{% endfor %}</div>
-    <p class="panel-note momentum-note">Each line has its own y-axis so its trend remains visible. “First recorded training” counts a beneficiary once, in the month of their earliest recorded training, because the workbook does not contain registration dates.</p>
-    <details class="momentum-table"><summary>View monthly figures</summary><div class="table-wrap"><table class="data-table"><thead><tr><th>Month</th>{% for series in momentum_chart.series %}<th>{{ series.label }}</th>{% endfor %}</tr></thead><tbody data-momentum-table-body>{% for month in momentum_chart.months %}<tr><td><strong>{{ month.label }}</strong></td>{% set month_index = loop.index0 %}{% for series in momentum_chart.series %}<td>{{ series.values[month_index] }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div></details>
+    <p class="panel-note momentum-note">Click follow-up visits or confirmed adoptions to see each topic. Follow-ups count submitted visits, not topic entries; historical workbook dates without a saved questionnaire are excluded from visit counts. Confirmed adoptions count each person once, at their first confirmed adoption. Each line has its own y-axis. Weeks start on Monday and include only dates within the selected range. “First recorded training” uses the earliest recorded training because the workbook does not contain registration dates.</p>
+    <details class="momentum-table"><summary>View monthly figures</summary><div class="table-wrap"><table class="data-table"><thead><tr><th>Month</th>{% for series in momentum_chart.series %}<th>{{ series.label }}</th>{% endfor %}{% for series in momentum_chart.outcome_series %}<th>Topic follow-ups: {{ series.label|lower }}</th>{% endfor %}</tr></thead><tbody data-momentum-table-body>{% for month in momentum_chart.months %}<tr><td><strong>{{ month.label }}</strong></td>{% set month_index = loop.index0 %}{% for series in momentum_chart.series + momentum_chart.outcome_series %}<td>{{ series.values[month_index] }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div></details>
     <script type="application/json" data-momentum-data>{{ momentum_chart|tojson }}</script>
     {% else %}<div class="empty-state"><h3>No dated activity</h3><p>No training or follow-up dates match the current dashboard filters.</p></div>{% endif %}
   </article>{% endif %}

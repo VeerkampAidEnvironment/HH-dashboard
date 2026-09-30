@@ -1204,6 +1204,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const chart = explorer.querySelector("[data-momentum-chart]");
     const tableBody = explorer.querySelector("[data-momentum-table-body]");
     const periodBadge = explorer.querySelector("[data-momentum-period]");
+    const stepControl = explorer.querySelector("[data-momentum-step]");
+    const expandedSeries = new Set();
     const monthStartControl = explorer.querySelector("[data-momentum-month-start]");
     const monthEndControl = explorer.querySelector("[data-momentum-month-end]");
     let momentum = { months: [], series: [] };
@@ -1227,22 +1229,25 @@ document.addEventListener("DOMContentLoaded", () => {
     const renderMomentum = () => {
       const startMonth = monthStartControl?.value || momentum.months[0]?.key || "";
       const endMonth = monthEndControl?.value || momentum.months[momentum.months.length - 1]?.key || "";
-      const visibleIndexes = momentum.months
-        .map((month, index) => ({ month, index }))
-        .filter(({ month }) => (!startMonth || month.key >= startMonth) && (!endMonth || month.key <= endMonth));
-      if (periodBadge) periodBadge.textContent = visibleIndexes.length === momentum.months.length
-        ? `Last ${visibleIndexes.length} months`
-        : `${visibleIndexes[0]?.month.label || startMonth} to ${visibleIndexes[visibleIndexes.length - 1]?.month.label || endMonth}`;
+      const step = stepControl?.value || "monthly";
+      const unit = { monthly: "month", weekly: "week", daily: "day" }[step];
+      const periods = window.arfsaMomentumPeriods(momentum, step, startMonth, endMonth);
+      if (periodBadge) periodBadge.textContent = `${periods.length} ${unit}${periods.length === 1 ? "" : "s"}`;
+      const tableSummary = explorer.querySelector(".momentum-table > summary");
+      if (tableSummary) tableSummary.textContent = `View ${step} figures`;
+      const tableHeading = explorer.querySelector(".momentum-table th");
+      if (tableHeading) tableHeading.textContent = unit[0].toUpperCase() + unit.slice(1);
       chart?.replaceChildren();
       const plotLeft = 40;
       const plotTop = 8;
       const plotWidth = 706;
       const plotHeight = 52;
-      (momentum.series || []).forEach((series, seriesIndex) => {
-        const values = visibleIndexes.map(({ index }) => Number(series.values[index]) || 0);
+      const renderSeries = (series, showMonths, expandable = false, stacked = null) => {
+        const values = periods.map((period) => stacked
+          ? stacked.reduce((sum, item) => sum + period.values[item.key], 0)
+          : period.values[series.key]);
         const scale = scaleFor(values);
-        const showMonths = seriesIndex === momentum.series.length - 1;
-        const section = document.createElement("section");
+        const section = document.createElement(expandable ? "summary" : "section");
         section.className = "momentum-series-row";
         const header = document.createElement("header");
         const heading = document.createElement("span");
@@ -1254,15 +1259,33 @@ document.addEventListener("DOMContentLoaded", () => {
         const peak = document.createElement("strong");
         peak.append(document.createTextNode(scale.peak.toLocaleString()));
         const peakLabel = document.createElement("small");
-        peakLabel.textContent = "monthly peak";
+        peakLabel.textContent = `${step} peak`;
         peak.append(peakLabel);
         header.append(heading, description, peak);
+        if (stacked) {
+          const legend = document.createElement("div");
+          legend.className = "momentum-outcome-legend";
+          stacked.forEach((item) => {
+            const label = document.createElement("span");
+            const swatch = document.createElement("i");
+            swatch.style.background = item.color;
+            label.append(swatch, document.createTextNode(item.label));
+            legend.append(label);
+          });
+          header.append(legend);
+        }
+        if (expandable) {
+          const hint = document.createElement("span");
+          hint.className = "momentum-expand-hint";
+          hint.textContent = "Topic breakdown";
+          header.append(hint);
+        }
         const chartWrap = document.createElement("div");
         chartWrap.className = "momentum-series-chart";
         const svg = svgElement("svg", {
           viewBox: `0 0 760 ${showMonths ? 92 : 68}`,
           role: "img",
-          "aria-label": `${series.label} by month, using its own y-axis from 0 to ${scale.maximum}`,
+          "aria-label": `${series.label} by ${unit}, using its own y-axis from 0 to ${scale.maximum}`,
         });
         scale.ticks.forEach((tick) => {
           const y = plotTop + plotHeight - tick / scale.maximum * plotHeight;
@@ -1278,40 +1301,101 @@ document.addEventListener("DOMContentLoaded", () => {
           const y = plotTop + plotHeight - value / scale.maximum * plotHeight;
           return { x, y, value };
         });
-        svg.append(svgElement("polyline", {
-          class: "momentum-line",
-          points: coordinates.map(({ x, y }) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" "),
-          fill: "none",
-          stroke: series.color,
-        }));
-        coordinates.forEach(({ x, y, value }, index) => {
-          const circle = svgElement("circle", { class: "momentum-marker", cx: x, cy: y, r: 3.3, fill: series.color });
-          const title = svgElement("title");
-          title.textContent = `${visibleIndexes[index].month.label} · ${series.label}: ${value.toLocaleString()}`;
-          circle.append(title);
-          svg.append(circle);
-        });
-        if (showMonths) visibleIndexes.forEach(({ month }, index) => {
-          const x = plotLeft + (visibleIndexes.length > 1 ? plotWidth / (visibleIndexes.length - 1) * index : plotWidth / 2);
+        if (stacked) {
+          const slot = plotWidth / Math.max(1, periods.length);
+          const width = Math.min(30, slot * 0.8);
+          periods.forEach((period, index) => {
+            let bottom = plotTop + plotHeight;
+            const group = svgElement("g", { class: "momentum-outcome-bar" });
+            const title = svgElement("title");
+            title.textContent = `${period.label} · ${stacked.map(item => `${item.label}: ${period.values[item.key]}`).join(" · ")}`;
+            group.append(title);
+            stacked.forEach((item) => {
+              const height = period.values[item.key] / scale.maximum * plotHeight;
+              bottom -= height;
+              group.append(svgElement("rect", {
+                x: plotLeft + slot * (index + 0.5) - width / 2, y: bottom,
+                width, height, fill: item.color,
+              }));
+            });
+            svg.append(group);
+          });
+        } else {
+          svg.append(svgElement("polyline", {
+            class: "momentum-line",
+            points: coordinates.map(({ x, y }) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" "),
+            fill: "none",
+            stroke: series.color,
+          }));
+          coordinates.forEach(({ x, y, value }, index) => {
+            const circle = svgElement("circle", { class: "momentum-marker", cx: x, cy: y, r: values.length > 60 ? 1.5 : 3.3, fill: series.color });
+            const title = svgElement("title");
+            title.textContent = `${periods[index].label} · ${series.label}: ${value.toLocaleString()}`;
+            circle.append(title);
+            svg.append(circle);
+          });
+        }
+        if (showMonths) periods.forEach((period, index) => {
+          const labelStride = Math.max(1, Math.ceil((periods.length - 1) / 8));
+          if (index !== periods.length - 1 && (index % labelStride !== 0 || periods.length - 1 - index < labelStride / 2)) return;
+          const x = stacked
+            ? plotLeft + plotWidth / periods.length * (index + 0.5)
+            : plotLeft + (periods.length > 1 ? plotWidth / (periods.length - 1) * index : plotWidth / 2);
           const text = svgElement("text", { class: "momentum-month", x, y: 84 });
-          text.textContent = month.label;
+          if (index === periods.length - 1 && periods.length > 1) text.style.textAnchor = "end";
+          text.textContent = period.axisLabel || period.label;
           svg.append(text);
         });
         chartWrap.append(svg);
         section.append(header, chartWrap);
-        chart?.append(section);
+        return section;
+      };
+      (momentum.series || []).forEach((series, seriesIndex) => {
+        const showMonths = seriesIndex === momentum.series.length - 1;
+        if (!series.children?.length) {
+          chart?.append(renderSeries(series, showMonths));
+          return;
+        }
+        const details = document.createElement("details");
+        details.className = "momentum-breakdown";
+        details.dataset.momentumBreakdown = series.key;
+        details.open = expandedSeries.has(series.key);
+        details.append(renderSeries(series, true, true));
+        const children = document.createElement("div");
+        children.className = "momentum-topic-charts";
+        const note = document.createElement("p");
+        note.className = "panel-note";
+        note.textContent = series.key === "followups"
+          ? "A visit may cover several topics. It counts once overall and once in each topic covered. Only saved questionnaires count as visits."
+          : "A person may adopt several topics. The total counts their first confirmed adoption once; each topic counts their first confirmed adoption of that topic.";
+        children.append(note);
+        series.children.forEach((child) => children.append(renderSeries(child, true)));
+        details.append(children);
+        details.addEventListener("toggle", () => {
+          if (details.open) expandedSeries.add(series.key);
+          else expandedSeries.delete(series.key);
+        });
+        chart?.append(details);
       });
+      if (momentum.outcome_series?.length) {
+        const outcomes = renderSeries({
+          label: "Topic follow-up outcomes", color: "#087880",
+          description: `One result per topic per submitted visit. Adoption: score ≥ ${momentum.adoption_threshold}%. Unscored topics excluded.`,
+        }, true, false, momentum.outcome_series);
+        outcomes.dataset.momentumOutcomes = "";
+        chart?.append(outcomes);
+      }
       tableBody?.replaceChildren();
-      visibleIndexes.forEach(({ month, index }) => {
+      periods.forEach((period) => {
         const row = document.createElement("tr");
         const monthCell = document.createElement("td");
         const monthLabel = document.createElement("strong");
-        monthLabel.textContent = month.label;
+        monthLabel.textContent = period.label;
         monthCell.append(monthLabel);
         row.append(monthCell);
-        momentum.series.forEach((series) => {
+        [...momentum.series, ...(momentum.outcome_series || [])].forEach((series) => {
           const cell = document.createElement("td");
-          cell.textContent = Number(series.values[index] || 0).toLocaleString();
+          cell.textContent = Number(period.values[series.key] || 0).toLocaleString();
           row.append(cell);
         });
         tableBody?.append(row);
@@ -1326,6 +1410,7 @@ document.addEventListener("DOMContentLoaded", () => {
     };
     monthStartControl?.addEventListener("change", () => updateMomentumRange(monthStartControl));
     monthEndControl?.addEventListener("change", () => updateMomentumRange(monthEndControl));
+    stepControl?.addEventListener("change", renderMomentum);
     explorer.querySelector("[data-momentum-reset]")?.addEventListener("click", () => {
       if (monthStartControl) monthStartControl.selectedIndex = 0;
       if (monthEndControl) monthEndControl.selectedIndex = Math.max(0, monthEndControl.options.length - 1);

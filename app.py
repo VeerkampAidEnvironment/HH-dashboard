@@ -40,6 +40,7 @@ from werkzeug.datastructures import MultiDict
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from bulk_import import BulkImportError, append_care_database, append_farmer_database
+from beneficiary_map import beneficiary_features
 from db import (
     AuditRevertError,
     close_db,
@@ -169,6 +170,42 @@ def followup_submission_questions(topics: list[str], survey_version: str) -> lis
                               "label": "Visit photos from an earlier questionnaire",
                               "type": "photos", "required": False})
     return questions
+
+
+def readable_survey_value(value: Any, labels: dict[str, str] | None = None) -> str:
+    """Turn a stored choice code into its questionnaire label."""
+    if value is None or value == "":
+        return "-"
+    text = str(value)
+    if labels and text in labels:
+        return labels[text]
+    if "_" in text and " " not in text:
+        return text.replace("_", " ").capitalize()
+    return text
+
+
+def display_survey_answer(answer: Any, answer_type: str, labels: dict[str, str] | None = None) -> tuple[str, list[str]]:
+    """Return compact text and optional readable selections for a saved answer."""
+    if answer_type == "gps":
+        points = answer.get("points") if isinstance(answer, dict) else None
+        if isinstance(points, list) and points:
+            first = points[0]
+            location = ""
+            try:
+                location = f" · starts at {float(first['latitude']):.6f}, {float(first['longitude']):.6f}"
+            except (KeyError, TypeError, ValueError):
+                pass
+            return f"Field boundary recorded · {len(points)} GPS points{location}", []
+        return "No field boundary recorded", []
+    if isinstance(answer, list):
+        values = [readable_survey_value(value, labels) for value in answer]
+        return (", ".join(values) if values else "-"), values
+    if isinstance(answer, dict):
+        if "value" in answer and "unit" in answer:
+            return f"{answer['value']} {answer['unit']}", []
+        return ", ".join(f"{readable_survey_value(key)}: {readable_survey_value(value)}"
+                         for key, value in answer.items()) or "-", []
+    return readable_survey_value(answer, labels), []
 
 
 def persist_followup_photos(prepared: list[dict[str, Any]]) -> list[dict[str, str]]:
@@ -395,7 +432,9 @@ def create_app(test_config=None):
     if test_config:
         app.config.update(test_config)
     static_files = [Path(app.static_folder) / folder / filename for folder, filename in (
-        ("css", "app.css"), ("js", "app.js"), ("css", "identity-review.css"), ("js", "identity-review.js"),
+        ("css", "app.css"), ("js", "app.js"), ("js", "momentum.js"),
+        ("js", "beneficiary-map.js"),
+        ("css", "identity-review.css"), ("js", "identity-review.js"),
     )]
     app.config["ASSET_VERSION"] = str(max(
         int(path.stat().st_mtime_ns) for path in static_files if path.exists()
@@ -885,6 +924,18 @@ def create_app(test_config=None):
         response.headers["Content-Disposition"] = f'attachment; filename="cbf-{safe_filename(cbf_name)}-group-reports.zip"'
         return response
 
+    @app.get("/map")
+    def beneficiary_map():
+        if session.get("access_scope") == "fh_dashboard":
+            abort(403)
+        cbf_name = session.get("cbf_name") if session.get("access_scope") == "ae_user" else None
+        collection = beneficiary_features(get_db(), cbf_name)
+        if request.args.get("format") == "geojson":
+            response = jsonify(collection)
+            response.headers["Cache-Control"] = "private, no-store"
+            return response
+        return render_template("beneficiary_map.html", features=collection)
+
     @app.get("/records")
     def record_list():
         connection = get_db()
@@ -946,6 +997,10 @@ def create_app(test_config=None):
         followup_visits = {}
         if record["dataset"] == "training":
             next_action_labels = {item["value"]: item["label"] for item in NEXT_ACTION_OPTIONS}
+            question_labels = {
+                item["id"]: {str(option["value"]): option["label"] for option in item.get("options", [])}
+                for item in all_questions_for_topics(TRAINING_TOPICS)
+            }
             response_rows = connection.execute(
                 """SELECT fr.*, e.id AS event_id, e.event_date, e.created_by, e.latitude, e.longitude,
                           e.location_accuracy_m, e.location_captured_at
@@ -970,24 +1025,27 @@ def create_app(test_config=None):
                             member_ids,
                         ).fetchall()
                     }
-                response["answers"] = [
-                    {
-                        **item,
+                response["answers"] = []
+                for question_id, item in stored_answers.items():
+                    if not isinstance(item, dict):
+                        continue
+                    display_answer, display_values = display_survey_answer(
+                        item.get("answer"), item.get("type", ""), question_labels.get(question_id)
+                    )
+                    if item.get("source_id") == "A0.1":
+                        display_values = [member_names.get(str(value), str(value)) for value in selected_members]
+                        display_answer = ", ".join(display_values) or "-"
+                    response["answers"].append({
+                        **item, "question_id": question_id,
+                        "display_answer": display_answer, "display_values": display_values,
+                        "failures": [],
                         "photo_urls": [
-                            {"url": url_for("followup_photo", filename=value["file"]), "name": value.get("name") or f"Photo {index + 1}"}
+                            {"url": url_for("followup_photo", filename=value["file"]),
+                             "name": value.get("name") or f"Photo {index + 1}"}
                             for index, value in enumerate(item.get("answer") or [])
                             if isinstance(value, dict) and value.get("file")
                         ] if item.get("type") == "photos" else [],
-                        "display_answer": (
-                            ", ".join(member_names.get(str(value), str(value)) for value in selected_members)
-                            if item.get("source_id") == "A0.1" else
-                            ", ".join(str(value) for value in item["answer"])
-                            if isinstance(item["answer"], list) else
-                            (str(item["answer"]) if item["answer"] is not None and item["answer"] != "" else "-")
-                        ),
-                    }
-                    for item in stored_answers.values()
-                ]
+                    })
                 response["next_action_label"] = next_action_labels.get(
                     response["next_action"], response["next_action"]
                 )
@@ -1003,12 +1061,14 @@ def create_app(test_config=None):
                         "beneficiaries": beneficiaries, "responses": [],
                     }
                 followup_visits[response["event_id"]]["responses"].append(response)
+            visit_ids = list(followup_visits)
             assessment_rows = connection.execute(
-                """SELECT fa.*, e.event_date, e.created_by
+                f"""SELECT fa.*, e.event_date, e.created_by
                    FROM followup_assessments fa JOIN field_events e ON e.id=fa.event_id
-                   WHERE fa.record_id=? ORDER BY e.event_date DESC, fa.id DESC""",
-                (record_id,),
-            ).fetchall()
+                   WHERE fa.event_id IN ({','.join('?' for _ in visit_ids)})
+                   ORDER BY e.event_date DESC, fa.id DESC""",
+                visit_ids,
+            ).fetchall() if visit_ids else []
             for assessment_row in assessment_rows:
                 assessment = dict(assessment_row)
                 assessment["summary"] = json.loads(assessment["summary"])
@@ -1018,6 +1078,13 @@ def create_app(test_config=None):
                     (assessment["id"],),
                 ).fetchall()]
                 followup_assessments.append(assessment)
+                failures = assessment["summary"].get("failure_comments") or []
+                failure_by_question = defaultdict(list)
+                for failure in failures:
+                    failure_by_question[failure.get("question_id")].append(failure)
+                for response in followup_visits[assessment["event_id"]]["responses"]:
+                    for answer in response["answers"]:
+                        answer["failures"] = failure_by_question.get(answer["question_id"], [])
         return render_template(
             "record_detail.html", record=record, statuses=statuses, related=related,
             raw=raw, sections=sections,
@@ -3729,9 +3796,34 @@ def build_dashboard_data(connection, dataset: str, filters: dict[str, str]):
             "training_attendances": Counter(),
             "followups": Counter(),
             "adoptions": Counter(),
+            "followup_adoption": Counter(),
+            "followup_no_adoption": Counter(),
         }
         momentum_month_values = set()
+        momentum_days = defaultdict(lambda: {
+            "active": set(), "first_training": 0, "training_attendances": 0,
+            "followups": 0, "adoptions": 0,
+        })
         momentum_adoption_threshold = adoption_threshold()
+        topic_keys = {
+            topic: {metric: f"{metric}_topic_{index}" for metric in ("followups", "adoptions")}
+            for index, topic in enumerate(momentum_topics)
+        }
+        for keys in topic_keys.values():
+            for key in keys.values():
+                momentum_counts[key] = Counter()
+        first_topic_adoptions = {}
+
+        def remember_adoption(record_id, topic, event_date):
+            key = (record_id, topic)
+            first_topic_adoptions[key] = min(first_topic_adoptions.get(key, event_date), event_date)
+
+        def count_momentum(key, event_date):
+            month = event_date.isoformat()[:7]
+            momentum_counts[key][month] += 1
+            day = momentum_days[event_date.isoformat()]
+            day[key] = day.get(key, 0) + 1
+            momentum_month_values.add(month)
 
         def in_momentum_window(event_date):
             event_iso = event_date.isoformat()
@@ -3740,8 +3832,6 @@ def build_dashboard_data(connection, dataset: str, filters: dict[str, str]):
         for record in records:
             raw = json.loads(record["raw_data"])
             training_dates = []
-            adoption_dates = []
-            active_months = set()
             for topic in momentum_topics:
                 for cycle in range(1, 4):
                     training_date = parse_date(raw.get(f"Training {cycle} - {topic}"))
@@ -3750,32 +3840,86 @@ def build_dashboard_data(connection, dataset: str, filters: dict[str, str]):
                         if in_momentum_window(training_date):
                             month = training_date.isoformat()[:7]
                             momentum_counts["training_attendances"][month] += 1
-                            active_months.add(month)
+                            day = momentum_days[training_date.isoformat()]
+                            day["training_attendances"] += 1
+                            day["active"].add(record["id"])
                             momentum_month_values.add(month)
                     followup_date = parse_date(raw.get(f"Follow up {cycle} - {topic}"))
                     if followup_date:
                         if in_momentum_window(followup_date):
                             month = followup_date.isoformat()[:7]
-                            momentum_counts["followups"][month] += 1
-                            active_months.add(month)
+                            day = momentum_days[followup_date.isoformat()]
+                            day["active"].add(record["id"])
                             momentum_month_values.add(month)
                         score = parse_number(raw.get(f"Follow up {cycle} score - {topic}"))
                         if score is not None and score >= momentum_adoption_threshold:
-                            adoption_dates.append(followup_date)
-            for month in active_months:
-                momentum_counts["active"][month] += 1
+                            remember_adoption(record["id"], topic, followup_date)
             if training_dates:
                 first_training = min(training_dates)
                 if in_momentum_window(first_training):
                     month = first_training.isoformat()[:7]
                     momentum_counts["first_training"][month] += 1
+                    momentum_days[first_training.isoformat()]["first_training"] += 1
                     momentum_month_values.add(month)
-            if adoption_dates:
-                first_adoption = min(adoption_dates)
-                if in_momentum_window(first_adoption):
-                    month = first_adoption.isoformat()[:7]
-                    momentum_counts["adoptions"][month] += 1
-                    momentum_month_values.add(month)
+
+        # A saved questionnaire is one visit, including questionnaires covering
+        # several topics or household members. Workbook topic dates are not visits.
+        selected_record_ids = {record["id"] for record in records}
+        visits = {}
+        visit_rows = connection.execute("""
+            SELECT e.id, e.event_date, r.record_id, r.topic, r.adoption_rate AS score
+            FROM field_events e
+            JOIN field_event_entries entry ON entry.event_id=e.id
+            JOIN followup_responses r ON r.event_entry_id=entry.id
+            WHERE e.event_type='followup'
+            UNION ALL
+            SELECT e.id, e.event_date, a.record_id, NULL AS topic, NULL AS score
+            FROM field_events e JOIN followup_assessments a ON a.event_id=e.id
+            WHERE e.event_type='followup'
+        """).fetchall()
+        for row in visit_rows:
+            if row["record_id"] not in selected_record_ids:
+                continue
+            topic = row["topic"]
+            if (topic and topic not in momentum_topics) or (not topic and topic_filter):
+                continue
+            event_date = parse_date(row["event_date"])
+            if not event_date:
+                continue
+            score = parse_number(row["score"])
+            if topic and score is not None and score >= momentum_adoption_threshold:
+                remember_adoption(row["record_id"], topic, event_date)
+            if not in_momentum_window(event_date):
+                continue
+            visit = visits.setdefault(row["id"], {"date": event_date, "topics": set(), "scores": {}})
+            if topic:
+                visit["topics"].add(topic)
+                if score is not None:
+                    visit["scores"].setdefault(topic, score)
+            momentum_days[event_date.isoformat()]["active"].add(row["record_id"])
+        for visit in visits.values():
+            count_momentum("followups", visit["date"])
+            for topic in visit["topics"]:
+                count_momentum(topic_keys[topic]["followups"], visit["date"])
+            for score in visit["scores"].values():
+                outcome = "followup_adoption" if score >= momentum_adoption_threshold else "followup_no_adoption"
+                count_momentum(outcome, visit["date"])
+
+        first_person_adoptions = {}
+        for (record_id, topic), event_date in first_topic_adoptions.items():
+            first_person_adoptions[record_id] = min(first_person_adoptions.get(record_id, event_date), event_date)
+            if in_momentum_window(event_date):
+                count_momentum(topic_keys[topic]["adoptions"], event_date)
+        for event_date in first_person_adoptions.values():
+            if in_momentum_window(event_date):
+                count_momentum("adoptions", event_date)
+
+        # Include visits whose dates are no longer present in the workbook's
+        # limited follow-up slots, without counting a person twice in a month.
+        active_by_month = defaultdict(set)
+        for day, counts in momentum_days.items():
+            active_by_month[day[:7]].update(counts["active"])
+        momentum_counts["active"] = Counter({month: len(ids) for month, ids in active_by_month.items()})
 
         def shift_month(month, offset):
             year, month_number = (int(part) for part in month.split("-"))
@@ -3795,19 +3939,25 @@ def build_dashboard_data(connection, dataset: str, filters: dict[str, str]):
 
             series_definitions = [
                 ("active", "Active beneficiaries", "Beneficiaries with any dated training or follow-up", "#087880"),
-                ("first_training", "First recorded training", "Beneficiaries in the month of their earliest recorded training", "#77aa2a"),
+                ("first_training", "First recorded training", "Beneficiaries in the period of their earliest recorded training", "#77aa2a"),
                 ("training_attendances", "Training attendances", "All recorded training activities", "#1f6fb2"),
-                ("followups", "Follow-ups completed", "All recorded follow-up activities", "#EFB417"),
-                ("adoptions", "New confirmed adoptions", "Beneficiaries first reaching the adoption threshold", "#b04b63"),
+                ("followups", "Follow-up visits completed", "Submitted questionnaires; each visit counts once", "#EFB417"),
+                ("adoptions", "New confirmed adoptions", "People first reaching the adoption threshold in any selected topic", "#b04b63"),
+            ]
+            topic_definitions = [
+                (keys[metric], topic,
+                 "Visits covering this topic" if metric == "followups" else "People first reaching the adoption threshold in this topic",
+                 "#EFB417" if metric == "followups" else "#b04b63")
+                for metric in ("followups", "adoptions") for topic, keys in topic_keys.items()
             ]
             series_values = {
                 key: [momentum_counts[key][month] for month in momentum_months]
-                for key, _label, _description, _color in series_definitions
+                for key, _label, _description, _color in series_definitions + topic_definitions
             }
             plot_left, plot_top, plot_width, plot_height = 40, 8, 706, 52
             month_count = len(momentum_months)
             momentum_series = []
-            for key, label, description, color in series_definitions:
+            for key, label, description, color in series_definitions + topic_definitions:
                 values = series_values[key]
                 peak = max(values, default=0)
                 if peak:
@@ -3836,12 +3986,33 @@ def build_dashboard_data(connection, dataset: str, filters: dict[str, str]):
                         for value in tick_values
                     ],
                 })
+            parent_series = momentum_series[:len(series_definitions)]
+            for series in parent_series:
+                if series["key"] in {"followups", "adoptions"}:
+                    series["children"] = [
+                        child for child in momentum_series[len(series_definitions):]
+                        if child["key"].startswith(series["key"] + "_topic_")
+                    ]
             momentum_chart = {
                 "months": [
                     {"key": month, "label": date(int(month[:4]), int(month[5:]), 1).strftime("%b %y")}
                     for month in momentum_months
                 ],
-                "series": momentum_series,
+                "series": parent_series,
+                "outcome_series": [
+                    {"key": key, "label": label, "color": color,
+                     "values": [momentum_counts[key][month] for month in momentum_months]}
+                    for key, label, color in (
+                        ("followup_adoption", "Adoption", "#087880"),
+                        ("followup_no_adoption", "No adoption", "#d68a2d"),
+                    )
+                ],
+                "adoption_threshold": momentum_adoption_threshold,
+                "days": [
+                    {"key": day, **counts, "active": sorted(counts["active"])}
+                    for day, counts in sorted(momentum_days.items())
+                    if first_month <= day[:7] <= last_month
+                ],
             }
 
     options = {

@@ -8,6 +8,7 @@ A Flask application that imports the two supplied Excel datasets into a single o
 - Gender, age group, CBF, date, and status filters
 - Topic-level training, adoption, follow-up, waiting, and refresher-training metrics
 - A separate progress page and branded PDF report for every CBF
+- A beneficiary map of GPS-recorded follow-up plots, with household results and training counts
 - Individual add/edit/archive/restore workflows for both datasets
 - Stable farmer IDs across manually confirmed cross-dataset matches
 - Conservative identity suggestions with mandatory manual review
@@ -75,6 +76,15 @@ Combined is reserved for relationships between AE exposure/adoption and FH outco
 ## CBF data entry
 
 The **Administration → Data entry** page lets a CBF select their name and record either a centralized training or a farmer follow-up. Centralized training lists CT-eligible farmers separately for each topic and records the event date, location and attendance. Follow-up entry lists only farmers with due follow-ups and accepts scores only for their FU topics. Every submission updates the AE record, recalculates topic status, creates an event-history entry and is written to the audit log.
+
+## Beneficiary map
+
+The **Database → Map** page shows AE beneficiaries whose saved follow-up contains GPS plot points. Three or more points draw a field outline; two draw a line, and one draws a marker. The latest mapped visit supplies the RVO and Project checks: **Validated** means both passed, **Failed** means at least one was not met, and **Not assessed** means a check is unavailable. Training counts are the number of training types recorded as received for each beneficiary. Search and status filters apply to both the map and the list. The map uses Leaflet and OpenStreetMap tiles and needs internet access for the base map.
+
+Map geometry filters poor-accuracy fixes and isolated GPS jumps. If a track has a large disconnected jump, the map uses its longest continuous section; the saved questionnaire answers remain unchanged.
+
+Each CBF with a visible mapped beneficiary has a circular grouping marker connected to their fields. The marker is positioned from those field locations for display and does not represent the CBF's actual GPS location. Map filters update the CBF markers and links together with the fields.
+Use **Hide CBFs** to remove the CBF circles and links while keeping the beneficiary fields visible; **Show CBFs** restores them.
 
 ## AE Field App
 
