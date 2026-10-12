@@ -1,0 +1,33 @@
+<article class="panel panel-scoring" data-scoring-overview>
+  <div class="panel-heading">
+    <div><p class="eyebrow">Follow-up scoring</p><h2>Training &amp; package performance</h2><p>Compare pass rates and scores, then expand critical failures to see what went wrong.</p></div>
+    <div class="scoring-switch" role="group" aria-label="Scoring view">
+      <button type="button" data-scoring-view="training" aria-pressed="true" aria-controls="scoring-training">Training</button>
+      <button type="button" data-scoring-view="package" aria-pressed="false" aria-controls="scoring-package">Package</button>
+    </div>
+  </div>
+  {% for view, label in [('training', 'Training'), ('package', 'Package')] %}
+  <section id="scoring-{{ view }}" data-scoring-panel="{{ view }}" aria-label="{{ label }} scoring" {{ 'hidden' if view != 'training' }}>
+    <p class="panel-note scoring-scope">{% if view == 'training' %}Each assessment is one beneficiary’s result for a training topic at a submitted visit. Repeat visits count separately.{% else %}Each assessment is one plot visit per package. Shared household members count once. With training filters, only related packages are shown.{% endif %}</p>
+    <div class="table-wrap"><table class="data-table scoring-table">
+      <thead><tr><th>{{ label }}</th><th>Assessments</th><th>Pass rate</th><th>Average score</th><th>Not passed</th><th>Critical failures</th></tr></thead>
+      <tbody>{% for item in scoring_overview[view] %}
+        <tr>
+          <td><strong>{{ item.title }}</strong></td>
+          <td>{{ item.count }}</td>
+          <td>{% if item.count %}<div class="scoring-rate"><strong>{{ item.pass_rate }}%</strong><div class="progress"><span style="width: {{ item.pass_rate }}%"></span></div><small>{{ item.passed }} of {{ item.count }} passed</small></div>{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td>{% if item.count %}<strong>{{ item.average }}%</strong>{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td>{% if item.count %}{{ item.unsuccessful }}{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td>{% if item.critical %}
+            <details class="scoring-failures"><summary><span>{{ item.critical }} critical · {{ item.critical_rate }}% of assessments</span><small>View reasons</small></summary>
+              <p>Frequency among {{ item.unsuccessful }} assessments that did not pass:</p>
+              <ul>{% for reason in item.reasons %}<li><div>{% if reason.source_id %}<b>{{ reason.source_id }}</b> {% endif %}{{ reason.label }}</div><strong>{{ reason.count }} / {{ item.unsuccessful }} · {{ reason.percent }}%</strong></li>{% endfor %}</ul>
+            </details>
+          {% elif item.count %}<span class="muted">No critical failures</span>{% else %}<span class="muted">No scored assessments</span>{% endif %}</td>
+        </tr>
+      {% else %}<tr><td colspan="6" class="empty-cell">No {{ label|lower }}s in the selected scope.</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </section>
+  {% endfor %}
+  <p class="panel-note">Pass = saved “Achieved” result (at least 50%, with no critical failure). “Not passed” includes Partial and Failed results. Averages include scores set to zero by critical failures. Failure reasons can overlap, so their percentages may total more than 100%. Only saved survey outcomes are included; workbook-only scores are excluded. Date filters also restrict visit dates.{% if scoring_overview.excluded %} {{ scoring_overview.excluded }} older questionnaire results without a saved outcome are excluded.{% endif %}</p>
+</article>

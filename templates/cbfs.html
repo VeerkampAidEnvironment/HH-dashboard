@@ -15,6 +15,17 @@
   </div>
 </details>{% endif %}
 
+<form class="cbf-sort-controls panel" method="get">
+  <label for="cbf-sort">Sort CBFs by</label>
+  <select id="cbf-sort" name="sort">
+    {% for value, label in [('urgency', 'Follow-up urgency'), ('followups', 'Completed follow-up visits'), ('trainings', 'Trainings given'), ('trained', 'Trained farmers'), ('name', 'Name')] %}
+    <option value="{{ value }}" {{ 'selected' if sort_by == value }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button class="button button-secondary button-small" type="submit">Sort</button>
+  <small>Follow-ups count completed visits. Each recorded beneficiary-topic training attendance counts as one training given; trained farmers are counted once.</small>
+</form>
+
 <section class="cbf-progress-grid">
   {% for cbf in cbfs %}<a class="cbf-progress-card urgency-{{ cbf.urgency }}" href="{{ url_for('cbf_detail', cbf_name=cbf.cbf_name) }}">
     <header><span class="avatar">{{ cbf.cbf_name[:2] }}</span><div><h2>{{ cbf.cbf_name }}</h2><p>{{ cbf.group_count }} {{ 'group' if cbf.group_count == 1 else 'groups' }}</p></div><span class="cbf-urgency">{{ cbf.urgency_label }}</span></header>
@@ -22,6 +33,11 @@
       <div class="cbf-progress-item"><div class="cbf-progress-heading"><span>At least one training</span><strong>{{ cbf.progress_rate }}%</strong></div><div class="cbf-progress-track" role="progressbar" aria-label="People with at least one training" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ cbf.progress_rate }}"><span style="width: {{ cbf.progress_rate }}%"></span></div></div>
       <div class="cbf-progress-item complete"><div class="cbf-progress-heading"><span>Trained in all topics</span><strong>{{ cbf.fully_trained_rate }}%</strong></div><div class="cbf-progress-track" role="progressbar" aria-label="People trained in all topics" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ cbf.fully_trained_rate }}"><span style="width: {{ cbf.fully_trained_rate }}%"></span></div></div>
       <div class="cbf-progress-item adoption"><div class="cbf-progress-heading"><span>Confirmed adoption</span><strong>{{ cbf.adoption_rate }}%</strong></div><div class="cbf-progress-track" role="progressbar" aria-label="People with confirmed adoption" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ cbf.adoption_rate }}"><span style="width: {{ cbf.adoption_rate }}%"></span></div></div>
+    </div>
+    <div class="cbf-delivery-stats">
+      <span><strong>{{ cbf.completed_followups }}</strong><small>Completed visits</small></span>
+      <span><strong>{{ cbf.training_attendances }}</strong><small>Trainings given</small></span>
+      <span><strong>{{ cbf.trained_people }}</strong><small>Trained farmers</small></span>
     </div>
     <div class="cbf-card-stats">
       <span><strong>{{ cbf.farmer_count }}</strong><small>Beneficiaries</small></span>

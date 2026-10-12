@@ -41,6 +41,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from bulk_import import BulkImportError, append_care_database, append_farmer_database
 from beneficiary_map import beneficiary_features
+from scoring_dashboard import build_scoring_overview
 from db import (
     AuditRevertError,
     close_db,
@@ -515,6 +516,12 @@ def create_app(test_config=None):
         if request.method in {"POST", "PUT", "PATCH", "DELETE"} and request.endpoint != "login":
             supplied = request.form.get("csrf_token") or request.headers.get("X-CSRF-Token")
             if not supplied or not hmac.compare_digest(str(supplied), str(csrf_token())):
+                if request.path.startswith("/field-app/api/"):
+                    return jsonify({
+                        "ok": False,
+                        "error": "Your sign-in has changed. Sign in online, then reopen the Field App before synchronizing.",
+                        "code": "invalid_csrf",
+                    }), 400
                 abort(400, "Invalid CSRF token")
 
     @app.get("/health")
@@ -771,9 +778,34 @@ def create_app(test_config=None):
                WHERE r.archived_at IS NULL AND r.dataset='training' AND TRIM(r.cbf_name)<>''
                GROUP BY r.cbf_name ORDER BY r.cbf_name"""
         ).fetchall()
+        completed_followups = {
+            row["cbf_name"]: row["completed_followups"] for row in connection.execute("""
+                SELECT cbf_name, COUNT(*) AS completed_followups FROM field_events
+                WHERE event_type='followup' GROUP BY cbf_name
+            """).fetchall()
+        }
+        training_attendances = Counter()
+        for record in connection.execute("""
+            SELECT cbf_name, raw_data FROM records
+            WHERE dataset='training' AND archived_at IS NULL AND TRIM(cbf_name)<>''
+        """).fetchall():
+            raw = json.loads(record["raw_data"])
+            training_attendances[record["cbf_name"]] += sum(
+                parse_date(raw.get(f"Training {cycle} - {topic}")) is not None
+                for topic in TRAINING_TOPICS for cycle in range(1, 4)
+            )
+        sort_by = request.args.get("sort", "urgency")
+        sort_fields = {
+            "urgency": "urgency_score", "followups": "completed_followups",
+            "trainings": "training_attendances", "trained": "trained_people",
+        }
+        if sort_by not in sort_fields and sort_by != "name":
+            sort_by = "urgency"
         cbfs = []
         for row in rows:
             cbf = dict(row)
+            cbf["completed_followups"] = completed_followups.get(cbf["cbf_name"], 0)
+            cbf["training_attendances"] = training_attendances[cbf["cbf_name"]]
             denominator = cbf["farmer_count"]
             cbf["progress_rate"] = round(100 * cbf["trained_people"] / denominator) if denominator else 0
             cbf["fully_trained_rate"] = round(100 * cbf["fully_trained_people"] / denominator) if denominator else 0
@@ -788,10 +820,13 @@ def create_app(test_config=None):
             else:
                 cbf.update(urgency="due", urgency_label="Follow-up due")
             cbfs.append(cbf)
-        cbfs.sort(key=lambda item: (-item["urgency_score"], item["cbf_name"].casefold()))
+        if sort_by == "name":
+            cbfs.sort(key=lambda item: item["cbf_name"].casefold())
+        else:
+            cbfs.sort(key=lambda item: (-item[sort_fields[sort_by]], item["cbf_name"].casefold()))
         return render_template(
             "cbfs.html", cbfs=cbfs, cbf_names=cbf_names,
-            group_assignments=group_assignments,
+            group_assignments=group_assignments, sort_by=sort_by,
         )
 
     @app.get("/cbfs/<path:cbf_name>")
@@ -3606,25 +3641,22 @@ def build_dashboard_data(connection, dataset: str, filters: dict[str, str]):
         }),
     }
 
-    # Each person appears once in this operational distribution, even when
-    # they have activity in multiple topics.
+    # Show the furthest evidenced training stage for each person. Pending
+    # actions are independent of progress and appear in the action panel.
     record_ids = {dashboard_unit(record["id"]) for record in records}
     attention_ids = followup_ids | retraining_ids
-    verified_ids = confirmed_ids - attention_ids
-    learning_ids = trained_ids - verified_ids - attention_ids
-    not_started_ids = record_ids - verified_ids - learning_ids - attention_ids
+    verified_ids = confirmed_ids & record_ids
+    learning_ids = (trained_ids & record_ids) - verified_ids
+    not_started_ids = record_ids - verified_ids - learning_ids
     status_distribution = [
-        {"label": "Verified", "count": len(verified_ids), "tone": "verified"},
-        {"label": "In learning", "count": len(learning_ids), "tone": "learning"},
-        {"label": "Needs attention", "count": len(attention_ids), "tone": "attention"},
-        {"label": "Not started", "count": len(not_started_ids), "tone": "not-started"},
+        {"label": "Adoption confirmed", "count": len(verified_ids), "tone": "verified"},
+        {"label": "Trained, no adoption confirmed", "count": len(learning_ids), "tone": "learning"},
+        {"label": "No training recorded", "count": len(not_started_ids), "tone": "not-started"},
     ]
     for item in status_distribution:
-        item["percent"] = round(item["count"] / len(record_ids) * 100) if record_ids else 0
-    distribution_cursor = 0
-    for item in status_distribution:
-        distribution_cursor += item["percent"]
-        item["end"] = min(distribution_cursor, 100)
+        share = item["count"] / len(record_ids) * 100 if record_ids else 0.0
+        item["percent"] = round(share, 1)
+        item["width"] = round(share, 4)
 
     topic_groups = defaultdict(list)
     for status in statuses:
@@ -4041,10 +4073,16 @@ def build_dashboard_data(connection, dataset: str, filters: dict[str, str]):
         "activity_filter_options": activity_filter_options,
         "momentum_chart": momentum_chart,
         "status_distribution": status_distribution,
+        "journey_total": len(record_ids),
         "action_topics": action_topics,
         "attention_total": len(attention_ids),
         "waiting_total": len(waiting_ids),
         "training_pathways": training_pathways,
+        "scoring_overview": build_scoring_overview(
+            connection, eligible_ids,
+            [] if topic_filter == "__none__" else selected_topics or None,
+            date_from, date_to,
+        ) if dataset == "training" else None,
         "options": options,
     }
 

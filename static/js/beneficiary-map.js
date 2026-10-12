@@ -4,6 +4,7 @@
   const features = JSON.parse(source.textContent).features;
   const search = document.querySelector("[data-map-search]");
   const status = document.querySelector("[data-map-status]");
+  const basemapSelect = document.querySelector("[data-map-basemap]");
   const requestedId = new URLSearchParams(window.location.search).get("record_id");
   const requestedFeature = features.find((feature) => String(feature.properties.record_id) === requestedId);
   if (requestedFeature) search.value = requestedFeature.properties.uid || requestedFeature.properties.name;
@@ -32,13 +33,21 @@
   let layer = null;
   let cbfOverlay = null;
   let showCbfs = true;
+  let activeBasemap = null;
+  let streetBasemap = null;
+  let satelliteBasemap = null;
   const canvas = document.getElementById("beneficiary-map");
   if (window.L) {
     map = L.map(canvas, { scrollWheelZoom: false }).setView([0, 20], 3);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    streetBasemap = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       maxZoom: 19,
-    }).addTo(map);
+    });
+    satelliteBasemap = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+      attribution: 'Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community',
+      maxZoom: 19,
+    });
+    activeBasemap = streetBasemap.addTo(map);
   } else {
     canvas.classList.add("map-unavailable");
     canvas.textContent = "The interactive map could not load. The beneficiary list remains available below.";
@@ -174,6 +183,11 @@
   }
   search.addEventListener("input", render);
   status.addEventListener("change", render);
+  basemapSelect.addEventListener("change", () => {
+    if (!map) return;
+    map.removeLayer(activeBasemap);
+    activeBasemap = (basemapSelect.value === "satellite" ? satelliteBasemap : streetBasemap).addTo(map);
+  });
   cbfToggle.addEventListener("click", () => {
     showCbfs = !showCbfs;
     cbfToggle.textContent = showCbfs ? "Hide CBFs" : "Show CBFs";

@@ -79,12 +79,14 @@ The **Administration → Data entry** page lets a CBF select their name and reco
 
 ## Beneficiary map
 
-The **Database → Map** page shows AE beneficiaries whose saved follow-up contains GPS plot points. Three or more points draw a field outline; two draw a line, and one draws a marker. The latest mapped visit supplies the RVO and Project checks: **Validated** means both passed, **Failed** means at least one was not met, and **Not assessed** means a check is unavailable. Training counts are the number of training types recorded as received for each beneficiary. Search and status filters apply to both the map and the list. The map uses Leaflet and OpenStreetMap tiles and needs internet access for the base map.
+The **Database → Map** page shows AE beneficiaries whose saved follow-up contains GPS plot points. Three or more points draw a field outline; two draw a line, and one draws a marker. The latest mapped visit supplies the RVO and Project checks: **Validated** means both passed, **Failed** means at least one was not met, and **Not assessed** means a check is unavailable. Training counts are the number of training types recorded as received for each beneficiary. Search and status filters apply to both the map and the list. The map uses Leaflet with a switch between OpenStreetMap street tiles and Esri World Imagery satellite tiles; both basemaps need internet access.
 
 Map geometry filters poor-accuracy fixes and isolated GPS jumps. If a track has a large disconnected jump, the map uses its longest continuous section; the saved questionnaire answers remain unchanged.
 
 Each CBF with a visible mapped beneficiary has a circular grouping marker connected to their fields. The marker is positioned from those field locations for display and does not represent the CBF's actual GPS location. Map filters update the CBF markers and links together with the fields.
 Use **Hide CBFs** to remove the CBF circles and links while keeping the beneficiary fields visible; **Show CBFs** restores them.
+
+The **CBF progress** page can be sorted by completed follow-up visits, trainings given, or trained farmers. A completed follow-up is one saved visit event. A training given is one recorded beneficiary-topic attendance, including imported workbook dates; a trained farmer is a distinct beneficiary with at least one received training type.
 
 ## AE Field App
 

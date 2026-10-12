@@ -75,23 +75,7 @@
 <div class="notice info">Source records remain separate. “Unique beneficiaries” removes confirmed AE/FH overlaps using the shared beneficiary ID.</div>
 {% endif %}
 
-<section class="kpi-grid" aria-label="Key metrics">
-  {% for label, value, detail, tone, icon in [
-    ('Source records', summary.total_records, 'Records in the current scope', 'teal', 'DB'),
-    ('Unique beneficiaries', summary.unique_farmers, 'Confirmed overlaps removed', 'blue', 'ID'),
-    ('Received training', summary.trained, 'At least one attended topic', 'green', 'TR'),
-    ('Confirmed adoption' if dataset == 'training' else 'Completed module' if dataset == 'care' else 'Verified completion', summary.confirmed, 'Verified against programme rules', 'green', 'OK'),
-    ('Follow-up needed', summary.followup, summary.followup ~ ' beneficiaries · ' ~ summary.followup_actions ~ ' follow-ups', 'orange', 'FU'),
-    ('CTs needed', summary.retraining, summary.retraining ~ ' beneficiaries · ' ~ summary.retraining_actions ~ ' CTs', 'red', 'AE')
-  ] %}
-  <article class="kpi-card tone-{{ tone }}">
-    <div class="kpi-top"><span class="kpi-icon">{{ icon }}</span><span class="kpi-label">{{ label }}</span></div>
-    <strong>{{ value }}</strong><small>{{ detail }}</small>
-  </article>
-  {% endfor %}
-</section>
-
-<section class="analytics-grid">
+<section class="analytics-grid analytics-grid-leading">
   <article class="panel panel-trend activity-explorer" data-activity-explorer>
     <div class="panel-heading activity-heading"><div><p class="eyebrow">Training activity</p><h2>Participation over time</h2><p data-activity-description>All recorded AE activity. Combine the filters below to focus the timeline.</p></div><span class="badge" data-activity-result>All beneficiaries</span></div>
     <div class="timeline-filter-deck">
@@ -123,13 +107,35 @@
   </article>
 
   <article class="panel panel-status">
-    <div class="panel-heading"><div><p class="eyebrow">Operational status</p><h2>Beneficiary journey</h2></div><span class="badge">{{ summary.total_records }} total</span></div>
-    <div class="status-visual">
-      <div class="status-donut" style="background: conic-gradient(#77aa2a 0 {{ status_distribution[0].end }}%, #087880 {{ status_distribution[0].end }}% {{ status_distribution[1].end }}%, #EFB417 {{ status_distribution[1].end }}% {{ status_distribution[2].end }}%, #cbd4d6 {{ status_distribution[2].end }}% 100%)"><div><strong>{{ summary.confirmed }}</strong><small>verified</small></div></div>
-      <div class="distribution-legend">{% for item in status_distribution %}<div><i class="legend-{{ item.tone }}"></i><span>{{ item.label }}</span><strong>{{ item.count }}</strong><small>{{ item.percent }}%</small></div>{% endfor %}</div>
+    <div class="panel-heading"><div><p class="eyebrow">Training progress</p><h2>Beneficiary journey</h2></div><span class="badge">{{ journey_total }} beneficiaries</span></div>
+    <div class="journey-progress">
+      <div class="distribution-bar" role="img" aria-label="{% for item in status_distribution %}{{ item.label }}: {{ item.count }} ({{ '%.1f'|format(item.percent) }}%){% if not loop.last %}; {% endif %}{% endfor %}">
+        {% for item in status_distribution %}<span class="distribution-{{ item.tone }}" style="width: {{ item.width }}%"></span>{% endfor %}
+      </div>
+      <div class="distribution-legend">{% for item in status_distribution %}<div><i class="legend-{{ item.tone }}"></i><span>{{ item.label }}</span><strong>{{ item.count }}</strong><small>{{ '%.1f'|format(item.percent) }}%</small></div>{% endfor %}</div>
     </div>
-    <p class="panel-note">Each record appears once; urgent actions take priority in this view.</p>
+    <p class="panel-note">Each beneficiary appears once, at their furthest recorded stage. Adoption means at least one training topic is confirmed. Follow-up and retraining needs are shown separately under Immediate priorities and may overlap these groups.</p>
   </article>
+
+</section>
+
+<section class="kpi-grid" aria-label="Key metrics">
+  {% for label, value, detail, tone, icon in [
+    ('Source records', summary.total_records, 'Records in the current scope', 'teal', 'DB'),
+    ('Unique beneficiaries', summary.unique_farmers, 'Confirmed overlaps removed', 'blue', 'ID'),
+    ('Received training', summary.trained, 'At least one attended topic', 'green', 'TR'),
+    ('Confirmed adoption' if dataset == 'training' else 'Completed module' if dataset == 'care' else 'Verified completion', summary.confirmed, 'Verified against programme rules', 'green', 'OK'),
+    ('Follow-up needed', summary.followup, summary.followup ~ ' beneficiaries · ' ~ summary.followup_actions ~ ' follow-ups', 'orange', 'FU'),
+    ('CTs needed', summary.retraining, summary.retraining ~ ' beneficiaries · ' ~ summary.retraining_actions ~ ' CTs', 'red', 'AE')
+  ] %}
+  <article class="kpi-card tone-{{ tone }}">
+    <div class="kpi-top"><span class="kpi-icon">{{ icon }}</span><span class="kpi-label">{{ label }}</span></div>
+    <strong>{{ value }}</strong><small>{{ detail }}</small>
+  </article>
+  {% endfor %}
+</section>
+
+<section class="analytics-grid">
 
   <article class="panel panel-attention">
     <div class="panel-heading"><div><p class="eyebrow">Action centre</p><h2>Immediate priorities</h2></div><span class="badge badge-warm">{{ attention_total }} people</span></div>
@@ -175,6 +181,8 @@
       <div class="demographic-breakdown-grid">{% for age, genders in gender_by_age.items() %}{% set group_total = genders.values()|sum or 1 %}<section class="breakdown-card breakdown-card-warm"><header><div><span>Age group</span><h4>{{ age }}</h4></div><strong>{{ genders.values()|sum }}<small>beneficiaries</small></strong></header><div class="bar-list bar-list-warm">{% for label, count in genders.items() %}<div class="bar-row"><span>{{ label }}</span><div><i style="width: {{ (count / group_total * 100)|round }}%"></i></div><strong>{{ count }}<small>{{ (count / group_total * 100)|round|int }}%</small></strong></div>{% endfor %}</div></section>{% else %}<p class="muted">No data</p>{% endfor %}</div>
     </div>
   </article>
+
+  {% if dataset == 'training' %}{% include 'scoring_overview.html' %}{% endif %}
 
   {% if dataset == 'training' %}<article class="panel panel-training-pathways">
     <div class="panel-heading"><div><p class="eyebrow">Training pathways</p><h2>How trainings are combined</h2><p>Exact combinations for each beneficiary, plus the distribution of how many trainings people received.</p></div><span class="badge">{{ training_pathways.total }} people</span></div>
@@ -231,4 +239,7 @@
     {% else %}<div class="empty-state"><h3>No dated activity</h3><p>No training or follow-up dates match the current dashboard filters.</p></div>{% endif %}
   </article>{% endif %}
 </section>
+{% endblock %}
+{% block scripts %}
+{% if dataset == 'training' %}<script src="{{ url_for('static', filename='js/scoring-overview.js', v=asset_version) }}" defer></script>{% endif %}
 {% endblock %}

@@ -1171,6 +1171,19 @@ def score_single_training(topic: str, answers: dict[str, Any]) -> dict[str, Any]
     return _result(points, available, critical)
 
 
+def collect_critical_failure_comments(answers: dict[str, Any]) -> list[dict[str, Any]]:
+    """Describe evidenced critical triggers, excluding ordinary low-score findings."""
+    triggered = {
+        rule.get("question", "b3_features")
+        for rule in PACKAGE_STOP_RULES
+        if rule["critical"] and _rule_trigger_order(rule, answers) is not None
+    }
+    return [
+        comment for comment in collect_failure_comments(answers, TRAINING_TOPICS)
+        if comment["question_id"] in triggered
+    ]
+
+
 def rvo_result(answers: dict[str, Any]) -> dict[str, Any]:
     practices = {
         "Mulching / soil cover": _answer(answers, "b2_cover") in {"mulch", "living"},

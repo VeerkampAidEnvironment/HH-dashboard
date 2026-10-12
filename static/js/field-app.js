@@ -8,6 +8,7 @@
   const config = JSON.parse(configNode.textContent);
   const DB_NAME = "arfsa-ae-field-app";
   const DB_VERSION = 3;
+  const SYNC_BATCH_SIZE = 5;
   const environment = config.environment || "live";
   let fieldPackage = null;
   let currentCbf = config.assignedCbf || "";
@@ -284,6 +285,10 @@
 
   const prepareTablet = async ({ quiet = false } = {}) => {
     if (root.inert || preparing) return false;
+    if (syncing && !quiet) {
+      alertUser("Wait for synchronization to finish before preparing another CBF.", "warning");
+      return false;
+    }
     const select = $("[data-cbf-select]");
     const cbf = config.assignedCbf || select?.value || currentCbf;
     if (!cbf) {
@@ -1469,7 +1474,8 @@
 
   const synchronize = async () => {
     if (syncing || root.inert) return;
-    const pending = currentOutbox().slice(0, 100);
+    const syncCbf = currentCbf;
+    const pending = currentOutbox();
     if (!pending.length) {
       alertUser("No saved entries are waiting to send for this CBF.", "success");
       return;
@@ -1479,62 +1485,81 @@
       return;
     }
     syncing = true;
-    pending.forEach((item) => sendingIds.add(item.id));
     refreshCounts();
     renderResults();
     renderOutbox();
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
+    let accepted = 0;
+    let rejected = 0;
     try {
-      const response = await fetch(config.syncUrl, {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json", "X-CSRF-Token": config.csrfToken, Accept: "application/json" },
-        body: JSON.stringify({ cbf: currentCbf, environment, deviceId: await deviceId(), submissions: pending }),
-        signal: controller.signal,
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !Array.isArray(payload.results)) throw new Error(payload.error || "Synchronization could not be completed. Sign in again if your session expired.");
-      let accepted = 0;
-      let rejected = 0;
-      for (const result of payload.results) {
-        const item = pending.find((entry) => entry.id === result.id);
-        if (!item || !sendingIds.has(result.id)) continue;
-        const localResult = savedResults.find((item) => item.id === result.id);
-        if (result.status === "accepted" || result.status === "duplicate") {
-          const confirmed = localResult && { ...localResult, status: "synchronized", synchronizedAt: new Date().toISOString(),
-            eventId: result.eventId, error: "", syncError: "", outcome: result.outcome || localResult.outcome };
-          // Update the receipt and queue together: a server confirmation must
-          // never leave a visit simultaneously marked as waiting to send.
-          const db = await dbPromise;
-          await new Promise((resolve, reject) => {
-            const transaction = db.transaction(["outbox", "followupResults"], "readwrite");
-            if (confirmed) transaction.objectStore("followupResults").put(confirmed);
-            transaction.objectStore("outbox").delete(result.id);
-            transaction.oncomplete = resolve;
-            transaction.onabort = () => reject(transaction.error || new Error("Server confirmation could not be stored. Try synchronizing again."));
+      const tabletId = await deviceId();
+      for (let offset = 0; offset < pending.length; offset += SYNC_BATCH_SIZE) {
+        const batch = pending.slice(offset, offset + SYNC_BATCH_SIZE);
+        batch.forEach((item) => sendingIds.add(item.id));
+        renderResults();
+        renderOutbox();
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 30000);
+        try {
+          const response = await fetch(config.syncUrl, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json", "X-CSRF-Token": config.csrfToken, Accept: "application/json" },
+            body: JSON.stringify({ cbf: syncCbf, environment, deviceId: tabletId, submissions: batch }),
+            signal: controller.signal,
           });
-          if (confirmed) savedResults = savedResults.map((visit) => visit.id === result.id ? confirmed : visit);
-          outbox = outbox.filter((entry) => entry.id !== result.id);
-          applySynchronizedSubmission(item);
-          accepted += 1;
-        } else {
-          const error = result.message || "The server rejected this entry.";
-          if (localResult) {
-            const failed = { ...localResult, status: "error", error, syncError: "" };
-            await putStored("followupResults", failed);
-            savedResults = savedResults.map((visit) => visit.id === result.id ? failed : visit);
+          const payload = await response.json().catch(() => ({}));
+          if (response.status === 401) throw new Error("Your sign-in has expired. Sign in online, then reopen the Field App before synchronizing.");
+          if (response.status === 400 && !payload.error) throw new Error("Your sign-in needs refreshing. Sign in online, then reopen the Field App before synchronizing.");
+          if (!response.ok || !Array.isArray(payload.results) || payload.results.length !== batch.length) {
+            throw new Error(payload.error || "The server did not confirm this batch. Try Synchronize now again.");
           }
-          const failed = { ...item, status: "error", error, syncError: "" };
-          await putStored("outbox", failed);
-          outbox = outbox.map((entry) => entry.id === result.id ? failed : entry);
-          rejected += 1;
+          let batchAccepted = 0;
+          for (const result of payload.results) {
+            const item = batch.find((entry) => entry.id === result.id);
+            if (!item || !sendingIds.has(result.id)) throw new Error("The server returned an invalid confirmation. Try Synchronize now again.");
+            const localResult = savedResults.find((visit) => visit.id === result.id);
+            if (result.status === "accepted" || result.status === "duplicate") {
+              const confirmed = localResult && { ...localResult, status: "synchronized", synchronizedAt: new Date().toISOString(),
+                eventId: result.eventId, error: "", syncError: "", outcome: result.outcome || localResult.outcome };
+              // Update the receipt and queue together: a server confirmation must
+              // never leave a visit simultaneously marked as waiting to send.
+              const db = await dbPromise;
+              await new Promise((resolve, reject) => {
+                const transaction = db.transaction(["outbox", "followupResults"], "readwrite");
+                if (confirmed) transaction.objectStore("followupResults").put(confirmed);
+                transaction.objectStore("outbox").delete(result.id);
+                transaction.oncomplete = resolve;
+                transaction.onabort = () => reject(transaction.error || new Error("Server confirmation could not be stored. Try synchronizing again."));
+              });
+              if (confirmed) savedResults = savedResults.map((visit) => visit.id === result.id ? confirmed : visit);
+              outbox = outbox.filter((entry) => entry.id !== result.id);
+              applySynchronizedSubmission(item);
+              accepted += 1;
+              batchAccepted += 1;
+            } else {
+              const error = result.message || "The server rejected this entry.";
+              if (localResult) {
+                const failed = { ...localResult, status: "error", error, syncError: "" };
+                await putStored("followupResults", failed);
+                savedResults = savedResults.map((visit) => visit.id === result.id ? failed : visit);
+              }
+              const failed = { ...item, status: "error", error, syncError: "" };
+              await putStored("outbox", failed);
+              outbox = outbox.map((entry) => entry.id === result.id ? failed : entry);
+              rejected += 1;
+            }
+            sendingIds.delete(result.id);
+          }
+          if (batchAccepted && fieldPackage) await putStored("packagesV2", { key: packageKey(syncCbf), package: fieldPackage });
+          outbox = await getAllStored("outbox");
+          savedResults = await getAllStored("followupResults");
+          renderResults();
+          refreshCounts();
+          renderOutbox();
+        } finally {
+          clearTimeout(timeout);
         }
-        sendingIds.delete(result.id);
       }
-      if (accepted && fieldPackage) await putStored("packagesV2", { key: packageKey(currentCbf), package: fieldPackage });
-      outbox = await getAllStored("outbox");
-      savedResults = await getAllStored("followupResults");
       renderResults();
       refreshCounts();
       renderOutbox();
@@ -1558,9 +1583,8 @@
           if (localResult) await putStored("followupResults", localResult);
         } catch (_) { /* Preserve the original saved entry if status storage fails. */ }
       }
-      alertUser(`${message} Unconfirmed entries remain saved on this tablet.`, "warning");
+      alertUser(`${accepted ? `${accepted} confirmed by server. ` : ""}${message} Unconfirmed entries remain saved on this tablet.`, "warning");
     } finally {
-      clearTimeout(timeout);
       syncing = false;
       sendingIds.clear();
       refreshCounts();
